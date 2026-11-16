@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,6 +98,31 @@ func origin(s Settings, r *http.Request) {
 		fail("ORIGIN_REJECTED", "请求来源不被允许", 403)
 	}
 }
+
+// clientAddress identifies the caller for login throttling. Forwarding headers
+// count only when the TCP peer is a configured proxy, and only the part of the
+// chain those proxies appended: anything further left was supplied by the client.
+func clientAddress(s Settings, r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil || !s.trustsProxy(peer.Unmap()) {
+		return host
+	}
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		a, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			break
+		}
+		if a = a.Unmap(); !s.trustsProxy(a) {
+			return a.String()
+		}
+	}
+	return host
+}
 func API(c *Control) http.Handler {
 	mux := http.NewServeMux()
 	s := c.Settings
@@ -115,11 +141,7 @@ func API(c *Control) http.Handler {
 			fail("INVALID_REQUEST", "请求参数不符合接口约定", 422)
 		}
 		origin(s, r)
-		client, _, e := net.SplitHostPort(r.RemoteAddr)
-		if e != nil {
-			client = r.RemoteAddr
-		}
-		t, a := Login(s, input.LoginName, input.Password, client)
+		t, a := Login(s, input.LoginName, input.Password, clientAddress(s, r))
 		http.SetCookie(w, &http.Cookie{Name: CookieName, Value: t, MaxAge: s.SessionSeconds, HttpOnly: true, Secure: s.SecureCookie, SameSite: http.SameSiteStrictMode, Path: "/"})
 		a["csrf_token"] = c.Vault.CSRF(t)
 		jsonResponse(w, 200, a)

@@ -37,6 +37,7 @@ type Settings struct {
 	WebDir          string   `toml:"web_dir"`
 	InventoryFile   string   `toml:"inventory_file"`
 	DiscoveryFile   string   `toml:"discovery_file"`
+	TrustedProxies  []string `toml:"trusted_proxies"`
 }
 
 func DefaultSettings() Settings {
@@ -59,7 +60,32 @@ func LoadSettings() Settings {
 	if len(s.AllowedOrigins) == 0 || s.SessionSeconds < 300 || s.SessionSeconds > 86400 || s.MaxUsers < 1 || s.MaxUsers > 1000 || s.StaleSeconds < 30 || s.StaleSeconds > 3600 || s.SyncSeconds < 5 || s.SyncSeconds > 300 {
 		fail("CONFIG_INVALID", "主控配置超出范围")
 	}
+	for _, proxy := range s.TrustedProxies {
+		if _, ok := proxyPrefix(proxy); !ok {
+			fail("CONFIG_INVALID", "受信任反代必须是 IP 地址或 CIDR 网段")
+		}
+	}
 	return s
+}
+
+// proxyPrefix accepts a single address or a CIDR range.
+func proxyPrefix(value string) (netip.Prefix, bool) {
+	if p, err := netip.ParsePrefix(value); err == nil {
+		return p.Masked(), true
+	}
+	if a, err := netip.ParseAddr(value); err == nil {
+		a = a.Unmap()
+		return netip.PrefixFrom(a, a.BitLen()), true
+	}
+	return netip.Prefix{}, false
+}
+func (s Settings) trustsProxy(a netip.Addr) bool {
+	for _, proxy := range s.TrustedProxies {
+		if p, ok := proxyPrefix(proxy); ok && p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }
 
 type Endpoint struct {

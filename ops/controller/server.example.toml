@@ -13,3 +13,7 @@ session_seconds = 28800
 max_users = 100
 stale_seconds = 180
 sync_seconds = 15
+# 主控位于反代之后时，填写反代到达 API 的来源地址或网段，登录限流才能区分真实客户端。
+# 仅在反代会追加 X-Forwarded-For 时启用，例如 nginx：
+#   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+# trusted_proxies = ["172.18.0.1"]

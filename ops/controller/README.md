@@ -23,6 +23,8 @@
 
 HTTPS 站点由用户部署。应用仍允许来源 `https://sbctl.domob.org`，会话 Cookie 带 Secure 属性，浏览器登录必须通过该 HTTPS 来源。HTTP 内网直连可查看页面和健康状态，但不支持登录。
 
+登录限流在 15 分钟窗口内按三层计数：同一来源对同一账号 10 次、同一来源 30 次、同一账号全部来源合计 100 次。单个来源耗尽的只是自己的额度，不会把管理员从其它地址锁在外面。API 默认以 TCP 对端作为来源；经反代访问时所有人都表现为反代地址，需要在 `server.toml` 设置 `trusted_proxies`，填写反代到达 API 时的地址或网段，并确认站点的根反代带有 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`。反代经 `127.0.0.1:18100` 访问时，API 看到的通常是 Compose 网络的网关，可在 ovhus 用 `docker network inspect sbctl-control_default --format '{{(index .IPAM.Config 0).Gateway}}'` 查看。只有对端属于该列表时才读取转发头，并且只采用反代追加的部分。该配置项随本次修复加入；回退到 0.10.4 及更早的程序前须先删除，否则旧程序会拒绝未知配置项。未配置时仍按对端地址计数。
+
 2026-11-16 真实验收发现，现有站点仅将根路径转发到 18100，导致 `/s/` 返回“页面不存在”；内部订阅服务 18101 正常。用户明确选择继续自行管理站点。本仓库提供 [OpenResty 订阅反代配置](sbctl-subscriptions.nginx.conf)，已在 ovhus 的 OpenResty 容器中使用隔离临时配置通过 `nginx -t`，未改动或热加载现有站点。由用户添加至 `/opt/1panel/www/sites/sbctl.domob.org/proxy/sbctl-subscriptions.conf`，再校验并热加载 OpenResty。`proxy_pass` 地址末尾不加 `/`，以保留完整的 `/s/令牌/文件名` 路径；页面与管理 API 仍使用已有根反代。公网订阅可读性待用户配置后验证。
 
 ## 文件与身份

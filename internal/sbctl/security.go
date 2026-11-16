@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"golang.org/x/crypto/argon2"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,21 +99,58 @@ func passwordValid(encoded, password string) bool {
 // the database-backed attempt budget, which is shared by API processes.
 var loginSlots = make(chan struct{}, 2)
 
-func reserveLoginAttempt(s Settings, name, client string) (string, string) {
-	account := hash([]byte("login-account:" + name))
-	source := hash([]byte("login-source:" + client))
+// Attempts are counted in a 15 minute window against three budgets. One source
+// can spend only its own allowance on an account, so guessing from one address
+// cannot lock the administrator out of every other address. The account-wide
+// ceiling still bounds guessing that is spread over many sources.
+const (
+	loginWindow       = 900
+	loginPairLimit    = 10
+	loginSourceLimit  = 30
+	loginAccountLimit = 100
+)
+
+// loginSource groups an IPv6 client with its /64, which a single subscriber controls.
+func loginSource(client string) string {
+	a, err := netip.ParseAddr(client)
+	if err != nil {
+		return client
+	}
+	if a = a.Unmap(); a.Is6() {
+		if p, err := a.WithZone("").Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return a.String()
+}
+func reserveLoginAttempt(s Settings, name, client string) []any {
+	source := loginSource(client)
+	budgets := []struct {
+		subject string
+		limit   int64
+	}{
+		{hash([]byte("login-pair:" + name + "\x00" + source)), loginPairLimit},
+		{hash([]byte("login-source:" + source)), loginSourceLimit},
+		{hash([]byte("login-account:" + name)), loginAccountLimit},
+	}
+	subjects := []any{}
 	ts := timestamp()
 	transaction(s.ControlDB, true, func(d *DB) {
-		d.Exec("DELETE FROM login_failures WHERE attempted_at<?", ts-900)
-		if integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", account)) >= 10 ||
-			integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", source)) >= 30 {
-			fail("LOGIN_RATE_LIMIT", "登录尝试过多，请稍后再试", 429)
+		d.Exec("DELETE FROM login_failures WHERE attempted_at<?", ts-loginWindow)
+		for _, b := range budgets {
+			if integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", b.subject)) >= b.limit {
+				fail("LOGIN_RATE_LIMIT", "登录尝试过多，请稍后再试", 429)
+			}
 		}
 		// Reserve before hashing so parallel requests cannot all pass the same limit.
-		d.Exec("INSERT INTO login_failures VALUES (?,?)", account, ts)
-		d.Exec("INSERT INTO login_failures VALUES (?,?)", source, ts)
+		for _, b := range budgets {
+			d.Exec("INSERT INTO login_failures VALUES (?,?)", b.subject, ts)
+		}
 	})
-	return account, source
+	for _, b := range budgets {
+		subjects = append(subjects, b.subject)
+	}
+	return subjects
 }
 func CreateAdmin(s Settings, name, display, password string) string {
 	if utf8.RuneCountInString(password) < 12 || utf8.RuneCountInString(password) > 1024 || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 80 {
@@ -135,7 +173,7 @@ func Login(s Settings, name, password, client string) (string, M) {
 	default:
 		fail("LOGIN_BUSY", "登录请求繁忙，请稍后再试", 429)
 	}
-	account, source := reserveLoginAttempt(s, name, client)
+	subjects := reserveLoginAttempt(s, name, client)
 	var admin M
 	transaction(s.ControlDB, false, func(d *DB) {
 		admin = d.One("SELECT * FROM admins WHERE login_name=? AND enabled=1", name)
@@ -153,7 +191,7 @@ func Login(s Settings, name, password, client string) (string, M) {
 	transaction(s.ControlDB, true, func(d *DB) {
 		ts := timestamp()
 		d.Exec("DELETE FROM sessions WHERE expires_at<?", ts)
-		d.Exec("DELETE FROM login_failures WHERE subject IN (?,?)", account, source)
+		d.Exec("DELETE FROM login_failures WHERE subject IN (?,?,?)", subjects...)
 		d.Exec("INSERT INTO sessions VALUES (?,?,?,?)", hash([]byte(t)), admin["id"], ts+float64(s.SessionSeconds), now())
 	})
 	return t, M{"admin_id": admin["id"], "display_name": admin["display_name"]}
