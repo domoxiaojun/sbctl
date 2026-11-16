@@ -4012,6 +4012,8 @@
               "check",
               "protocols",
               "protocol_change",
+              "config",
+              "config_change",
               "restart"
             ]
           },
@@ -4032,6 +4034,9 @@
           },
           "protocol_change": {
             "$ref": "#/components/schemas/ProtocolChange"
+          },
+          "config_change": {
+            "$ref": "#/components/schemas/ConfigChange"
           }
         },
         "required": [
@@ -5001,6 +5006,117 @@
         },
         "required": [
           "users"
+        ],
+        "additionalProperties": false
+      },
+      "ConfigChange": {
+        "type": "object",
+        "properties": {
+          "base_hash": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "log",
+              "dns",
+              "ntp",
+              "route"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "base_hash",
+          "section",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "NodeConfigView": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "sections": {
+            "type": "object",
+            "properties": {
+              "log": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "dns": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "ntp": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "route": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "log",
+              "dns",
+              "ntp",
+              "route"
+            ],
+            "additionalProperties": false
+          },
+          "outbounds": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tag": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "server": {
+                  "type": "string"
+                },
+                "server_port": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "tag",
+                "type",
+                "server",
+                "server_port"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "inbound_tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "node_id",
+          "hash",
+          "checked_at",
+          "sections",
+          "outbounds",
+          "inbound_tags"
         ],
         "additionalProperties": false
       }

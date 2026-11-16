@@ -953,13 +953,14 @@ export interface components {
         };
         NodeJobInput: {
             /** @enum {string} */
-            kind: "inspect" | "configure" | "check" | "protocols" | "protocol_change" | "restart";
+            kind: "inspect" | "configure" | "check" | "protocols" | "protocol_change" | "config" | "config_change" | "restart";
             draft: components["schemas"]["NodeDraft"];
             inspection_id: string;
             expected_version: number;
             desired_container?: string;
             desired_image?: string;
             protocol_change?: components["schemas"]["ProtocolChange"];
+            config_change?: components["schemas"]["ConfigChange"];
         };
         NodeJobAccepted: {
             job_id: string;
@@ -1172,6 +1173,40 @@ export interface components {
         NodeJobs: components["schemas"]["NodeJob"][];
         DeleteUsers: {
             users: components["schemas"]["UserVersion"][];
+        };
+        ConfigChange: {
+            base_hash: string;
+            /** @enum {string} */
+            section: "log" | "dns" | "ntp" | "route";
+            content: {
+                [key: string]: unknown;
+            };
+        };
+        NodeConfigView: {
+            node_id: string;
+            hash: string;
+            checked_at: string;
+            sections: {
+                log: {
+                    [key: string]: unknown;
+                };
+                dns: {
+                    [key: string]: unknown;
+                };
+                ntp: {
+                    [key: string]: unknown;
+                };
+                route: {
+                    [key: string]: unknown;
+                };
+            };
+            outbounds: {
+                tag: string;
+                type: string;
+                server: string;
+                server_port: number;
+            }[];
+            inbound_tags: string[];
         };
     };
     responses: never;

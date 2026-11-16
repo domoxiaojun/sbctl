@@ -524,6 +524,21 @@ func NodeRPC(v M) M {
 			fail("ACTION_REJECTED", "协议读取参数无效")
 		}
 		return object(canonical(readProtocolCatalog()))
+	case "config":
+		if len(v) != 1 {
+			fail("ACTION_REJECTED", "配置读取参数无效")
+		}
+		s := LoadNodeSettings()
+		unlock := fileLock(filepath.Join(s.StateDir, "management.lock"), 20*time.Second)
+		defer unlock()
+		return configView(s.NodeID, object(read(filepath.Join(s.ConfigDir, "config.json"))))
+	case "config_change":
+		if len(v) != 3 {
+			fail("ACTION_REJECTED", "配置变更参数无效")
+		}
+		var change ConfigChange
+		decode(canonical(v["change"]), &change)
+		return (NodeMaintenance{LoadNodeSettings(), "/opt/sbctl/config/node.toml", func(s NodeSettings) Engine { return DockerEngine{s} }}).ApplyConfig(str(v["request_id"]), change)
 	case "protocol_change", "restart":
 		kind := str(v["action"])
 		var change *ProtocolChange

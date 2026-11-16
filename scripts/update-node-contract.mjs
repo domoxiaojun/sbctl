@@ -57,8 +57,15 @@ Object.assign(doc.components.schemas,{
 Object.assign(doc.components.schemas.User.properties,{metadata_version:num,archived:bool,archived_at:{anyOf:[str,{type:'null'}]},subscription_generation:num});
 doc.components.schemas.TrafficUser.properties.deleted=bool;
 doc.components.schemas.User.required=[...new Set([...doc.components.schemas.User.required,'metadata_version','archived','archived_at','subscription_generation'])];
-doc.components.schemas.NodeJobInput.properties.kind.enum=['inspect','configure','check','protocols','protocol_change','restart'];
+doc.components.schemas.NodeJobInput.properties.kind.enum=['inspect','configure','check','protocols','protocol_change','config','config_change','restart'];
 doc.components.schemas.NodeJobInput.properties.protocol_change=ref('ProtocolChange');
+// Replaceable configuration sections. The view is returned as the result of a 'config' job.
+const sections=schema({log:obj,dns:obj,ntp:obj,route:obj});
+Object.assign(doc.components.schemas,{
+ ConfigChange:schema({base_hash:str,section:{type:'string',enum:['log','dns','ntp','route']},content:obj}),
+ NodeConfigView:schema({node_id:str,hash:str,checked_at:str,sections,outbounds:{type:'array',items:schema({tag:str,type:str,server:str,server_port:num})},inbound_tags:{type:'array',items:str}}),
+});
+doc.components.schemas.NodeJobInput.properties.config_change=ref('ConfigChange');
 doc.components.schemas.NodeConfiguration.properties.protocol_catalog={anyOf:[ref('ProtocolCatalog'),{type:'null'}]};
 doc.components.schemas.NodeConfiguration.required.push('protocol_catalog');
 endpoint('/api/v1/users/{id}/metadata','post','post__user_metadata','NodeSaved','UserMetadata');

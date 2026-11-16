@@ -3,7 +3,7 @@ package sbctl
 import "strings"
 
 func mutatingNodeJob(kind string) bool {
-	return contains([]string{"configure", "protocol_change", "restart"}, kind)
+	return contains([]string{"configure", "protocol_change", "config_change", "restart"}, kind)
 }
 func (c *Control) NodeJobs(id string) []M {
 	result := []M{}
@@ -37,13 +37,18 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 		}
 		hasAuthorizationWork = mutatingNodeJob(input.Kind) && integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", id)) > 0
 	})
+	// The node derives the same digest from the change it is given.
+	inputHash := digest(input.Change)
+	if input.Kind == "config_change" {
+		inputHash = digest(input.ConfigChange)
+	}
 	var recovered M
 	if hasAuthorizationWork {
 		// Authorization normally goes first. The exceptions are a maintenance task
 		// the node already finished (its reply was lost) and one it was interrupted
 		// in: the node refuses every authorization request while that interrupted
 		// plan holds its barrier, so waiting for the queue would never end.
-		status := w.Transport.Call(input.Draft.Connection, M{"action": "maintenance_receipt", "request_id": str(job["id"]), "input_hash": digest(input.Change)}, false)
+		status := w.Transport.Call(input.Draft.Connection, M{"action": "maintenance_receipt", "request_id": str(job["id"]), "input_hash": inputHash}, false)
 		switch status["state"] {
 		case "completed":
 			recovered = mapping(status["result"])
@@ -57,6 +62,9 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 	body := M{"action": "protocols"}
 	if input.Kind == "protocol_change" {
 		body = M{"action": "protocol_change", "request_id": str(job["id"]), "change": input.Change}
+	}
+	if input.Kind == "config_change" {
+		body = M{"action": "config_change", "request_id": str(job["id"]), "change": input.ConfigChange}
 	}
 	if input.Kind == "restart" {
 		body = M{"action": "restart", "request_id": str(job["id"])}

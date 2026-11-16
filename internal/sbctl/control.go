@@ -123,7 +123,7 @@ func (c *Control) CreateUser(actor, key string, req CreateUser, imported M) M {
 		}
 		nodes := targets(d, req.GroupIDs)
 		for _, n := range nodes {
-			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
 				fail("NODE_BUSY", "所选节点正在更新管理配置，请稍后添加用户", 409)
 			}
 		}
@@ -249,7 +249,7 @@ func (c *Control) EnableUser(actor, key, user string, req EnableUser) M {
 		}
 		nodes := targets(d, groups)
 		for _, n := range nodes {
-			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
 				fail("NODE_BUSY", "所选节点正在更新管理配置，请稍后重新启用", 409)
 			}
 		}

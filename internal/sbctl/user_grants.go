@@ -106,7 +106,7 @@ func (c *Control) UpdateGrants(actor, key, user string, req UpdateGrants) M {
 		for _, kind := range []string{"added", "retained", "removed"} {
 			for _, n := range preview[kind].([]M) {
 				nodeIDs = append(nodeIDs, str(n["id"]))
-				if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
+				if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", n["id"])) > 0 {
 					fail("NODE_BUSY", "目标节点正在更新管理配置，请稍后重新预览", 409)
 				}
 			}

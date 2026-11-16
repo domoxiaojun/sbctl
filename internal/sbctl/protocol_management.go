@@ -335,7 +335,10 @@ func (m NodeMaintenance) ReceiptStatus(id, inputHash string) M {
 	return M{"state": "missing"}
 }
 
-func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
+func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M { return m.apply(id, p, nil) }
+
+// apply restarts the proxy when both changes are nil. At most one is set.
+func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M {
 	validIdentity(id)
 	s := m.Settings
 	lock := fileLock(filepath.Join(s.StateDir, "management.lock"), 90*time.Second)
@@ -349,6 +352,10 @@ func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 		fail("NODE_BUSY", "先恢复原维护任务，再执行其他操作", 409)
 	}
 	inputHash := digest(p)
+	if c != nil {
+		inputHash = digest(c)
+	}
+	changing := p != nil || c != nil
 	receiptPath := filepath.Join(s.StateDir, "maintenance-"+id+".json")
 	if exists(receiptPath) {
 		r := object(read(receiptPath))
@@ -375,7 +382,7 @@ func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 		}
 	} else {
 		rt := engine.Runtime()
-		if !rt.Running && p != nil {
+		if !rt.Running && changing {
 			fail("NODE_NOT_READY", "节点运行绑定异常，请先检查并更新绑定", 409)
 		}
 		paths := map[string]string{"config": filepath.Join(s.ConfigDir, "config.json"), "template": s.TemplateFile, "settings": m.SettingsPath, "runtime": filepath.Join(s.SafetyDir, "runtime.json"), "guard": filepath.Join(s.SafetyDir, "manifest"), "disabled": filepath.Join(s.StateDir, "disabled-protocols.json")}
@@ -392,8 +399,11 @@ func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 		if p != nil {
 			next, config, template, disabled = planProtocol(s, config, template, disabled, *p)
 		}
+		if c != nil {
+			config, template = planConfig(config, template, *c)
+		}
 		after := object(canonical(before))
-		if p != nil {
+		if changing {
 			after["config"] = string(append(canonical(config), '\n'))
 			after["template"] = string(append(canonical(template), '\n'))
 			after["disabled"] = string(canonical(disabled))
@@ -410,7 +420,7 @@ func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 		candidate := filepath.Join(s.StateDir, "protocol-candidate.json")
 		atomicWrite(candidate, []byte(str(after["config"])), 0600)
 		m.Engine(next).Check(candidate)
-		plan = M{"input_hash": inputHash, "paths": paths, "before": before, "after": after, "settings": next, "epoch_before": rt.Epoch(), "restart": p == nil || hash([]byte(str(before["config"]))) != hash([]byte(str(after["config"])))}
+		plan = M{"input_hash": inputHash, "paths": paths, "before": before, "after": after, "settings": next, "epoch_before": rt.Epoch(), "restart": !changing || hash([]byte(str(before["config"]))) != hash([]byte(str(after["config"])))}
 		atomicWrite(planPath, canonical(plan), 0600)
 		plan = object(canonical(plan))
 	}

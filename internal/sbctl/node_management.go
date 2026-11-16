@@ -31,6 +31,7 @@ type NodeJobInput struct {
 	DesiredContainer string          `json:"desired_container,omitempty"`
 	DesiredImage     string          `json:"desired_image,omitempty"`
 	Change           *ProtocolChange `json:"protocol_change,omitempty"`
+	ConfigChange     *ConfigChange   `json:"config_change,omitempty"`
 }
 
 func (d *NodeDraft) Validate() {
@@ -84,7 +85,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 	if (input.DesiredContainer != "" && !containerName(input.DesiredContainer)) || (input.DesiredImage != "" && !imageReference(input.DesiredImage)) {
 		fail("INVALID_REQUEST", "目标容器名或镜像名称格式无效", 422)
 	}
-	if !contains([]string{"inspect", "configure", "check", "protocols", "protocol_change", "restart"}, input.Kind) {
+	if !contains([]string{"inspect", "configure", "check", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
 		fail("INVALID_REQUEST", "未知节点操作", 422)
 	}
 	if input.Kind != "inspect" {
@@ -97,6 +98,14 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 		input.Change.Validate()
 	} else if input.Change != nil {
 		fail("INVALID_REQUEST", "该操作不接受协议变更", 422)
+	}
+	if input.Kind == "config_change" {
+		if input.ConfigChange == nil {
+			fail("INVALID_REQUEST", "缺少配置变更", 422)
+		}
+		input.ConfigChange.Validate()
+	} else if input.ConfigChange != nil {
+		fail("INVALID_REQUEST", "该操作不接受配置变更", 422)
 	}
 	var out M
 	path := "/node-jobs"
@@ -131,11 +140,11 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			if integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", input.Draft.ID)) > 0 {
 				fail("NODE_BUSY", "节点仍有授权任务，请等待处理完成", 409)
 			}
-			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE (node_id=? OR json_extract(input_json,'$.draft.connection.address')=?) AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", input.Draft.ID, input.Draft.Connection.Address)) > 0 {
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE (node_id=? OR json_extract(input_json,'$.draft.connection.address')=?) AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", input.Draft.ID, input.Draft.Connection.Address)) > 0 {
 				fail("NODE_BUSY", "节点配置任务正在执行", 409)
 			}
 		}
-		if input.Kind == "protocol_change" || input.Kind == "restart" {
+		if contains([]string{"protocol_change", "config_change", "restart"}, input.Kind) {
 			node := d.One("SELECT COALESCE(m.version,0) AS version FROM nodes n LEFT JOIN node_management m ON n.id=m.node_id WHERE n.id=?", input.Draft.ID)
 			if node == nil {
 				fail("NOT_FOUND", "节点不存在", 404)
@@ -143,11 +152,11 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			if integer(node["version"]) != input.ExpectedVersion {
 				fail("STALE_REVISION", "节点管理版本已变化，请重新读取", 409)
 			}
-			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", input.Draft.ID)) > 0 || integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", input.Draft.ID)) > 0 {
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", input.Draft.ID)) > 0 || integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", input.Draft.ID)) > 0 {
 				fail("NODE_BUSY", "节点仍有配置或授权任务，请完成后操作", 409)
 			}
 		}
-		if contains([]string{"check", "protocols", "protocol_change", "restart"}, input.Kind) {
+		if contains([]string{"check", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
 			node := d.One("SELECT connection_json FROM nodes WHERE id=?", input.Draft.ID)
 			if node == nil {
 				fail("NOT_FOUND", "节点不存在", 404)
@@ -214,7 +223,7 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 		if integer(n["version"]) != version {
 			fail("STALE_REVISION", "节点信息已变化，请重新打开编辑", 409)
 		}
-		if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", id)) > 0 {
+		if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','config_change','restart') AND state IN ('queued','running')", id)) > 0 {
 			fail("NODE_BUSY", "节点接管任务进行中，请稍后编辑", 409)
 		}
 		checkGroupChange(d, id, draft.GroupID)
@@ -233,7 +242,7 @@ func (w *Worker) ClaimNodeJob() M {
 	var job M
 	ts := timestamp()
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
-		job = d.One("SELECT j.* FROM node_jobs j WHERE j.state IN ('queued','running') AND j.lease_until<? AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) AND (j.kind NOT IN ('configure','protocol_change','restart') OR NOT EXISTS(SELECT 1 FROM outbox o WHERE o.node_id=j.node_id AND o.state<>'done' AND o.lease_until>=?)) ORDER BY j.created_at,j.id LIMIT 1", ts, ts, ts)
+		job = d.One("SELECT j.* FROM node_jobs j WHERE j.state IN ('queued','running') AND j.lease_until<? AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) AND (j.kind NOT IN ('configure','protocol_change','config_change','restart') OR NOT EXISTS(SELECT 1 FROM outbox o WHERE o.node_id=j.node_id AND o.state<>'done' AND o.lease_until>=?)) ORDER BY j.created_at,j.id LIMIT 1", ts, ts, ts)
 		if job != nil {
 			d.Exec("UPDATE node_jobs SET state='running',lease_owner=?,lease_until=?,updated_at=? WHERE id=?", w.Owner, ts+360, now(), job["id"])
 		}
@@ -257,8 +266,13 @@ func (w *Worker) RunNodeJob(job M) {
 	err := Attempt(func() {
 		draft := input.Draft
 		switch input.Kind {
-		case "protocols", "protocol_change", "restart":
+		case "protocols", "protocol_change", "config_change", "restart":
 			result = w.executeNodeAction(job, input)
+		case "config":
+			result = w.Transport.Call(draft.Connection, M{"action": "config"}, false)
+			if str(result["node_id"]) != draft.ID || !hashRE.MatchString(str(result["hash"])) {
+				fail("NODE_RESPONSE", "配置读取回执无效", 409)
+			}
 		case "inspect":
 			result = w.Transport.Call(draft.Connection, M{"action": "inspect", "container": draft.Container, "config_dir": draft.ConfigDir, "public_host": draft.PublicHost, "server_name": draft.ServerName}, false)
 			stats := w.Transport.Call(draft.Connection, M{"action": "inspect"}, true)

@@ -39,8 +39,14 @@ func protect(next http.Handler) http.Handler {
 		}
 	})
 }
-func requestBody(w http.ResponseWriter, r *http.Request) []byte {
-	r.Body = http.MaxBytesReader(w, r.Body, 32768)
+
+// requestBody reads at most 32 KiB unless the route sets a larger limit.
+func requestBody(w http.ResponseWriter, r *http.Request, limit ...int64) []byte {
+	size := int64(32768)
+	if len(limit) > 0 {
+		size = limit[0]
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, size)
 	b, e := io.ReadAll(r.Body)
 	if e != nil {
 		fail("INPUT_TOO_LARGE", "请求超过大小限制", 413)
@@ -176,7 +182,8 @@ func API(c *Control) http.Handler {
 	auth("GET /api/v1/node-onboarding", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Onboarding()) })
 	auth("POST /api/v1/node-jobs", func(w http.ResponseWriter, r *http.Request, a M) {
 		var input NodeJobInput
-		decode(requestBody(w, r), &input)
+		// A configuration section such as the routing rules exceeds the default.
+		decode(requestBody(w, r, 2*maxConfigSection), &input)
 		jsonResponse(w, 202, c.SubmitNodeJob(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input))
 	})
 	auth("GET /api/v1/node-jobs/{id}", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.NodeJob(r.PathValue("id"))) })
