@@ -2,6 +2,17 @@ package sbctl
 
 import "strings"
 
+// callNewerAction sends an action that older node tools do not know. Their
+// generic rejection becomes an instruction the administrator can act on.
+func callNewerAction(t Transport, link NodeConnection, body M) (result M) {
+	if err := Attempt(func() { result = t.Call(link, body, false) }); err != nil {
+		if PublicFault(err).Code == "ACTION_REJECTED" {
+			fail("NODE_UPGRADE_REQUIRED", "节点工具版本不支持此操作，请先升级该节点的 sbctl-node 再重试", 409)
+		}
+		panic(err)
+	}
+	return result
+}
 func mutatingNodeJob(kind string) bool {
 	return contains([]string{"configure", "protocol_change", "config_change", "restart"}, kind)
 }
@@ -48,7 +59,7 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 		// the node already finished (its reply was lost) and one it was interrupted
 		// in: the node refuses every authorization request while that interrupted
 		// plan holds its barrier, so waiting for the queue would never end.
-		status := w.Transport.Call(input.Draft.Connection, M{"action": "maintenance_receipt", "request_id": str(job["id"]), "input_hash": inputHash}, false)
+		status := callNewerAction(w.Transport, input.Draft.Connection, M{"action": "maintenance_receipt", "request_id": str(job["id"]), "input_hash": inputHash})
 		switch status["state"] {
 		case "completed":
 			recovered = mapping(status["result"])
@@ -70,7 +81,9 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 		body = M{"action": "restart", "request_id": str(job["id"])}
 	}
 	result := recovered
-	if result == nil {
+	if result == nil && input.Kind == "config_change" {
+		result = callNewerAction(w.Transport, input.Draft.Connection, body)
+	} else if result == nil {
 		result = w.Transport.Call(input.Draft.Connection, body, false)
 	}
 	if str(result["node_id"]) != id {

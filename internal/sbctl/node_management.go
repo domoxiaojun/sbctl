@@ -269,7 +269,7 @@ func (w *Worker) RunNodeJob(job M) {
 		case "protocols", "protocol_change", "config_change", "restart":
 			result = w.executeNodeAction(job, input)
 		case "config":
-			result = w.Transport.Call(draft.Connection, M{"action": "config"}, false)
+			result = callNewerAction(w.Transport, draft.Connection, M{"action": "config"})
 			if str(result["node_id"]) != draft.ID || !hashRE.MatchString(str(result["hash"])) {
 				fail("NODE_RESPONSE", "配置读取回执无效", 409)
 			}

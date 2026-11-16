@@ -202,3 +202,28 @@ func TestNodeJobRequestsMayCarryALargeSection(t *testing.T) {
 		t.Fatalf("node job requests must accept a configuration section: %v", err)
 	}
 }
+
+// outdatedNode rejects every action added after its release.
+type outdatedNode struct{}
+
+func (outdatedNode) Call(_ NodeConnection, body M, _ bool) M {
+	fail("ACTION_REJECTED", "节点动作或参数无效", 409)
+	return nil
+}
+
+func TestConfigJobsExplainThatTheNodeToolIsOutdated(t *testing.T) {
+	c := testControl(t)
+	w := NewWorker(c, outdatedNode{})
+	change := ConfigChange{BaseHash: strings.Repeat("a", 64), Section: "log", Content: M{"level": "warn"}}
+	for key, input := range map[string]NodeJobInput{
+		"outdated-config-read-01": {Kind: "config", Draft: draftFor(c)},
+		"outdated-config-edit-01": {Kind: "config_change", Draft: draftFor(c), ConfigChange: &change},
+	} {
+		submitted := c.SubmitNodeJob("admin", key, input)
+		w.NodeStep()
+		job := c.NodeJob(str(submitted["job_id"]))
+		if job["state"] != "failed" || job["error_code"] != "NODE_UPGRADE_REQUIRED" || !strings.Contains(str(job["message"]), "升级") {
+			t.Fatalf("%s: expected an upgrade instruction, got %v", input.Kind, job)
+		}
+	}
+}
