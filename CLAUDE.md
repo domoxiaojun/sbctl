@@ -44,7 +44,7 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 
 `cmd/sbctl`（主控）和 `cmd/sbctl-node`（节点）只是 `sbctl.ControllerMain` / `sbctl.NodeMain` 的外壳，全部逻辑在单一包 `internal/sbctl`，子命令分发在 `cli.go`。
 
-主控以同一镜像的四个 Compose 服务运行（`ops/controller/compose.yaml`），进程之间**只通过 SQLite 和文件交接**，各自挂载最小权限：
+主控以同一镜像的四个 Compose 服务运行（`ops/controller/compose.yaml`），进程之间**只通过 SQLite 和文件交接**，各自挂载最小权限。worker（`Worker.Run`）和 sync（`SyncNodes`）对不同节点并行，同一节点的互斥由领取任务的 SQL 保证：
 
 | 服务 | 子命令 | 读写 |
 | --- | --- | --- |
@@ -55,13 +55,13 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 
 ### 主控到节点：只有受限 SSH 固定命令
 
-`transport.go` 的 `SSH.Call` 通过 `/usr/bin/ssh` 以 stdin/stdout 传 JSON。节点上两个账号被 `authorized_keys` 的 `from=,restrict,command=` 固定到入口脚本（`ops/controller/node/*-entry.sh`）：发布账号进入 `sbctl-node rpc`，统计账号进入 `sbctl-node stats-rpc`。管理地址必须是 Tailscale 地址。节点侧唯一的动作表是 `node_inspection.go` 的 `NodeRPC`（`status`/`submit`、`inspect`、`configure`、`diagnose`、`protocols`、`protocol_change`、`restart`、`maintenance_receipt`）；不存在任意远程命令，新增能力意味着新增一个受校验的动作。
+`transport.go` 的 `SSH.Call` 通过 `/usr/bin/ssh` 以 stdin/stdout 传 JSON。节点上两个账号被 `authorized_keys` 的 `from=,restrict,command=` 固定到入口脚本（`ops/controller/node/*-entry.sh`）：发布账号进入 `sbctl-node rpc`，统计账号进入 `sbctl-node stats-rpc`。管理地址必须是 Tailscale 地址。节点侧唯一的动作表是 `node_inspection.go` 的 `NodeRPC`（`status`/`submit`、`inspect`、`configure`、`diagnose`、`protocols`、`protocol_change`、`config`、`config_change`、`restart`、`maintenance_receipt`）；不存在任意远程命令，新增能力意味着新增一个受校验的动作，并且主控与节点工具要一起升级。
 
 ### 三条链路
 
 1. **授权下发**（新增/禁用/启用用户、调整授权）。`Control.*`（`control.go`、`user_grants.go`、`user_management.go`）在一个写事务里完成幂等重放、改写 users/credentials/revocations，并写入 `operations` + `operation_targets` + `outbox`。主控 worker 的 `Step` 领取 outbox 租约，为该节点生成**完整期望状态**的 `NodeRequest`（全部有效凭据 + 全部撤销指纹，单调 `node_revision`，`payload_hash` 封印；内容相同则复用旧请求），经 SSH `submit`。节点 `Agent.Accept` 持久接收，`sbctl-node worker` 循环 `ApplyOnce`：渲染模板 → Docker 预检 → 写 `config.json` 与启动守卫 → 重建 sing-box 容器 → 用真实协议探针验证（新凭据可用、被撤销凭据不可用）→ 回执 `verified`。主控轮询到 `verified` 后由 `Reconcile` 发布订阅并汇总操作状态。
-2. **节点维护**（接管、协议入口增改启停删、受控重启）。`POST /api/v1/node-jobs` 写入 `node_jobs`，worker 的 `NodeStep` 执行；节点侧 `NodeMaintenance.Apply`（`protocol_management.go`）先落盘包含全部受影响文件前后内容的计划，再写入、重启、探针验证，失败自动回滚并保留回执。它与授权链路互斥（`NODE_BUSY`），靠 `node_management.version` 与 `management_job_id` 做丢回执后的恢复。
-3. **流量统计**。节点 `sbctl-node collect` 每 5 秒用 grpcurl 读取 sing-box V2Ray API 计数（`reset:false`），`Ledger.Ingest` 按容器运行周期（epoch）把增量累加进 ledger.db 并导出 `export.json`。主控 `sync` 用统计账号拉取，`Traffic.Ingest` 校验序号、累计不回退、统计身份不变后写入 traffic.db，并按 UTC+8 记录日增量。API 侧 `Views`（`views.go`、`traffic_history.go`）只读这些导出文件。统计有三个互不相加的角度：受管用户（`usr_*`）、入口（inbound tag）、节点本地命名用户。
+2. **节点维护**（接管、协议入口增改启停删、配置片段修改、受控重启）。`POST /api/v1/node-jobs` 写入 `node_jobs`，worker 的 `RunNodeJob` 执行；节点侧 `NodeMaintenance.apply`（`protocol_management.go`，配置片段见 `config_management.go`）先落盘包含全部受影响文件前后内容的计划，再写入、重启、探针验证，失败自动回滚并保留回执。它与同一节点的授权链路互斥：提交时有待处理授权返回 `NODE_BUSY`，执行时遇到则保持排队；靠 `node_management.version`、`management_job_id` 和节点的 `maintenance_receipt` 做丢回执与中断后的恢复。新增一种会改动节点的任务类型时，SQL 里的 `kind IN ('configure','protocol_change','config_change','restart')` 列表、`mutatingNodeJob` 和 `transport.go` 的超时列表都要同步。
+3. **流量统计**。节点 `sbctl-node collect` 每 5 秒用 grpcurl 读取 sing-box V2Ray API 计数（`reset:false`），`Ledger.Ingest` 按容器运行周期（epoch）把增量累加进 ledger.db 并导出 `export.json`。主控 `sync` 用统计账号拉取，`Traffic.Ingest` 校验序号、累计不回退、统计身份不变后写入 traffic.db，并按 UTC+8 记录日增量和小时增量（小时保留约 62 天，按月趋势由日增量折叠）。API 侧 `Views`（`views.go`、`traffic_history.go`）只读这些导出文件。统计有三个互不相加的角度：受管用户（`usr_*`）、入口（inbound tag）、节点本地命名用户。
 
 在这个系统里，**配置生效等于重建 sing-box 容器**：没有热重载，任何授权或协议变更都会让该节点的现有连接短暂中断。容器入口是 `guard.sh`，只有 `safety/manifest` 为 `allowed` 且 `config.json` 的 SHA-256 与清单一致才启动，用来保证撤销过的配置不会在重启后复活。
 
