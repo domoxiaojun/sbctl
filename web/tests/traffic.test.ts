@@ -53,3 +53,36 @@ it('旧用户分类网址不再启用该分类或用户筛选', () => {
  expect(search.node).toBe('node_hk')
  expect(search.from).toBe('2026-01-01')
 })
+
+import { hourlyAllowed, trafficCsv } from '../src/lib/traffic'
+it('按小时趋势限制在 7 天内并与按日合计一致', () => {
+ expect(hourlyAllowed('', '')).toBe(true)
+ expect(hourlyAllowed('2026-01-01', '2026-01-07')).toBe(true)
+ expect(hourlyAllowed('2026-01-01', '2026-01-08')).toBe(false)
+ expect(trafficSearch({ granularity: 'hour' }).granularity).toBe('hour')
+ expect(trafficSearch({ granularity: 'week' }).granularity).toBeUndefined()
+ const now = Date.parse('2026-03-10T05:30:00Z'), seed = fixtures(now), day = calendarDate(now)
+ const params = { scope: 'inbounds', from: calendarDate(now - 86400000), to: day }
+ const daily = demoTraffic(seed, new URLSearchParams(params), now), hourly = demoTraffic(seed, new URLSearchParams({ ...params, granularity: 'hour' }), now)
+ expect(daily.granularity).toBe('day')
+ expect(hourly.granularity).toBe('hour')
+ // 昨天 24 小时，加上今天 00 时至当前 13 时（UTC+8）。
+ expect(hourly.trend).toHaveLength(24 + 14)
+ expect(hourly.trend.at(-1)!.date).toBe(`${day}T13:00`)
+ const sum = (points: typeof daily.trend) => trafficTotals(points.map(p => ({ upload_bytes: p.upload_bytes ?? '0', download_bytes: p.download_bytes ?? '0' })))
+ expect(sum(hourly.trend)).toEqual(sum(daily.trend))
+ expect(() => demoTraffic(seed, new URLSearchParams({ from: '2026-03-01', to: '2026-03-10', granularity: 'hour' }), now)).toThrow()
+})
+it('导出 CSV 保留精确字节并防止公式注入', () => {
+ const now = Date.now(), seed = fixtures(now), node = seed.nodes[0]
+ for (const other of seed.nodes.slice(1)) { other.inbounds = []; other.local_users = [] }
+ node.inbounds = [{ tag: '=cmd|"x",1', protocol: 'vmess', port: 443, active: false, started_at: '2026-01-01T00:00:00Z', upload_bytes: '9007199254740993', download_bytes: '7' }]
+ node.local_users = [{ name: '张三', active: true, started_at: '2026-01-02T00:00:00Z', upload_bytes: '1', download_bytes: '2' }]
+ const inbounds = trafficCsv(demoTraffic(seed, new URLSearchParams(), now), 'inbounds')
+ expect(inbounds.startsWith('﻿节点,节点 ID,入口,协议,端口,记录状态,上传字节,下载字节,合计字节,首次纳入采集,统计范围\r\n')).toBe(true)
+ const row = inbounds.split('\r\n')[1]
+ expect(row).toContain(`"'=cmd|""x"",1",vmess,443,已移除,9007199254740993,7,9007199254741000,2026-01-01T00:00:00Z,全部累计`)
+ const local = trafficCsv(demoTraffic(seed, new URLSearchParams({ scope: 'local' }), now), 'local')
+ expect(local.split('\r\n')[1]).toBe(`${node.name},${node.id},张三,当前,1,2,3,2026-01-02T00:00:00Z,全部累计`)
+ expect(local.endsWith('\r\n')).toBe(true)
+})

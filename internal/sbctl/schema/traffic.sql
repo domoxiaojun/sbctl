@@ -12,3 +12,7 @@ CREATE TABLE IF NOT EXISTS history_days (
  node_id TEXT NOT NULL, day TEXT NOT NULL, document TEXT NOT NULL, dirty INTEGER NOT NULL DEFAULT 1,
  PRIMARY KEY(node_id, day)
 );
+CREATE TABLE IF NOT EXISTS history_hours (
+ node_id TEXT NOT NULL, hour TEXT NOT NULL, document TEXT NOT NULL, dirty INTEGER NOT NULL DEFAULT 1,
+ PRIMARY KEY(node_id, hour)
+);

@@ -3,11 +3,11 @@ import { totalBytes } from './format'
 
 export type TrafficFilters = {
  q?: string; node?: string; protocol?: string; activity?: string; local_user?: string;
- from?: string; to?: string; scope?: 'inbounds' | 'local'; sort?: 'name' | 'bytes' | 'created'
+ from?: string; to?: string; scope?: 'inbounds' | 'local'; sort?: 'name' | 'bytes' | 'created'; granularity?: 'hour'
 }
 export function trafficSearch(raw: Record<string, unknown>): TrafficFilters {
  const text = (key: string) => typeof raw[key] === 'string' ? raw[key].slice(0, 100) : undefined
- return { local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined }
+ return { local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined, granularity: raw.granularity === 'hour' ? 'hour' : undefined }
 }
 export function calendarDate(value = Date.now()) { return new Date(value + 8 * 3600_000).toISOString().slice(0, 10) }
 export function presetDates(preset: string, now = Date.now()) {
@@ -26,6 +26,10 @@ export function dateError(from?: string, to?: string) {
  if (to > calendarDate()) return '结束日期不能晚于今天。'
  if (Date.parse(to) - Date.parse(from) > 365 * 86400_000) return '一次最多查询 366 天。'
  return ''
+}
+// 按小时趋势一次最多 7 天；未选日期时服务端返回最近两天。
+export function hourlyAllowed(from?: string, to?: string) {
+ return !from || !to || Date.parse(to) - Date.parse(from) <= 6 * 86400_000
 }
 export function sortTraffic<T extends { upload_bytes: string; download_bytes: string }>(rows: T[], sort: string | undefined, name: (row: T) => string) {
  return [...rows].sort((a,b) => { if (sort !== 'name') { const diff = BigInt(totalBytes(b)) - BigInt(totalBytes(a)); if (diff !== 0n) return diff > 0n ? 1 : -1 } return name(a).localeCompare(name(b)) })
@@ -53,4 +57,19 @@ export function trafficRankings(report: Schema['TrafficReport'], scope: TrafficF
   else for (const row of node.local_users) add(byIdentity, JSON.stringify([node.id, row.name]), `${row.name} · ${node.name}`, row, { node: node.id, local_user: row.name })
  }
  return { nodes: sortTraffic([...byNode.values()], 'bytes', r => r.name), identities: sortTraffic([...byIdentity.values()], 'bytes', r => r.name) }
+}
+
+// 以 = + - @ 开头的文本会被表格软件当作公式，导出时加前缀使其保持为文本。
+function csvCell(value: string | number) {
+ const text = /^[=+\-@\t\r]/.test(String(value)) ? `'${value}` : String(value)
+ return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text
+}
+export function trafficCsv(report: Schema['TrafficReport'], scope: TrafficFilters['scope'] = 'inbounds') {
+ const range = report.from && report.to ? `${report.from} 至 ${report.to}` : '全部累计'
+ const state = (active: boolean) => active ? '当前' : '已移除'
+ const nodes = knownTrafficNodes(report)
+ const table = scope === 'local'
+  ? [['节点', '节点 ID', '本地用户', '记录状态', '上传字节', '下载字节', '合计字节', '首次纳入采集', '统计范围'], ...nodes.flatMap(n => n.local_users.map(u => [n.name, n.id, u.name, state(u.active), u.upload_bytes, u.download_bytes, totalBytes(u), u.started_at, range]))]
+  : [['节点', '节点 ID', '入口', '协议', '端口', '记录状态', '上传字节', '下载字节', '合计字节', '首次纳入采集', '统计范围'], ...nodes.flatMap(n => n.inbounds.map(i => [n.name, n.id, i.tag, i.protocol, i.port, state(i.active), i.upload_bytes, i.download_bytes, totalBytes(i), i.started_at, range]))]
+ return '\uFEFF' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }
