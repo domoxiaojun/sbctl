@@ -34,7 +34,7 @@ pnpm exec vitest run tests/traffic.test.ts -t '用例名'              # 单个�
 pnpm exec playwright test e2e/traffic.spec.ts --grep '流量筛选'      # 单个浏览器场景
 ```
 
-e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dist`）两个服务，并拒绝复用已有服务。
+e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dist`）两个服务，并拒绝复用已有服务。完整套件里的“视觉”用例会把截图写进 `docs/qa/management-20261116/overview-*.png`（已提交的历史验收材料）；不是在做新的验收截图时，跑完用 `git restore docs/qa/management-20261116/` 还原。
 
 测试全部使用临时目录里的内嵌 SQLite 和 fake（`fakeTransport`、`fakeEngine`），**不需要也不应在本机运行 Docker、安装数据库或连接 VPS**；镜像只在 CI/Linux 服务器构建。
 
