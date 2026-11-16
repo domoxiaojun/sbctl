@@ -1,6 +1,44 @@
 import { test, expect } from '@playwright/test'
 import { fixtures } from '../src/demo/fixtures'
 import { calendarDate } from '../src/lib/traffic'
+import { demoTraffic } from '../src/demo/traffic'
+
+for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地用户 ${width}px`, async ({page},testInfo) => {
+ await page.setViewportSize({width,height:1000})
+ const seed=fixtures(Date.now()), node=seed.nodes[0], today=calendarDate()
+ node.local_users=[{name:'local-existing',active:true,started_at:new Date().toISOString(),upload_bytes:'10240',download_bytes:'20480'}]
+ const requests: URL[]=[]
+ await page.route('**/api/v1/**',async route=>{
+  const url=new URL(route.request().url())
+  if(url.pathname.endsWith('/session'))return route.fulfill({json:{admin_id:'test',display_name:'测试',csrf_token:'test'}})
+  if(url.pathname.endsWith('/traffic')){
+   requests.push(url)
+   return route.fulfill({json:demoTraffic(seed,url.searchParams,Date.now())})
+  }
+  return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'test'}})
+ })
+ await page.goto(`http://127.0.0.1:14186/usage?scope=managed&user=usr-old&node=${node.id}&from=${today}&to=${today}`)
+ const scopes=page.getByRole('group',{name:'统计范围'})
+ await expect(scopes.getByRole('button')).toHaveCount(2)
+ await expect(scopes.getByRole('button',{name:'sbctl 用户',exact:true})).toHaveCount(0)
+ await expect(scopes.getByRole('button',{name:'协议入口',exact:true})).toHaveAttribute('aria-pressed','true')
+ await expect(page.getByRole('button',{name:'选择统计日期：今天'})).toBeVisible()
+ await expect(page.getByRole('combobox',{name:'筛选流量节点'})).toContainText(node.name)
+ await expect(page.getByRole('button',{name:/已定位用户/})).toHaveCount(0)
+ await expect(page.getByRole('link',{name:'管理所选用户',exact:true})).toHaveCount(0)
+ await scopes.getByRole('button',{name:'节点本地用户',exact:true}).click()
+ await expect(page.getByText('local-existing',{exact:true}).filter({visible:true})).toBeVisible()
+ await page.getByRole('region',{name:'本地用户用量排行'}).getByRole('button').first().click()
+ await expect(page).toHaveURL(/local_user=local-existing/)
+ await page.reload()
+ await expect(page.getByRole('button',{name:'已定位用户：local-existing'})).toBeVisible()
+ await page.getByRole('button',{name:'刷新统计',exact:true}).click()
+ await expect(page.getByRole('button',{name:'刷新统计',exact:true})).toBeEnabled()
+ expect(requests.length).toBeGreaterThan(1)
+ expect(requests.every(u=>u.searchParams.get('scope')!=='managed'&&!u.searchParams.has('user'))).toBe(true)
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+ await page.screenshot({path:testInfo.outputPath(`categories-${width}.png`),fullPage:true})
+})
 
 for (const width of [375,1440]) test(`流量筛选、日期、刷新和节点跳转 ${width}px`,async({page},testInfo)=>{
  await page.setViewportSize({width,height:1000})
@@ -92,6 +130,7 @@ for (const width of [375, 1440]) test(`统计日趋势与排行联动 ${width}px
  const seed = fixtures(Date.now()), first=seed.nodes[0]
  first.inbounds=[{tag:'vmess',protocol:'vmess',port:23323,active:true,started_at:first.quality.started_at!,upload_bytes:'1073741824',download_bytes:'2147483648'}]
  first.inbound_upload_bytes='1073741824'; first.inbound_download_bytes='2147483648'
+ first.local_users=Array.from({length:12},(_,i)=>({name:`local-${i}`,active:true,started_at:first.quality.started_at!,upload_bytes:String((i+1)*1024),download_bytes:String((i+1)*4096)}))
  await page.addInitScript(seed=>sessionStorage.setItem('sbctl-f0-synthetic-state-v1',JSON.stringify({...seed,requests:{},signedIn:true})),seed)
  await page.goto('/usage')
  await page.getByRole('button',{name:/选择统计日期/}).click()
@@ -119,11 +158,11 @@ for (const width of [375, 1440]) test(`统计日趋势与排行联动 ${width}px
  await page.getByRole('option',{name:'已移除记录',exact:true}).click()
  await expect(page.getByText('没有可显示的入口记录')).toBeVisible()
  await page.getByRole('button',{name:'重置筛选',exact:true}).click()
- await page.getByRole('button',{name:'sbctl 用户',exact:true}).click()
- await expect(page.getByRole('region',{name:'用户用量排行'})).toBeVisible()
- const userButton=page.getByRole('region',{name:'用户用量排行'}).getByRole('button').first()
+ await page.getByRole('button',{name:'节点本地用户',exact:true}).click()
+ await expect(page.getByRole('region',{name:'本地用户用量排行'})).toBeVisible()
+ const userButton=page.getByRole('region',{name:'本地用户用量排行'}).getByRole('button').first()
  await userButton.click()
- await expect(page).toHaveURL(/user=usr-/)
+ await expect(page).toHaveURL(/local_user=local-/)
  await expect(page.getByRole('button',{name:/已定位用户/})).toBeVisible()
  await page.reload()
  await expect(page.getByRole('button',{name:/已定位用户/})).toBeVisible()

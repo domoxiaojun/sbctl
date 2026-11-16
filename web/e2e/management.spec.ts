@@ -30,7 +30,8 @@ for (const width of [375, 1440]) test(`删除已归档用户：确认、批量�
   await page.goto(`/users/${data.users[0].id}`)
   await expect(page.getByRole('heading', { name: '暂时无法读取数据', exact: true })).toBeVisible()
   await page.goto(`/usage?scope=managed&user=${data.users[0].id}`)
-  await expect(page.getByText('已删除用户 · 保留历史用量', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '协议入口', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'sbctl 用户', exact: true })).toHaveCount(0)
   await expect(page.getByRole('link', { name: '管理所选用户', exact: true })).toHaveCount(0)
 })
 

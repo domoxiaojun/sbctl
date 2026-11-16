@@ -307,6 +307,6 @@ for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 $
   await page.getByRole('button',{name:'节点本地用户',exact:true}).click()
   await expect(page.getByText('本地用户',{exact:true}).filter({visible:true})).toBeVisible()
   await expect(page.getByText('2.00 KiB',{exact:true}).first()).toBeVisible()
-  await page.getByRole('button',{name:'sbctl 用户',exact:true}).click()
-  await expect(page.getByRole('heading', { name: '没有匹配的 sbctl 用户用量' })).toBeVisible()
+  await expect(page.getByRole('group',{name:'统计范围'}).getByRole('button')).toHaveCount(2)
+  await expect(page.getByRole('button',{name:'sbctl 用户',exact:true})).toHaveCount(0)
 })
