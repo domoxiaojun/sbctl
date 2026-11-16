@@ -1,0 +1,6 @@
+{
+  "image": "ghcr.io/domoxiaojun/sbctl@sha256:366e79e17357e9e82f76bb027abf715d7b2bf26a975754d7deed2d3efe27c195",
+  "tag": "ghcr.io/domoxiaojun/sbctl:v0.6.1",
+  "config_id": "sha256:12e645cce38c921c1516019db13c3e0d95d6de922304b22686e8b4e172ada422",
+  "platform": "linux/amd64"
+}

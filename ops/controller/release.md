@@ -21,7 +21,7 @@
 
 程序故障可以恢复旧程序和旧镜像。若已经执行了授权或撤销，不能用旧数据库/节点安全状态覆盖新记录；安全状态、撤销意图与配置须保持一致后再恢复。
 
-私有 GHCR 且部署者未配置 `read:packages` 凭据时，可手动运行 `export-image.yml`，传入已发布版本。该流程使用 CI 的仓库包权限读取发行回执中的精确 digest，导出 amd64 镜像及 config ID/SHA-256。通过现有仓库权限下载 `deployment-image` 后传至 Linux 主控，核验归档摘要，使用 `docker load` 导入并核对 image config ID。此时 Compose 使用该已验证版本标签，启动指定 `--pull never`；镜像内容与 GHCR 相同，不把 GitHub 登录凭据写到服务器。
+私有 GHCR 且部署者未配置 `read:packages` 凭据时，可手动运行 `export-image.yml`，传入已发布版本。该流程使用 CI 的仓库包权限读取发行回执中的精确 digest，导出 amd64 镜像及 config ID/SHA-256。通过现有仓库权限下载 `deployment-image` 后传至 Linux 主控，核验归档摘要，使用 `docker load` 导入。导入后再次 `docker save`，核对其中配置 JSON 的 SHA-256 与回执中的 config ID 一致；Docker 29 的 containerd 后端可能将本地 OCI manifest digest 作为 image ID，不能直接用该值和 CI 的配置摘要比较。此时 Compose 使用该已验证版本标签，启动指定 `--pull never`；镜像内容与 GHCR 相同，不把 GitHub 登录凭据写到服务器。
 
 ## 单节点验收
 

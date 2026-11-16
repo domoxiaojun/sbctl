@@ -1,0 +1,20 @@
+{
+  "ledger_id_preserved": true,
+  "ledger_id": "ledger_1b56f2ae913d7099ccc1ac318c2d5124",
+  "sequence_before": 22988,
+  "sequence_after": 23134,
+  "started_at_preserved": true,
+  "historical_users_preserved": true,
+  "inbound_totals_preserved": true,
+  "local_users_preserved": true,
+  "sampled_at": "2026-11-16T04:09:57.665105Z",
+  "quality": {
+    "integrity_state": "ok",
+    "has_historical_gap": true,
+    "gap_count": 12
+  },
+  "node_revision": 12,
+  "managed_users": [],
+  "container_running": true,
+  "inbounds": 19
+}

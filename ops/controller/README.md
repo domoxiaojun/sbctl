@@ -13,7 +13,7 @@
 | sync | sbctl sync | 拉取并持久保存节点统计快照 |
 | subscriptions | sbctl subscriptions | 只读订阅文件，不持有控制库和主密钥 |
 
-镜像为 `sbctl-control:0.5.0`，包含静态 Go 程序及 React 生产包。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。
+当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.6.1`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[0.6.1 验收记录](../../docs/qa/release-v0.6.1-20261116/report.md)。
 
 | 请求 | 后端地址 |
 | --- | --- |
@@ -114,7 +114,7 @@ from="100.70.0.9",restrict,command="/usr/local/bin/sbctl-stats" <统计公钥>
 
 Tailscale 发现由宿主的 `sbctl-discovery.timer` 每 30 秒写入 `/opt/sbctl/data/discovery/tailscale.json`，API 只读该快照。手动填写地址不依赖发现服务。
 
-实时验收命令在 ovhus 执行，会新增专用测试身份并在结束时禁用，验证登录、新增发布、采集同步、订阅下载、禁用与订阅失效：
+实时验收命令在 ovhus 执行，会新增专用测试身份并在结束时禁用，验证登录、新增发布、采集同步、订阅下载、禁用与订阅失效；添加 `--lifecycle` 时继续验证重新启用、新旧链接、原请求恢复及再次禁用：
 
 ```sh
 sbctl acceptance --base-url http://127.0.0.1:18100 \

@@ -1,0 +1,629 @@
+{
+  "check": {
+    "created_at": "2026-11-16T04:07:07.179686Z",
+    "error_code": "",
+    "id": "njob_b876b52f9332e2e6fe182455b48cefc6",
+    "kind": "check",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "checked_at": "2026-11-16T04:07:10.538483Z",
+      "checks": [
+        {
+          "message": "固定命令可达，容器运行信息已读取",
+          "name": "SSH 与容器",
+          "ok": true
+        },
+        {
+          "message": "容器、配置和启动守卫一致",
+          "name": "运行绑定",
+          "ok": true
+        },
+        {
+          "message": "独立统计账号可达且采样在 30 秒内更新",
+          "name": "统计通道",
+          "ok": true
+        }
+      ],
+      "config_dir": "/etc/sing-box",
+      "container": "sing-box",
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "node_id": "yxvmhk",
+      "observed": {
+        "can_adopt": true,
+        "checked_at": "2026-11-16T04:07:10.693183Z",
+        "compose_hash": "69e01d629922138072f5b67070c633b0b204120009a15722d68015e884017ff5",
+        "config_dir": "/etc/sing-box",
+        "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+        "container": "sing-box",
+        "container_id": "484c8e0c19b37b84bba01fca73a68c4f49b3ed2a9da4d0789ef96914bfae110f",
+        "endpoints": [
+          {
+            "alpn": [
+              "h3"
+            ],
+            "port": 5443,
+            "protocol": "anytls",
+            "server": "87.83.104.24",
+            "sni": "hk.domob.org",
+            "tag": "anytls-in"
+          },
+          {
+            "alpn": [
+              "h3"
+            ],
+            "port": 4443,
+            "protocol": "tuic",
+            "server": "87.83.104.24",
+            "sni": "hk.domob.org",
+            "tag": "tuic-in"
+          }
+        ],
+        "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "existing_node_id": "yxvmhk",
+        "gid": 994,
+        "guard_current": true,
+        "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+        "impact": "启用全部 sing-box 入口与命名用户统计，缺少标签或用户名称时补充统计标识；保留凭据、端口与路由。必要时重建容器，连接短暂重连；默认保留当前镜像和容器名。",
+        "managed_credentials": 0,
+        "observation_hash": "899143a9ce238dab33280cdf6a5bd7bb2e6a5498aa76a42a9ef0b030e3df9a66",
+        "preserved_users": 0,
+        "running": true,
+        "server_name": "",
+        "uid": 994,
+        "version": "sing-box version 1.12.9"
+      },
+      "ready": true,
+      "runtime": {
+        "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+        "container_id": "484c8e0c19b37b84bba01fca73a68c4f49b3ed2a9da4d0789ef96914bfae110f",
+        "image_digest": "sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "node_revision": 8,
+        "paused": false,
+        "restarting": false,
+        "running": true,
+        "started_at": "2026-11-14T19:54:24.903207463Z",
+        "statistics": {
+          "inbounds": [
+            {
+              "port": 5434,
+              "protocol": "direct",
+              "tag": "any-basg"
+            },
+            {
+              "port": 5431,
+              "protocol": "direct",
+              "tag": "any-osk"
+            },
+            {
+              "port": 5433,
+              "protocol": "direct",
+              "tag": "any-sg"
+            },
+            {
+              "port": 5432,
+              "protocol": "direct",
+              "tag": "any-tyo"
+            },
+            {
+              "port": 5443,
+              "protocol": "anytls",
+              "tag": "anytls-in"
+            },
+            {
+              "port": 54431,
+              "protocol": "direct",
+              "tag": "anytls-sg"
+            },
+            {
+              "port": 8444,
+              "protocol": "direct",
+              "tag": "hua-hk"
+            },
+            {
+              "port": 15313,
+              "protocol": "shadowsocks",
+              "tag": "sbctl-in-shadowsocks-15313"
+            },
+            {
+              "port": 9443,
+              "protocol": "vless",
+              "tag": "sbctl-in-vless-9443"
+            },
+            {
+              "port": 32324,
+              "protocol": "direct",
+              "tag": "snell-my"
+            },
+            {
+              "port": 15319,
+              "protocol": "shadowsocks",
+              "tag": "ss2022"
+            },
+            {
+              "port": 15343,
+              "protocol": "shadowsocks",
+              "tag": "sszbasg"
+            },
+            {
+              "port": 15340,
+              "protocol": "shadowsocks",
+              "tag": "sszosk"
+            },
+            {
+              "port": 15341,
+              "protocol": "shadowsocks",
+              "tag": "ssztyo"
+            },
+            {
+              "port": 4443,
+              "protocol": "tuic",
+              "tag": "tuic-in"
+            },
+            {
+              "port": 44431,
+              "protocol": "direct",
+              "tag": "tuic-sg"
+            },
+            {
+              "port": 9433,
+              "protocol": "direct",
+              "tag": "vless-my"
+            },
+            {
+              "port": 23323,
+              "protocol": "vmess",
+              "tag": "vmess"
+            },
+            {
+              "port": 23233,
+              "protocol": "direct",
+              "tag": "vmess-sg"
+            }
+          ],
+          "local_users": [
+            "domo",
+            "sbctl-local-sbctl-in-vless-9443-1"
+          ],
+          "total_inbounds": 19
+        },
+        "users": []
+      }
+    },
+    "state": "completed",
+    "updated_at": "2026-11-16T04:07:14.472955Z"
+  },
+  "node": {
+    "download_bytes": "14831",
+    "id": "yxvmhk",
+    "inbound_download_bytes": "993977170",
+    "inbound_upload_bytes": "444186153",
+    "inbounds": [
+      {
+        "active": true,
+        "download_bytes": "3033032",
+        "port": 5434,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.708962Z",
+        "tag": "any-basg",
+        "upload_bytes": "3043787"
+      },
+      {
+        "active": true,
+        "download_bytes": "3252912",
+        "port": 5431,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709027Z",
+        "tag": "any-osk",
+        "upload_bytes": "2927177"
+      },
+      {
+        "active": true,
+        "download_bytes": "8850006",
+        "port": 5433,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709080Z",
+        "tag": "any-sg",
+        "upload_bytes": "7937477"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 5432,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709126Z",
+        "tag": "any-tyo",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "25868",
+        "port": 5443,
+        "protocol": "anytls",
+        "started_at": "2026-11-14T19:48:17.571808Z",
+        "tag": "anytls-in",
+        "upload_bytes": "5920"
+      },
+      {
+        "active": true,
+        "download_bytes": "51936",
+        "port": 54431,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709248Z",
+        "tag": "anytls-sg",
+        "upload_bytes": "39936"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 8444,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709303Z",
+        "tag": "hua-hk",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 15313,
+        "protocol": "shadowsocks",
+        "started_at": "2026-11-14T19:49:10.709360Z",
+        "tag": "sbctl-in-shadowsocks-15313",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "3206",
+        "port": 9443,
+        "protocol": "vless",
+        "started_at": "2026-11-14T19:49:10.709418Z",
+        "tag": "sbctl-in-vless-9443",
+        "upload_bytes": "567"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 32324,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709486Z",
+        "tag": "snell-my",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "2106192",
+        "port": 15319,
+        "protocol": "shadowsocks",
+        "started_at": "2026-11-14T19:49:10.709539Z",
+        "tag": "ss2022",
+        "upload_bytes": "747"
+      },
+      {
+        "active": true,
+        "download_bytes": "495570624",
+        "port": 15343,
+        "protocol": "shadowsocks",
+        "started_at": "2026-11-14T19:49:10.709580Z",
+        "tag": "sszbasg",
+        "upload_bytes": "20883913"
+      },
+      {
+        "active": true,
+        "download_bytes": "112532969",
+        "port": 15340,
+        "protocol": "shadowsocks",
+        "started_at": "2026-11-14T19:49:10.709629Z",
+        "tag": "sszosk",
+        "upload_bytes": "12501180"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 15341,
+        "protocol": "shadowsocks",
+        "started_at": "2026-11-14T19:49:10.709671Z",
+        "tag": "ssztyo",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "25870",
+        "port": 4443,
+        "protocol": "tuic",
+        "started_at": "2026-11-14T19:48:17.571871Z",
+        "tag": "tuic-in",
+        "upload_bytes": "5920"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 44431,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709769Z",
+        "tag": "tuic-sg",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 9433,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709840Z",
+        "tag": "vless-my",
+        "upload_bytes": "0"
+      },
+      {
+        "active": true,
+        "download_bytes": "368523848",
+        "port": 23323,
+        "protocol": "vmess",
+        "started_at": "2026-11-14T19:49:10.709887Z",
+        "tag": "vmess",
+        "upload_bytes": "396838203"
+      },
+      {
+        "active": true,
+        "download_bytes": "707",
+        "port": 23233,
+        "protocol": "direct",
+        "started_at": "2026-11-14T19:49:10.709928Z",
+        "tag": "vmess-sg",
+        "upload_bytes": "1326"
+      }
+    ],
+    "local_users": [
+      {
+        "active": true,
+        "download_bytes": "368523848",
+        "name": "domo",
+        "started_at": "2026-11-14T19:49:10.709982Z",
+        "upload_bytes": "396838203"
+      },
+      {
+        "active": true,
+        "download_bytes": "3206",
+        "name": "sbctl-local-sbctl-in-vless-9443-1",
+        "started_at": "2026-11-14T19:49:10.710022Z",
+        "upload_bytes": "567"
+      }
+    ],
+    "location": "香港",
+    "management_address": "100.70.0.10",
+    "name": "YXVM 香港",
+    "protocols": [
+      "AnyTLS",
+      "TUIC v5"
+    ],
+    "public_host": "87.83.104.24",
+    "quality": {
+      "freshness": "current",
+      "gap_count": 8,
+      "has_historical_gap": true,
+      "integrity_state": "ok",
+      "sampled_at": "2026-11-16T04:06:56.913483Z",
+      "started_at": "2026-11-14T17:11:57.957976Z",
+      "synced_at": "2026-11-16T04:07:02.399456Z"
+    },
+    "region": "hk",
+    "revision": 8,
+    "status": "online",
+    "total_inbounds": 19,
+    "upload_bytes": "3416",
+    "users_count": 0,
+    "version": "1.12.9"
+  },
+  "inspection": {
+    "created_at": "2026-11-16T04:06:50.131463Z",
+    "error_code": "",
+    "id": "njob_0e4d7afbb53449ec8032088d9cac98c1",
+    "kind": "inspect",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "can_adopt": true,
+      "checked_at": "2026-11-16T04:06:53.611526Z",
+      "compose_hash": "69e01d629922138072f5b67070c633b0b204120009a15722d68015e884017ff5",
+      "config_dir": "/etc/sing-box",
+      "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+      "container": "sing-box",
+      "container_id": "484c8e0c19b37b84bba01fca73a68c4f49b3ed2a9da4d0789ef96914bfae110f",
+      "endpoints": [
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 5443,
+          "protocol": "anytls",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "anytls-in"
+        },
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 4443,
+          "protocol": "tuic",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "tuic-in"
+        }
+      ],
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "existing_node_id": "yxvmhk",
+      "gid": 994,
+      "guard_current": true,
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "impact": "启用全部 sing-box 入口与命名用户统计，缺少标签或用户名称时补充统计标识；保留凭据、端口与路由。必要时重建容器，连接短暂重连；默认保留当前镜像和容器名。",
+      "managed_credentials": 0,
+      "observation_hash": "899143a9ce238dab33280cdf6a5bd7bb2e6a5498aa76a42a9ef0b030e3df9a66",
+      "preserved_users": 0,
+      "running": true,
+      "server_name": "",
+      "uid": 994,
+      "version": "sing-box version 1.12.9"
+    },
+    "state": "completed",
+    "updated_at": "2026-11-16T04:06:57.256457Z"
+  },
+  "configured": {
+    "created_at": "2026-11-16T04:06:57.574587Z",
+    "error_code": "",
+    "id": "njob_8fb8cf12139308246f6c0c64a2c18310",
+    "kind": "configure",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "checked_at": "2026-11-16T04:07:06.338417Z",
+      "config_dir": "/etc/sing-box",
+      "container": "sing-box",
+      "endpoints": [
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 5443,
+          "protocol": "anytls",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "anytls-in"
+        },
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 4443,
+          "protocol": "tuic",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "tuic-in"
+        }
+      ],
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "management_job_id": "njob_8fb8cf12139308246f6c0c64a2c18310",
+      "node_id": "yxvmhk",
+      "ready": true,
+      "runtime": {
+        "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+        "container_id": "484c8e0c19b37b84bba01fca73a68c4f49b3ed2a9da4d0789ef96914bfae110f",
+        "image_digest": "sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "node_revision": 8,
+        "paused": false,
+        "restarting": false,
+        "running": true,
+        "started_at": "2026-11-14T19:54:24.903207463Z",
+        "statistics": {
+          "inbounds": [
+            {
+              "port": 5434,
+              "protocol": "direct",
+              "tag": "any-basg"
+            },
+            {
+              "port": 5431,
+              "protocol": "direct",
+              "tag": "any-osk"
+            },
+            {
+              "port": 5433,
+              "protocol": "direct",
+              "tag": "any-sg"
+            },
+            {
+              "port": 5432,
+              "protocol": "direct",
+              "tag": "any-tyo"
+            },
+            {
+              "port": 5443,
+              "protocol": "anytls",
+              "tag": "anytls-in"
+            },
+            {
+              "port": 54431,
+              "protocol": "direct",
+              "tag": "anytls-sg"
+            },
+            {
+              "port": 8444,
+              "protocol": "direct",
+              "tag": "hua-hk"
+            },
+            {
+              "port": 15313,
+              "protocol": "shadowsocks",
+              "tag": "sbctl-in-shadowsocks-15313"
+            },
+            {
+              "port": 9443,
+              "protocol": "vless",
+              "tag": "sbctl-in-vless-9443"
+            },
+            {
+              "port": 32324,
+              "protocol": "direct",
+              "tag": "snell-my"
+            },
+            {
+              "port": 15319,
+              "protocol": "shadowsocks",
+              "tag": "ss2022"
+            },
+            {
+              "port": 15343,
+              "protocol": "shadowsocks",
+              "tag": "sszbasg"
+            },
+            {
+              "port": 15340,
+              "protocol": "shadowsocks",
+              "tag": "sszosk"
+            },
+            {
+              "port": 15341,
+              "protocol": "shadowsocks",
+              "tag": "ssztyo"
+            },
+            {
+              "port": 4443,
+              "protocol": "tuic",
+              "tag": "tuic-in"
+            },
+            {
+              "port": 44431,
+              "protocol": "direct",
+              "tag": "tuic-sg"
+            },
+            {
+              "port": 9433,
+              "protocol": "direct",
+              "tag": "vless-my"
+            },
+            {
+              "port": 23323,
+              "protocol": "vmess",
+              "tag": "vmess"
+            },
+            {
+              "port": 23233,
+              "protocol": "direct",
+              "tag": "vmess-sg"
+            }
+          ],
+          "local_users": [
+            "domo",
+            "sbctl-local-sbctl-in-vless-9443-1"
+          ],
+          "total_inbounds": 19
+        },
+        "users": []
+      },
+      "template_hash": "08d2eab2795d14a4df54ed5d97aa60cb7517ffa329ac8c74f307a56e95fb0832",
+      "version": "sing-box version 1.12.9"
+    },
+    "state": "completed",
+    "updated_at": "2026-11-16T04:07:06.655646Z"
+  }
+}
