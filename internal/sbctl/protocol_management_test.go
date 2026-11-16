@@ -94,6 +94,27 @@ func TestProtocolValidationAndProtection(t *testing.T) {
 		t.Fatal("preflight touched live state")
 	}
 }
+
+func TestProtocolMixedRouteReferences(t *testing.T) {
+	m, _ := maintenanceFixture(t)
+	config := object(read(filepath.Join(m.Settings.ConfigDir, "config.json")))
+	template := object(read(m.Settings.TemplateFile))
+	disabled := protocolState(m.Settings)
+	config["route"] = M{"rules": []M{{"inbound": "anytls-in", "outbound": "direct"}, {"inbound": []string{"tuic-in", "other"}, "outbound": "direct"}}}
+	p := ProtocolChange{Action: "disable", Tag: "legacy", BaseHash: catalogFor(m.Settings, config, disabled).Hash}
+	_, updated, _, _ := planProtocol(m.Settings, config, template, disabled, p)
+	if findInbound(updated, "legacy") != nil || digest(updated["route"]) != digest(config["route"]) {
+		t.Fatal("unrelated scalar route reference blocked removal or changed routing")
+	}
+	for _, selection := range []any{"legacy", []string{"other", "legacy"}} {
+		config["route"] = M{"rules": []M{{"type": "logical", "rules": []M{{"inbound": selection}}}}}
+		p.BaseHash = catalogFor(m.Settings, config, disabled).Hash
+		for _, action := range []string{"disable", "delete"} {
+			p.Action = action
+			expectFault(t, "PROTOCOL_REFERENCED", func() { planProtocol(m.Settings, config, template, disabled, p) })
+		}
+	}
+}
 func TestProtocolRollbackAndRecovery(t *testing.T) {
 	m, e := maintenanceFixture(t)
 	before := read(filepath.Join(m.Settings.ConfigDir, "config.json"))

@@ -132,8 +132,17 @@ func referencedInbound(value any, tag string) bool {
 	case map[string]any:
 		for k, x := range v {
 			if k == "inbound" {
-				if str(x) == tag || contains(stringsOf(x), tag) {
-					return true
+				switch selector := x.(type) {
+				case string:
+					if selector == tag {
+						return true
+					}
+				case []any:
+					for _, selected := range selector {
+						if selected == tag {
+							return true
+						}
+					}
 				}
 			}
 			if referencedInbound(x, tag) {
