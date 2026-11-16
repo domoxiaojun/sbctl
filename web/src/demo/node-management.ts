@@ -1,16 +1,20 @@
 import type { Schema } from '../api/types'
 type NodeState = { nodes: Schema['Node'][]; groups: Schema['Group'][] }
 export function createNodeManagementDemo(state: () => NodeState, storage?: Pick<Storage, 'getItem' | 'setItem'>) {
-  const jobs = new Map<string, Schema['NodeJob']>(), configurations = new Map<string, Schema['NodeConfiguration']>(), requests = new Map<string, { input: string; result: unknown }>()
+  const jobs = new Map<string, Schema['NodeJob']>(), configurations = new Map<string, Schema['NodeConfiguration']>(), requests = new Map<string, { input: string; result: unknown }>(), sections = new Map<string, { hash: string; sections: Schema['NodeConfigView']['sections'] }>()
   const storageKey = 'sbctl-demo-node-management-v1'
-  try { const saved = JSON.parse(storage?.getItem(storageKey) ?? '{}');for (const [k,v] of saved.jobs ?? []) jobs.set(k,v);for (const [k,v] of saved.configurations ?? []) configurations.set(k,v);for (const [k,v] of saved.requests ?? []) requests.set(k,v) } catch { /* synthetic state may reset */ }
-  const json = (body: unknown, status = 200) => { try { storage?.setItem(storageKey, JSON.stringify({jobs:[...jobs], configurations:[...configurations],requests:[...requests]})) } catch { /* synthetic storage unavailable */ }; return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }) }
+  try { const saved = JSON.parse(storage?.getItem(storageKey) ?? '{}');for (const [k,v] of saved.jobs ?? []) jobs.set(k,v);for (const [k,v] of saved.configurations ?? []) configurations.set(k,v);for (const [k,v] of saved.requests ?? []) requests.set(k,v);for (const [k,v] of saved.sections ?? []) sections.set(k,v) } catch { /* synthetic state may reset */ }
+  const json = (body: unknown, status = 200) => { try { storage?.setItem(storageKey, JSON.stringify({jobs:[...jobs], configurations:[...configurations],requests:[...requests],sections:[...sections]})) } catch { /* synthetic storage unavailable */ }; return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }) }
   const failure = (message: string) => json({ code: 'NODE_INVALID', message }, 409)
   const config = (id: string): Schema['NodeConfiguration'] | null => {
     if (configurations.has(id)) return configurations.get(id)!
     const n = state().nodes.find(n => n.id === id); if (!n) return null
     const group = state().groups.find(g => g.node_ids.includes(id)) ?? state().groups[0]
     return { protocol_catalog: null, version: 0, draft: { id, name: n.name, region: n.region, location: n.location, public_host: n.public_host, config_dir: '/etc/sing-box', container: 'sing-box', group_id: group.id, group_name: group.name, connection: { address: n.management_address, port: 22, publish_user: 'sbctl-publish', stats_user: 'sbctl-stats', publish_key: 'publish_ed25519', stats_key: 'stats_ed25519', version: n.version, host_key: '' } }, binding: { container: 'sing-box', image: 'example.invalid/sing-box:demo', engine_build_id: 'a'.repeat(64) }, checked_at: null, last_check: null }
+  }
+  const editable = (id: string) => {
+    if (!sections.has(id)) sections.set(id, { hash: 'c'.repeat(64), sections: { log: { level: 'info', timestamp: true }, dns: { servers: [{ type: 'local', tag: 'local' }] }, ntp: {}, route: { rules: [{ inbound: ['anytls-in', 'tuic-in'], action: 'sniff' }], final: 'direct' } } })
+    return sections.get(id)!
   }
   return async (req: Request, path: string): Promise<Response | null> => {
     if (!(path.startsWith('/node-') || /^\/nodes\/[^/]+\/(config|metadata|jobs)$/.test(path))) return null
@@ -30,7 +34,22 @@ export function createNodeManagementDemo(state: () => NodeState, storage?: Pick<
     if (path === '/node-jobs' && req.method === 'POST') {
       const submission = body as Schema['NodeJobInput'], d = submission.draft, id = `njob_${crypto.randomUUID().replaceAll('-','')}`, stamp = new Date().toISOString()
       const result: Record<string, unknown> = submission.kind === 'inspect' ? { container: d.container || 'sing-box', config_dir: d.config_dir, image: 'example.invalid/sing-box:latest', engine_build_id: 'a'.repeat(64), can_adopt: true, preserved_users: 1, version: 'sing-box 1.12.9', impact: '演示接管：保留容器名和镜像；必要时短暂重连。', endpoints: [{protocol:'anytls',port:5443},{protocol:'tuic',port:4443}] } : submission.kind === 'check' ? { ready: true, checks: [{name:'运行绑定',ok:true,message:'演示容器和配置一致'}] } : { node_id: d.id, container: submission.desired_container || d.container || 'sing-box', config_dir:d.config_dir, image:submission.desired_image || 'example.invalid/sing-box:latest', ready:true }
-      if (['protocols','protocol_change','restart'].includes(submission.kind)) {
+      if (submission.kind === 'config' || submission.kind === 'config_change') {
+        const saved=config(d.id), n=state().nodes.find(n=>n.id===d.id)
+        if(!saved || !n)return failure('节点不存在')
+        const current=editable(d.id)
+        if(submission.kind==='config_change') {
+          const change=submission.config_change!
+          if(current.hash!==change.base_hash || saved.version!==submission.expected_version)return failure('配置已变化，请重新读取后操作')
+          if(JSON.stringify(change.content).includes('demo-preflight-failure'))return failure('候选配置预检失败')
+          current.sections={...current.sections,[change.section]:change.content}
+          current.hash=crypto.randomUUID().replaceAll('-','').repeat(2)
+        } else {
+          for (const key of Object.keys(result)) delete result[key]
+          Object.assign(result,{node_id:d.id,hash:current.hash,checked_at:stamp,sections:current.sections,outbounds:[{tag:'direct',type:'direct',server:'',server_port:0}],inbound_tags:n.inbounds.filter(i=>i.active).map(i=>i.tag)} satisfies Schema['NodeConfigView'])
+        }
+      }
+      if (['protocols','protocol_change','config_change','restart'].includes(submission.kind)) {
         const saved=config(d.id), n=state().nodes.find(n=>n.id===d.id)
         if(!saved || !n)return failure('节点不存在')
         const catalog=saved.protocol_catalog ?? {node_id:d.id,hash:'b'.repeat(64),checked_at:stamp,items:n.inbounds.filter(i=>i.active).map(i=>({tag:i.tag,protocol:i.protocol,listen:'::',port:i.port,enabled:true,managed:['anytls','tuic'].includes(i.protocol),user_count:1,tls:i.protocol!=='direct',method:i.protocol==='shadowsocks'?'aes-128-gcm':'',target_host:i.protocol==='direct'?'example.test':'',target_port:i.protocol==='direct'?443:0}))}

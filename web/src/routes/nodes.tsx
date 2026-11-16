@@ -4,6 +4,7 @@ import { ArrowUpRight, Server, Plus } from 'lucide-react'
 import { NodeManagementPanel } from '@/components/business/node-management'
 import { NodeTasks } from '@/components/business/node-tasks'
 import { NodeProtocols } from '@/components/business/node-protocols'
+import { NodeConfigSections } from '@/components/business/node-config'
 import { api } from '@/api/client'
 import { BackLink, DataState, FilterBar, KeyValue, PageHeader, Pagination, useFilters } from '@/components/business/common'
 import { DataTable, type DisplayColumn } from '@/components/business/data-table'
@@ -30,5 +31,5 @@ export function NodeDetail() {
   const { nodeId = '' } = useParams({ strict: false }), query = useQuery({ queryKey: ['node', nodeId], queryFn: ({ signal }) => api.node(nodeId, signal), refetchInterval: 15_000 })
   if (query.isPending || query.error) return <DataState loading={query.isPending} error={query.error} retry={() => query.refetch()} />
   const n = query.data
-  return <><BackLink to="/nodes" label="返回节点列表" /><PageHeader title={n.name} description="在此管理 sing-box、检查节点并查看协议入口。" action={<StatusBadge status={n.status} />} /><div className="detail-grid mb-5"><NodeManagementPanel nodeId={nodeId} /><section className="panel p-5 sm:p-6"><h2>节点资料</h2><dl className="mt-5"><KeyValue label="节点 ID"><code>{n.id}</code></KeyValue><KeyValue label="位置">{n.location}</KeyValue><KeyValue label="管理地址"><code>{n.management_address}</code></KeyValue><KeyValue label="公网端点"><code>{n.public_host}</code></KeyValue><KeyValue label="内核版本">sing-box {n.version}</KeyValue><KeyValue label="已应用版本">revision {n.revision}</KeyValue><KeyValue label="授权用户">{n.users_count} 位</KeyValue></dl></section></div><NodeProtocols key={nodeId} node={n} /><NodeTasks nodeId={nodeId} /></>
+  return <><BackLink to="/nodes" label="返回节点列表" /><PageHeader title={n.name} description="在此管理 sing-box、检查节点并查看协议入口。" action={<StatusBadge status={n.status} />} /><div className="detail-grid mb-5"><NodeManagementPanel nodeId={nodeId} /><section className="panel p-5 sm:p-6"><h2>节点资料</h2><dl className="mt-5"><KeyValue label="节点 ID"><code>{n.id}</code></KeyValue><KeyValue label="位置">{n.location}</KeyValue><KeyValue label="管理地址"><code>{n.management_address}</code></KeyValue><KeyValue label="公网端点"><code>{n.public_host}</code></KeyValue><KeyValue label="内核版本">sing-box {n.version}</KeyValue><KeyValue label="已应用版本">revision {n.revision}</KeyValue><KeyValue label="授权用户">{n.users_count} 位</KeyValue></dl></section></div><NodeProtocols key={nodeId} node={n} /><NodeConfigSections key={`config-${nodeId}`} nodeId={nodeId} /><NodeTasks nodeId={nodeId} /></>
 }
