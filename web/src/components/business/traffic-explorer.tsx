@@ -41,7 +41,7 @@ export function TrafficExplorer() {
  return <div className="space-y-5">
   {(filters.node || filters.user) && <div className="flex flex-wrap items-center gap-2 text-sm" aria-label="统计对象导航">
    {filters.node && <Link to="/nodes/$nodeId" params={{ nodeId: filters.node }} search={{}} className="workspace-link">管理节点：{options.find(n => n.id === filters.node)?.name ?? filters.node}<ArrowUpRight size={16} /></Link>}
-   {filters.user && <Link to="/users/$userId" params={{ userId: filters.user }} search={{}} className="workspace-link">管理所选用户<ArrowUpRight size={16} /></Link>}
+   {filters.user && (report?.users.some(u => u.user_id === filters.user && u.deleted) ? <span className="text-muted-foreground">已删除用户 · 保留历史用量</span> : <Link to="/users/$userId" params={{ userId: filters.user }} search={{}} className="workspace-link">管理所选用户<ArrowUpRight size={16} /></Link>)}
   </div>}
   <section className="panel p-4 sm:p-5 space-y-3" aria-label="流量筛选">
    <div className="flex flex-wrap items-center justify-between gap-3">

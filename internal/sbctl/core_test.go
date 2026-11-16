@@ -539,6 +539,26 @@ func TestAPIContractFlow(t *testing.T) {
 	}
 	w = request("GET", "/api/v1/users/"+uid+"/audit", nil, "", "", "")
 	validate("/api/v1/users/{id}/audit", "get", 200, w.Body.Bytes())
+	deletion := DeleteUsers{[]UserVersion{{uid, metadataVersion + 2, revision + 1}}}
+	w = request("POST", "/api/v1/users/delete", deletion, "https://admin.test", "wrong", "api-user-delete01")
+	if w.Code != 403 {
+		t.Fatal("delete csrf", w.Code)
+	}
+	w = request("POST", "/api/v1/users/delete", deletion, "https://admin.test", csrf, "api-user-delete01")
+	if w.Code != 200 {
+		t.Fatal("delete", w.Code, w.Body.String())
+	}
+	validate("/api/v1/users/delete", "post", 200, w.Body.Bytes())
+	w = request("POST", "/api/v1/users/delete", deletion, "https://admin.test", csrf, "api-user-delete01")
+	if w.Code != 200 {
+		t.Fatal("delete replay", w.Code)
+	}
+	w = request("GET", "/api/v1/users/"+uid, nil, "", "", "")
+	if w.Code != 404 {
+		t.Fatal("deleted detail still readable", w.Code)
+	}
+	w = request("GET", "/api/v1/operations", nil, "", "", "")
+	validate("/api/v1/operations", "get", 200, w.Body.Bytes())
 	w = request("DELETE", "/api/v1/session", nil, "https://admin.test", csrf, "")
 	if w.Code != 204 {
 		t.Fatal(w.Code)

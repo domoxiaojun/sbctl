@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.10.2",
+    "version": "0.10.3",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -2792,6 +2792,57 @@
           }
         ]
       }
+    },
+    "/api/v1/users/delete": {
+      "post": {
+        "operationId": "post__delete_users",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteUsers"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4579,6 +4630,9 @@
           },
           "quality": {
             "$ref": "#/components/schemas/Quality"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -4911,6 +4965,23 @@
         "items": {
           "$ref": "#/components/schemas/NodeJob"
         }
+      },
+      "DeleteUsers": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/UserVersion"
+            }
+          }
+        },
+        "required": [
+          "users"
+        ],
+        "additionalProperties": false
       }
     }
   }

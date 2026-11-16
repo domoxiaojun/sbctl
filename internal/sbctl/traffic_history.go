@@ -142,9 +142,14 @@ func (v Views) TrafficReport(q url.Values) M {
 	periods := []M{}
 	// User names come from the control database, totals from the selected nodes.
 	names := map[string]string{}
+	deleted := map[string]bool{}
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
 		for _, u := range d.Rows("SELECT id,display_name FROM users") {
 			names[str(u["id"])] = str(u["display_name"])
+		}
+		for _, u := range d.Rows("SELECT target_id FROM audit WHERE action='delete_user'") {
+			names[str(u["target_id"])] = "已删除用户"
+			deleted[str(u["target_id"])] = true
 		}
 	})
 	users := []M{}
@@ -247,6 +252,9 @@ func (v Views) TrafficReport(q url.Values) M {
 				continue
 			}
 			row := M{"user_id": uid, "display_name": names[uid], "node_id": id, "node_name": node["name"], "quality": node["quality"], "upload_bytes": u["upload_bytes"], "download_bytes": u["download_bytes"]}
+			if deleted[uid] {
+				row["deleted"] = true
+			}
 			if !start.IsZero() {
 				agg := mapping(mapping(aggregates["users"])[uid])
 				row["upload_bytes"] = bytesInt(agg["upload_bytes"]).String()

@@ -17,6 +17,58 @@ type UserVersion struct {
 	Revision int64  `json:"revision"`
 }
 
+type DeleteUsers struct {
+	Users []UserVersion `json:"users"`
+}
+
+func (c *Control) DeleteUsers(actor, key string, req DeleteUsers) M {
+	if len(req.Users) < 1 || len(req.Users) > 50 {
+		fail("INVALID_REQUEST", "每次请选择 1 至 50 位用户", 422)
+	}
+	path := "/users/delete"
+	var out M
+	unlock := c.Public.Lock()
+	defer unlock()
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		if out = c.replay(d, actor, key, path, req); out != nil {
+			return
+		}
+		seen := map[string]bool{}
+		for _, item := range req.Users {
+			if seen[item.ID] || item.Version < 0 || item.Revision < 0 {
+				fail("INVALID_REQUEST", "用户选择重复或版本无效", 422)
+			}
+			seen[item.ID] = true
+			u := userManagement(d, item.ID)
+			if integer(u["metadata_version"]) != item.Version || integer(u["revision"]) != item.Revision {
+				fail("STALE_REVISION", "用户状态或资料已变化，请刷新后重试", 409)
+			}
+			if u["archived_at"] == nil || u["status"] != "disabled" || d.Value("SELECT state FROM subscriptions WHERE user_id=?", item.ID) != "revoked" || integer(d.Value("SELECT count(*) FROM credentials WHERE user_id=? AND revoked=0", item.ID)) > 0 {
+				fail("DELETE_NOT_READY", "仅可删除已归档、禁用且订阅和凭据已撤销的用户", 409)
+			}
+			if integer(d.Value("SELECT count(*) FROM operations WHERE user_id=? AND state NOT IN ('completed','superseded')", item.ID)) > 0 || integer(d.Value("SELECT count(*) FROM outbox o JOIN operations p ON p.id=o.operation_id WHERE p.user_id=? AND o.state<>'done'", item.ID)) > 0 {
+				fail("DELETE_NOT_READY", "仍有节点任务未完成，暂不能删除", 409)
+			}
+		}
+		for _, item := range req.Users {
+			c.Public.Revoke(str(d.Value("SELECT token_hash FROM subscriptions WHERE user_id=?", item.ID)))
+			// Keep independent traffic, audit, completed operations and revocations.
+			// Detach the nullable FK so historical operations never link to a missing user.
+			d.Exec("UPDATE operations SET user_id=NULL WHERE user_id=?", item.ID)
+			d.Exec("DELETE FROM grants WHERE user_id=?", item.ID)
+			d.Exec("DELETE FROM credentials WHERE user_id=?", item.ID)
+			d.Exec("DELETE FROM subscriptions WHERE user_id=?", item.ID)
+			d.Exec("DELETE FROM user_management WHERE user_id=?", item.ID)
+			d.Exec("DELETE FROM meta WHERE key=?", "publication:"+item.ID)
+			d.Exec("DELETE FROM users WHERE id=?", item.ID)
+			audit(d, actor, "delete_user", item.ID, "删除已归档用户，保留流量、操作历史与撤销记录")
+		}
+		out = M{"saved": true, "count": len(req.Users)}
+		c.remember(d, actor, key, path, req, out, 200, false)
+	})
+	return out
+}
+
 func userManagement(d *DB, id string) M {
 	u := d.One("SELECT u.*,COALESCE(m.version,0) AS metadata_version,m.archived_at FROM users u LEFT JOIN user_management m ON m.user_id=u.id WHERE u.id=?", id)
 	if u == nil {

@@ -43,6 +43,7 @@ Object.assign(doc.components.schemas,{
  UserMetadata:schema({version:num,display_name:{type:'string',minLength:1,maxLength:40},note:{type:'string',maxLength:160}}),
  UserVersion:schema({id:str,version:num,revision:num}),
  ArchiveUsers:schema({users:{type:'array',minItems:1,maxItems:50,items:ref('UserVersion')},archived:bool}),
+ DeleteUsers:schema({users:{type:'array',minItems:1,maxItems:50,items:ref('UserVersion')}}),
  ArchiveResult:schema({saved:bool,count:num}),
  ResetSubscription:schema({revision:num,generation:num,reason:{type:'string',minLength:1,maxLength:160}}),
  SubscriptionResetResult:schema({saved:bool,generation:num}),
@@ -53,6 +54,7 @@ Object.assign(doc.components.schemas,{
  NodeJobs:{type:'array',items:ref('NodeJob')},
 });
 Object.assign(doc.components.schemas.User.properties,{metadata_version:num,archived:bool,archived_at:{anyOf:[str,{type:'null'}]},subscription_generation:num});
+doc.components.schemas.TrafficUser.properties.deleted=bool;
 doc.components.schemas.User.required=[...new Set([...doc.components.schemas.User.required,'metadata_version','archived','archived_at','subscription_generation'])];
 doc.components.schemas.NodeJobInput.properties.kind.enum=['inspect','configure','check','protocols','protocol_change','restart'];
 doc.components.schemas.NodeJobInput.properties.protocol_change=ref('ProtocolChange');
@@ -60,6 +62,7 @@ doc.components.schemas.NodeConfiguration.properties.protocol_catalog={anyOf:[ref
 doc.components.schemas.NodeConfiguration.required.push('protocol_catalog');
 endpoint('/api/v1/users/{id}/metadata','post','post__user_metadata','NodeSaved','UserMetadata');
 endpoint('/api/v1/users/archive','post','post__archive_users','ArchiveResult','ArchiveUsers');
+endpoint('/api/v1/users/delete','post','post__delete_users','ArchiveResult','DeleteUsers');
 endpoint('/api/v1/users/{id}/subscription-reset','post','post__subscription_reset','SubscriptionResetResult','ResetSubscription');
 endpoint('/api/v1/users/{id}/audit','get','get__user_audit','UserAudit');
 endpoint('/api/v1/nodes/{id}/jobs','get','get__node_jobs','NodeJobs');

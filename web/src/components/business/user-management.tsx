@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Pencil, RotateCcw, KeyRound } from 'lucide-react'
+import { Archive, Pencil, RotateCcw, KeyRound, Trash2 } from 'lucide-react'
 import type { User } from '@/api/types'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
@@ -26,6 +26,20 @@ export function ArchiveUsersButton({ users, restore = false, onDone }: { users: 
   const mutation = useMutation({ mutationFn: () => api.archiveUsers({ users: users.map(u => ({ id: u.id, version: u.metadata_version, revision: u.revision })), archived: !restore }, key), onSuccess: async () => { setOpen(false); onDone?.(); await refresh() } })
   const label = restore ? '恢复归档' : users.length > 1 ? `归档所选 ${users.length} 位` : '归档'
   return <><Button variant="outline" disabled={!users.length} onClick={() => { setKey(crypto.randomUUID()); mutation.reset(); setOpen(true) }}>{restore ? <RotateCcw size={14} /> : <Archive size={14} />}{label}</Button><Dialog open={open} onOpenChange={v => { if (!mutation.isPending) setOpen(v) }}><DialogContent><DialogHeader><DialogTitle>{restore ? '恢复归档用户' : '归档用户'}</DialogTitle><DialogDescription>{restore ? '恢复到用户列表，仍保持禁用状态。需要访问时再单独重新启用。' : '从默认列表收起已禁用且撤销完成的用户，保留身份、操作与流量历史。可在“已归档”中恢复。'}</DialogDescription></DialogHeader><ul className="max-h-60 overflow-auto text-sm space-y-2">{users.map(u => <li key={u.id}>{u.display_name}<code className="block text-xs text-muted-foreground break-all">{u.id}</code></li>)}</ul>{mutation.error && <p role="alert" className="field-error">{mutation.error.message}</p>}<DialogFooter><Button variant="outline" disabled={mutation.isPending} onClick={() => setOpen(false)}>取消</Button><Button disabled={mutation.isPending} onClick={() => mutation.mutate()}>{mutation.isPending ? '正在保存…' : restore ? '确认恢复' : '确认归档'}</Button></DialogFooter></DialogContent></Dialog></>
+}
+export function DeleteUsersButton({ users, onDone }: { users: User[]; onDone?: () => void | Promise<unknown> }) {
+  const [open, setOpen] = useState(false), [confirmation, setConfirmation] = useState(''), [key, setKey] = useState('')
+  const refresh = useUserRefresh(), id = useId(), client = useQueryClient()
+  const mutation = useMutation({
+    mutationFn: () => api.deleteUsers({ users: users.map(u => ({ id: u.id, version: u.metadata_version, revision: u.revision })) }, key),
+    onSuccess: async () => {
+      setOpen(false)
+      await onDone?.()
+      users.forEach(u => client.removeQueries({ queryKey: ['user', u.id], exact: true }))
+      await Promise.all([refresh(), ...['operations', 'operation', 'traffic', 'usage'].map(k => client.invalidateQueries({ queryKey: [k] }))])
+    },
+  })
+  return <><Button variant="outline" className="text-destructive" disabled={!users.length || users.some(u => !u.archived)} onClick={() => { setConfirmation(''); setKey(crypto.randomUUID()); mutation.reset(); setOpen(true) }}><Trash2 size={14} />{users.length > 1 ? `删除所选 ${users.length} 位` : '删除用户'}</Button><Dialog open={open} onOpenChange={v => { if (!mutation.isPending) setOpen(v) }}><DialogContent><DialogHeader><DialogTitle>删除已归档用户？</DialogTitle><DialogDescription>删除后不能恢复，用户资料、组关联、已撤销凭据和订阅记录将移除。历史流量、操作记录和撤销指纹保留；不会重启节点。</DialogDescription></DialogHeader><ul className="max-h-48 overflow-auto text-sm space-y-2">{users.map(u => <li key={u.id}>{u.display_name}<code className="block text-xs text-muted-foreground break-all">{u.id}</code></li>)}</ul><div className="field"><Label htmlFor={id}>输入“删除”确认</Label><Input id={id} value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" disabled={mutation.isPending} /></div>{mutation.error && <p role="alert" className="field-error">{mutation.error.message}</p>}<DialogFooter><Button variant="outline" disabled={mutation.isPending} onClick={() => setOpen(false)}>取消</Button><Button variant="destructive" disabled={mutation.isPending || confirmation !== '删除'} onClick={() => mutation.mutate()}>{mutation.isPending ? '正在删除…' : '确认删除'}</Button></DialogFooter></DialogContent></Dialog></>
 }
 export function ResetSubscriptionButton({ user }: { user: User }) {
   const [open, setOpen] = useState(false), [key, setKey] = useState(''), [reason, setReason] = useState('管理员重置订阅链接'), refresh = useUserRefresh(), id = useId()

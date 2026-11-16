@@ -71,6 +71,7 @@ export const api = {
   user: (id: string, signal?: AbortSignal) => request<Schema['User']>(`/users/${encodeURIComponent(id)}`, 'GET', undefined, undefined, signal),
   editUser: (id: string, body: Schema['UserMetadata'], key: string) => request<Schema['NodeSaved']>(`/users/${encodeURIComponent(id)}/metadata`, 'POST', body, key),
   archiveUsers: (body: Schema['ArchiveUsers'], key: string) => request<Schema['ArchiveResult']>('/users/archive', 'POST', body, key),
+  deleteUsers: (body: Schema['DeleteUsers'], key: string) => request<Schema['ArchiveResult']>('/users/delete', 'POST', body, key),
   resetSubscription: (id: string, body: Schema['ResetSubscription'], key: string) => request<Schema['SubscriptionResetResult']>(`/users/${encodeURIComponent(id)}/subscription-reset`, 'POST', body, key),
   userAudit: (id: string, signal?: AbortSignal) => request<Schema['UserAudit']>(`/users/${encodeURIComponent(id)}/audit`, 'GET', undefined, undefined, signal),
   groups: (signal?: AbortSignal) => request<Schema['Group'][]>('/groups', 'GET', undefined, undefined, signal),

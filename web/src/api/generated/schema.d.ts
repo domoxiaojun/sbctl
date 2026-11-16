@@ -547,6 +547,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__delete_users"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1076,6 +1092,7 @@ export interface components {
             upload_bytes: string;
             download_bytes: string;
             quality: components["schemas"]["Quality"];
+            deleted?: boolean;
         };
         TrafficDay: {
             date: string;
@@ -1150,6 +1167,9 @@ export interface components {
             uuid?: string;
         };
         NodeJobs: components["schemas"]["NodeJob"][];
+        DeleteUsers: {
+            users: components["schemas"]["UserVersion"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -3366,6 +3386,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeJobs"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__delete_users: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteUsers"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveResult"];
                 };
             };
             /** @description Authentication required */

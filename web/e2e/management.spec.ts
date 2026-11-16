@@ -2,6 +2,50 @@ import { test, expect } from '@playwright/test'
 import { fixtures } from '../src/demo/fixtures'
 import { createNodeManagementDemo } from '../src/demo/node-management'
 
+for (const width of [375, 1440]) test(`删除已归档用户：确认、批量及刷新 ${width}px`, async ({ page }, testInfo) => {
+  await page.setViewportSize({ width, height: 1000 })
+  const data = fixtures(Date.now())
+  data.users = data.users.slice(0, 3); data.operations = []
+  data.users.forEach((u, i) => { u.status = 'disabled'; u.subscription_state = 'revoked'; u.archived = i < 2; u.archived_at = i < 2 ? new Date().toISOString() : null })
+  await page.addInitScript(data => { if (!sessionStorage.getItem('sbctl-f0-synthetic-state-v1')) sessionStorage.setItem('sbctl-f0-synthetic-state-v1', JSON.stringify({ ...data, requests: {}, signedIn: true })) }, data)
+  await page.goto('/users?archived=true')
+  await expect(page.getByText('共 2 条记录')).toBeVisible()
+  await page.getByRole('button', { name: '选择本页可归档用户', exact: true }).click()
+  await page.getByRole('button', { name: '删除所选 2 位', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('删除后不能恢复')
+  await expect(page.getByRole('button', { name: '确认删除', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByText('共 2 条记录')).toBeVisible()
+  await page.getByRole('button', { name: '删除所选 2 位', exact: true }).click()
+  await page.getByLabel('输入“删除”确认', { exact: true }).fill('删除')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath(`delete-confirm-${width}.png`), fullPage: true })
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  await expect(page.getByText('共 0 条记录')).toBeVisible()
+  await page.reload()
+  await expect(page.getByText('共 0 条记录')).toBeVisible()
+  await page.goto('/users?archived=all')
+  await expect(page.getByText('共 1 条记录')).toBeVisible()
+  await expect(page.getByRole('button', { name: '删除用户', exact: true }).filter({ visible: true })).toHaveCount(0)
+  await page.goto(`/users/${data.users[0].id}`)
+  await expect(page.getByRole('heading', { name: '暂时无法读取数据', exact: true })).toBeVisible()
+  await page.goto(`/usage?scope=managed&user=${data.users[0].id}`)
+  await expect(page.getByText('已删除用户 · 保留历史用量', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: '管理所选用户', exact: true })).toHaveCount(0)
+})
+
+test('详情删除后返回归档列表', async ({ page }) => {
+  const data = fixtures(Date.now()), user = data.users[0]
+  user.status = 'disabled'; user.subscription_state = 'revoked'; user.archived = true; user.archived_at = new Date().toISOString(); data.operations = []
+  await page.addInitScript(data => sessionStorage.setItem('sbctl-f0-synthetic-state-v1', JSON.stringify({ ...data, requests: {}, signedIn: true })), data)
+  await page.goto(`/users/${user.id}`)
+  await page.getByRole('button', { name: '删除用户', exact: true }).click()
+  await page.getByLabel('输入“删除”确认', { exact: true }).fill('删除')
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  await expect(page).toHaveURL(/\/users\?archived=/)
+  await expect(page.getByText(user.display_name, { exact: true })).toHaveCount(0)
+})
+
 test('批量归档仅选择已撤销用户', async ({ page }) => {
   const data = fixtures(Date.now())
   data.users = data.users.slice(0, 3); data.operations = []

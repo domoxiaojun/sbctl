@@ -217,6 +217,11 @@ func API(c *Control) http.Handler {
 		decode(requestBody(w, r), &input)
 		jsonResponse(w, 200, c.ArchiveUsers(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input))
 	})
+	auth("POST /api/v1/users/delete", func(w http.ResponseWriter, r *http.Request, a M) {
+		var input DeleteUsers
+		decode(requestBody(w, r), &input)
+		jsonResponse(w, 200, c.DeleteUsers(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input))
+	})
 	auth("POST /api/v1/users/{id}/subscription-reset", func(w http.ResponseWriter, r *http.Request, a M) {
 		var input ResetSubscription
 		decode(requestBody(w, r), &input)

@@ -3,7 +3,7 @@ import { fixtures } from './fixtures'
 import { demoTraffic } from './traffic'
 import { createNodeManagementDemo } from './node-management'
 
-type State = { managementRequests?: Record<string, { signature: string; result: unknown }>; userAudits?: Record<string, Schema['UserAudit']> } & ReturnType<typeof fixtures> & { requests: Record<string, { signature: string; operation_id: string }>; signedIn: boolean; operationRevisions?: Record<string, number>; authorizedNodes?: Record<string, string[]>; linkRevisions?: Record<string, number> }
+type State = { deletedUsers?: Schema['User'][]; managementRequests?: Record<string, { signature: string; result: unknown }>; userAudits?: Record<string, Schema['UserAudit']> } & ReturnType<typeof fixtures> & { requests: Record<string, { signature: string; operation_id: string }>; signedIn: boolean; operationRevisions?: Record<string, number>; authorizedNodes?: Record<string, string[]>; linkRevisions?: Record<string, number> }
 const storageKey = 'sbctl-f0-synthetic-state-v1'
 const totalBytes = (r: { upload_bytes: string; download_bytes: string }) => BigInt(r.upload_bytes) + BigInt(r.download_bytes)
 export function paginate<T extends { id?: string; user_id?: string | null; title?: string; name?: string; display_name?: string; subject?: string; status?: string; state?: string; region?: string; upload_bytes?: string; download_bytes?: string; created_at?: string }>(items: T[], f: Filters) {
@@ -71,7 +71,7 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
     const f: Filters = { q: url.searchParams.get('q') ?? '', status: url.searchParams.get('status') ?? '', region: url.searchParams.get('region') ?? '', page: Number(url.searchParams.get('page') ?? 1), page_size: Number(url.searchParams.get('page_size') ?? 8), archived: (url.searchParams.get('archived') ?? 'false') as Filters['archived'], sort: (url.searchParams.get('sort') ?? 'name') as Filters['sort'] }
     const usage = (): Schema['Usage'][] => state.users.map(u => ({ user_id: u.id, display_name: u.display_name, node_count: u.node_count, upload_bytes: u.upload_bytes, download_bytes: u.download_bytes, quality: u.quality }))
     if (p === '/overview') return json({ node_count: state.nodes.length, online_count: state.nodes.filter(n => n.status === 'online').length, degraded_count: state.nodes.filter(n => n.status === 'degraded').length, offline_count: state.nodes.filter(n => n.status === 'offline').length, user_count: state.users.filter(u => u.status !== 'disabled').length, pending_count: state.operations.filter(op => op.state !== 'completed').length, upload_bytes: state.users.reduce((sum, u) => sum + BigInt(u.upload_bytes), 0n).toString(), download_bytes: state.users.reduce((sum, u) => sum + BigInt(u.download_bytes), 0n).toString(), regions: [...new Set(state.nodes.map(n => n.region))].map(id => ({ id, name: state.nodes.find(n => n.region === id)!.location, node_count: state.nodes.filter(n => n.region === id).length, online_count: state.nodes.filter(n => n.region === id && n.status === 'online').length })), operations: state.operations.slice(0, 3), alerts: state.alerts.filter(a => a.state === 'open'), top_usage: usage().sort((a, b) => totalBytes(a) > totalBytes(b) ? -1 : 1).slice(0, 5), as_of: new Date(now()).toISOString() } satisfies Schema['Overview'])
-    if (p === '/traffic') { try { return json(demoTraffic(state, url.searchParams, now())) } catch { return fail('DATE_RANGE_INVALID', '日期范围无效。', 422) } }
+    if (p === '/traffic') { try { const report = demoTraffic({ ...state, users: [...state.users, ...(state.deletedUsers ?? [])] }, url.searchParams, now()); report.users.forEach(u => { if (state.deletedUsers?.some(d => d.id === u.user_id)) u.deleted = true }); return json(report) } catch { return fail('DATE_RANGE_INVALID', '日期范围无效。', 422) } }
     if (p === '/groups') return json(state.groups)
     if (method === 'GET') {
       if (p === '/nodes') return json(paginate(state.nodes, f))
@@ -85,6 +85,25 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
       for (const [prefix, items] of [['nodes', state.nodes], ['users', state.users], ['operations', state.operations]] as const) {
         if (p.startsWith(`/${prefix}/`)) { const item = items.find(x => x.id === p.split('/')[2]); return item ? json(item) : fail('NOT_FOUND', '记录不存在。', 404) }
       }
+    }
+    if (method === 'POST' && p === '/users/delete') {
+      if (!Array.isArray(body?.users) || body.users.length < 1 || body.users.length > 50 || new Set(body.users.map((u: Schema['UserVersion']) => u.id)).size !== body.users.length) return fail('INVALID_REQUEST', '每次请选择 1 至 50 位不同用户', 422)
+      const users: Schema['User'][] = []
+      for (const item of body.users as Schema['UserVersion'][]) {
+        const user = state.users.find(u => u.id === item.id)
+        if (!user) return fail('NOT_FOUND', '用户不存在', 404)
+        if (user.metadata_version !== item.version || user.revision !== item.revision) return fail('STALE_REVISION', '用户状态或资料已变化，请刷新后重试', 409)
+        if (!user.archived || user.status !== 'disabled' || user.subscription_state !== 'revoked' || state.operations.some(o => o.user_id === user.id && !['completed','superseded'].includes(o.state))) return fail('DELETE_NOT_READY', '仅可删除已归档且撤销完成的用户', 409)
+        users.push(user)
+      }
+      for (const user of users) {
+        state.deletedUsers ??= []; state.deletedUsers.push({ ...user, display_name: '已删除用户', note: '' })
+        state.users = state.users.filter(u => u.id !== user.id)
+        state.operations.forEach(o => { if (o.user_id === user.id) o.user_id = null })
+        state.userAudits ??= {}; (state.userAudits[user.id] ??= []).unshift({ action: 'delete_user', summary: '删除已归档用户，保留历史', created_at: new Date(now()).toISOString() })
+      }
+      const result = { saved: true, count: users.length }
+      state.managementRequests ??= {}; state.managementRequests[key!] = { signature, result }; save(); return json(result)
     }
     if(method==='POST' && (p==='/users/archive' || /^\/users\/[^/]+\/(metadata|subscription-reset)$/.test(p))) {
       let result:unknown
