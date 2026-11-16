@@ -113,3 +113,32 @@ func TestTrustedProxySettingRejectsInvalidEntries(t *testing.T) {
 		}
 	}
 }
+
+func TestResetAdminPasswordEndsSessionsAndReplacesThePassword(t *testing.T) {
+	c := testControl(t)
+	s := c.Settings
+	CreateAdmin(s, "admin", "管理员", "the-original-password")
+	session, _ := Login(s, "admin", "the-original-password", "198.51.100.7")
+	for i := 0; i < loginPairLimit; i++ {
+		expectFault(t, "LOGIN_FAILED", func() { Login(s, "admin", "wrong-guess", "203.0.113.50") })
+	}
+	expectFault(t, "ADMIN_INVALID", func() { ResetAdminPassword(s, "admin", "too-short") })
+	expectFault(t, "NOT_FOUND", func() { ResetAdminPassword(s, "nobody", "a-sufficiently-long-password") })
+	if Authenticate(s, session)["admin_id"] == nil {
+		t.Fatal("a rejected reset must not end the session")
+	}
+	ResetAdminPassword(s, "admin", "a-sufficiently-long-password")
+	expectFault(t, "UNAUTHENTICATED", func() { Authenticate(s, session) })
+	expectFault(t, "LOGIN_FAILED", func() { Login(s, "admin", "the-original-password", "198.51.100.7") })
+	// The throttle is cleared, so the address that was locked out can sign in.
+	if err := Attempt(func() { Login(s, "admin", "a-sufficiently-long-password", "203.0.113.50") }); err != nil {
+		t.Fatalf("new password rejected: %v", err)
+	}
+	var audited int64
+	transaction(s.ControlDB, false, func(d *DB) {
+		audited = integer(d.Value("SELECT count(*) FROM audit WHERE action='reset_password'"))
+	})
+	if audited != 1 {
+		t.Fatalf("expected one audit record, got %d", audited)
+	}
+}

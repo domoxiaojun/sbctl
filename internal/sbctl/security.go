@@ -166,6 +166,26 @@ func CreateAdmin(s Settings, name, display, password string) string {
 	})
 	return id
 }
+
+// ResetAdminPassword replaces an administrator's password, ends every session
+// of that account and clears the login throttle. It is a maintenance action:
+// there is no HTTP route for it.
+func ResetAdminPassword(s Settings, name, password string) {
+	if utf8.RuneCountInString(password) < 12 || utf8.RuneCountInString(password) > 1024 {
+		fail("ADMIN_INVALID", "管理员密码至少需要 12 个字符")
+	}
+	h := passwordHash(password)
+	transaction(s.ControlDB, true, func(d *DB) {
+		admin := d.One("SELECT id FROM admins WHERE login_name=?", name)
+		if admin == nil {
+			fail("NOT_FOUND", "管理员不存在", 404)
+		}
+		d.Exec("UPDATE admins SET password_hash=? WHERE id=?", h, admin["id"])
+		d.Exec("DELETE FROM sessions WHERE admin_id=?", admin["id"])
+		d.Exec("DELETE FROM login_failures")
+		audit(d, "maintenance", "reset_password", str(admin["id"]), "维护命令重置管理员密码并结束该账号的全部会话")
+	})
+}
 func Login(s Settings, name, password, client string) (string, M) {
 	select {
 	case loginSlots <- struct{}{}:

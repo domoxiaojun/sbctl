@@ -42,6 +42,8 @@ HTTPS 站点由用户部署。应用仍允许来源 `https://sbctl.domob.org`，
 - 管理员：`admin`，密码使用 Argon2id 保存。新随机初始密码只写入 root 可读的 `/opt/sbctl/config/admin.initial`。
 - Go 程序：`/opt/sbctl/bin/sbctl`。`sbctl version` 显示应用和 Go 版本，`sbctl doctor` 显示实际 SQLite 版本和数据计数。
 
+需要更换管理员密码时，在 ovhus 执行 `SBCTL_CONFIG=/opt/sbctl/config/server.host.toml sbctl reset-password --password-file /opt/sbctl/config/admin.reset`（生成新的随机密码并写入该文件，文件须不存在），或用 `--password-stdin` 从标准输入提供至少 12 个字符的密码。重置会结束该账号的全部会话并清空登录限流计数。该命令随本轮改动加入，尚未发布。
+
 通过已有维护连接读取初始密码：
 
 ```sh

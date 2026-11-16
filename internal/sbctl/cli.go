@@ -81,7 +81,7 @@ func ControllerMain(args []string) int {
 			emit(M{"version": Version, "go": runtime.Version()})
 			return
 		case "help", "--help", "-h":
-			fmt.Println("sbctl serve [--listen :8080] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker [--parallel N] | sync [--parallel N] | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
+			fmt.Println("sbctl serve [--listen :8080] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | reset-password --password-stdin | reset-password --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker [--parallel N] | sync [--parallel N] | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
 			return
 		case "export-openapi":
 			if len(rest) != 1 {
@@ -129,6 +129,29 @@ func ControllerMain(args []string) int {
 				atomicWrite(*file, []byte(password+"\n"), 0600)
 			}
 			fmt.Println("管理员与控制库已初始化")
+		case "reset-password":
+			f := argsFor(cmd, rest)
+			name := f.String("login-name", "admin", "")
+			fromStdin := f.Bool("password-stdin", false, "")
+			file := f.String("password-file", "", "")
+			parsed(f, rest, 0)
+			if *fromStdin == (*file != "") {
+				fail("CLI_USAGE", "选择 --password-stdin 或 --password-file")
+			}
+			password := ""
+			if *fromStdin {
+				password = strings.TrimSuffix(string(stdin(8192)), "\n")
+			} else {
+				if exists(*file) {
+					fail("PASSWORD_FILE_EXISTS", "密码文件已存在，请指定新的路径")
+				}
+				password = token(24)
+			}
+			ResetAdminPassword(s, *name, password)
+			if *file != "" {
+				atomicWrite(*file, []byte(password+"\n"), 0600)
+			}
+			fmt.Println("管理员密码已重置，该账号的全部会话已失效")
 		case "sync":
 			f := argsFor(cmd, rest)
 			parallel := f.Int("parallel", 4, "")
