@@ -267,3 +267,94 @@ func TestRenderPreservesUnmanagedUsers(t *testing.T) {
 	r.Users[0].Password = "keep-this-password"
 	expectFault(t, "CREDENTIAL_CONFLICT", func() { a.Render(r) })
 }
+
+// interruptedMaintenanceTransport models a node whose maintenance task stopped
+// after raising its barrier: no receipt exists, the plan is pending, and every
+// authorization request is refused until the same task is resumed.
+type interruptedMaintenanceTransport struct {
+	action   string
+	pending  bool
+	attempts int
+	request  NodeRequest
+}
+
+func (tr *interruptedMaintenanceTransport) Call(_ NodeConnection, body M, _ bool) M {
+	switch body["action"] {
+	case tr.action:
+		tr.attempts++
+		if tr.attempts == 1 {
+			tr.pending = true
+			fail("NODE_UNREACHABLE", "连接在维护执行途中中断", 503)
+		}
+		tr.pending = false
+		return M{
+			"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("c", 64),
+			"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
+			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}},
+		}
+	case "maintenance_receipt":
+		if tr.pending {
+			return M{"state": "pending"}
+		}
+		return M{"state": "missing"}
+	case "submit":
+		if tr.pending {
+			fail("NODE_BUSY", "节点维护恢复中，授权任务稍后重试", 409)
+		}
+		r := parseRequest(body["request"])
+		tr.request = r
+		if tr.attempts > 1 && r.TemplateHash != strings.Repeat("c", 64) {
+			fail("NODE_BINDING", "节点模板已变化", 409)
+		}
+		return M{"node_id": r.NodeID, "latest": M{"id": r.RequestID, "revision": r.NodeRevision, "payload_hash": r.PayloadHash, "state": "verified"}}
+	}
+	return M{}
+}
+
+func TestInterruptedMaintenanceResumesAheadOfQueuedRevocation(t *testing.T) {
+	for _, kind := range []string{"protocol_change", "restart"} {
+		t.Run(kind, func(t *testing.T) {
+			c := testControl(t)
+			tr := &interruptedMaintenanceTransport{action: kind}
+			w := NewWorker(c, tr)
+			c.CreateUser("admin", "interrupted-user-create-01", CreateUser{DisplayName: "中断恢复", GroupIDs: []string{"grp_hk"}}, nil)
+			w.Step()
+			u := Views{c.Settings}.Users()[0]
+			input := NodeJobInput{Kind: kind, Draft: draftFor(c)}
+			if kind == "protocol_change" {
+				input.Change = &ProtocolChange{Action: "edit", Tag: "anytls-in", BaseHash: strings.Repeat("b", 64), Listen: "::", Port: 5443}
+			}
+			job := c.SubmitNodeJob("admin", "interrupted-maintenance-01", input)
+			w.NodeStep()
+			if !tr.pending || c.NodeJob(str(job["job_id"]))["state"] != "failed" {
+				t.Fatal("维护没有在节点执行途中被中断")
+			}
+			revision := integer(u["revision"])
+			op := c.DisableUser("admin", "interrupted-disable-key-01", str(u["id"]), DisableUser{Revision: &revision, Reason: "撤销"})
+			w.Step()
+			if state := one(Views{c.Settings}.Operations(), str(op["operation_id"]))["state"]; state == "completed" {
+				t.Fatal("节点维护屏障未解除时撤销不应完成")
+			}
+			staleRevision := integer(0)
+			transaction(c.Settings.ControlDB, true, func(d *DB) {
+				staleRevision = integer(d.Value("SELECT revision FROM nodes WHERE id='node_hk'"))
+				d.Exec("UPDATE node_jobs SET state='queued',lease_until=0 WHERE id=?", job["job_id"])
+			})
+			w.NodeStep()
+			if result := c.NodeJob(str(job["job_id"])); result["state"] != "completed" || tr.attempts != 2 || tr.pending {
+				t.Fatalf("重试没有恢复被中断的维护任务: %+v attempts=%d", result, tr.attempts)
+			}
+			transaction(c.Settings.ControlDB, true, func(d *DB) {
+				d.Exec("UPDATE outbox SET next_attempt_at=0 WHERE operation_id=?", op["operation_id"])
+			})
+			w.Step()
+			if tr.request.TemplateHash != strings.Repeat("c", 64) || tr.request.NodeRevision <= staleRevision {
+				t.Fatalf("撤销请求没有基于恢复后的绑定重新生成: %+v", tr.request)
+			}
+			w.Reconcile()
+			if state := one(Views{c.Settings}.Operations(), str(op["operation_id"]))["state"]; state != "completed" {
+				t.Fatalf("禁用操作未完成: %v", state)
+			}
+		})
+	}
+}

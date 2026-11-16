@@ -36,16 +36,20 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 			}
 		}
 		hasAuthorizationWork = mutatingNodeJob(input.Kind) && integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", id)) > 0
-		if hasAuthorizationWork && input.Kind == "restart" {
-			fail("NODE_BUSY", "节点授权任务尚未完成，请完成后重启", 409)
-		}
 	})
 	var recovered M
-	if hasAuthorizationWork && input.Kind == "protocol_change" {
+	if hasAuthorizationWork {
+		// Authorization normally goes first. The exceptions are a maintenance task
+		// the node already finished (its reply was lost) and one it was interrupted
+		// in: the node refuses every authorization request while that interrupted
+		// plan holds its barrier, so waiting for the queue would never end.
 		status := w.Transport.Call(input.Draft.Connection, M{"action": "maintenance_receipt", "request_id": str(job["id"]), "input_hash": digest(input.Change)}, false)
 		switch status["state"] {
 		case "completed":
 			recovered = mapping(status["result"])
+		case "pending":
+			// Resume the same durable plan below. It ends completed or rolled back,
+			// and either outcome releases the barrier for the queued authorization.
 		default:
 			fail("NODE_BUSY", "节点授权任务尚未完成，请完成后重试维护任务", 409)
 		}
