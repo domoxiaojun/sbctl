@@ -1,0 +1,99 @@
+{
+  "checked_at": "2026-11-16T09:15:20.857Z",
+  "version": "0.10.1",
+  "source_commit": "e4b2aa81b638fc9483e93d1dfdd2f5345e69e969",
+  "jobs": [
+    {
+      "id": "njob_24fa8760704d3cf5d21e71d36cafc2fa",
+      "kind": "protocol_change",
+      "action": "disable",
+      "state": "completed",
+      "recovered_original_task": true
+    },
+    {
+      "id": "njob_4f041b7cc3c78c8954908e247b2d5e3a",
+      "kind": "protocol_change",
+      "action": "enable",
+      "state": "completed"
+    },
+    {
+      "id": "njob_b5f662025c8e421a10e715ec79a442b9",
+      "kind": "protocol_change",
+      "action": "delete",
+      "state": "completed"
+    },
+    {
+      "id": "njob_e172bf2dc31c9ac2d0e129f74ed8ca4c",
+      "kind": "restart",
+      "state": "completed"
+    },
+    {
+      "id": "njob_4e30a0a2e3ec6732c8037a4efd0c836c",
+      "kind": "protocol_change",
+      "action": "edit",
+      "state": "completed",
+      "public_forward_status": 204
+    },
+    {
+      "id": "njob_319842741e6e6b2f8797a3d1e6c083a9",
+      "kind": "protocols",
+      "state": "completed",
+      "error_code": ""
+    },
+    {
+      "id": "njob_05b659117a6111f2d955a2dcd05c9408",
+      "kind": "protocol_change",
+      "action": "create",
+      "state": "completed",
+      "error_code": ""
+    }
+  ],
+  "protocol_loopback_forwarding": true,
+  "original_config_and_credentials_preserved": true,
+  "proxy_config_semantic_hash": "75d07ba2921854c77e96ad4bce8151a98e3248e4dc7c77ee6f4359df5b0a198b",
+  "original_inbounds": 19,
+  "temporary_protocol_removed": true,
+  "test_user": {
+    "id": "usr_f5b3a361b88e42d5f1a752e1ccca6f2d",
+    "status": "disabled",
+    "archived": true,
+    "node_count": 0,
+    "subscription_state": "revoked"
+  },
+  "subscription_reset_no_restart": true,
+  "old_links_revoked": true,
+  "subscription_validation_backend": "ovhus:18101",
+  "public_subscription_route_verified": false,
+  "management_audit_verified": true,
+  "desktop_mobile_passed": true,
+  "browser_errors": [],
+  "totals_monotonic": true,
+  "history_started_at": "2026-11-16T05:55:46.371429Z",
+  "quality_before": {
+    "freshness": "current",
+    "gap_count": 12,
+    "has_historical_gap": true,
+    "integrity_state": "ok",
+    "sampled_at": "2026-11-16T08:40:16.936356Z",
+    "started_at": "2026-11-14T17:11:57.957976Z",
+    "synced_at": "2026-11-16T08:40:17.702206Z"
+  },
+  "quality_after": {
+    "freshness": "current",
+    "gap_count": 18,
+    "has_historical_gap": true,
+    "integrity_state": "ok",
+    "sampled_at": "2026-11-16T09:15:15.113196Z",
+    "started_at": "2026-11-14T17:11:57.957976Z",
+    "synced_at": "2026-11-16T09:15:19.400431Z"
+  },
+  "runtime_before": {
+    "container_id": "d8b5bb385993a5adb40f99d51c8ed7732fecd0c9be8e34b90ede0975948913bb",
+    "started_at": "2026-11-16T04:08:31.580368836Z"
+  },
+  "runtime_after": {
+    "container_id": "d9a8cf52d57e95b7a8826387a4ed10863861a369d9f1b2c8ab1e9bf3c3d707f2",
+    "started_at": "2026-11-16T09:13:36.333217244Z",
+    "node_revision": 14
+  }
+}

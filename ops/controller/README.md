@@ -13,7 +13,7 @@
 | sync | sbctl sync | 拉取并持久保存节点统计快照 |
 | subscriptions | sbctl subscriptions | 只读订阅文件，不持有控制库和主密钥 |
 
-当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.9.1`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[0.9.1 板块整理验收](../../docs/qa/console-organization-20261116/report.md)。yxvmhk 继续运行兼容的 0.6.1 节点程序，本次未重启代理。
+当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.10.2`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。yxvmhk 节点工具升级至兼容的 0.10.1，保留代理内核 1.12.9；程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。0.10.2 仅更新主控，修正归档网址刷新后的筛选与批量恢复判断。
 
 | 请求 | 后端地址 |
 | --- | --- |
@@ -22,6 +22,8 @@
 | `/s/` 订阅路径 | `http://127.0.0.1:18101`，保留完整路径 |
 
 HTTPS 站点由用户部署。应用仍允许来源 `https://sbctl.domob.org`，会话 Cookie 带 Secure 属性，浏览器登录必须通过该 HTTPS 来源。HTTP 内网直连可查看页面和健康状态，但不支持登录。
+
+2026-11-16 真实验收发现，现有站点仅将根路径转发到 18100，导致 `/s/` 返回“页面不存在”；内部订阅服务 18101 正常。用户明确选择继续自行管理站点。本仓库提供 [OpenResty 订阅反代配置](sbctl-subscriptions.nginx.conf)，已在 ovhus 的 OpenResty 容器中使用隔离临时配置通过 `nginx -t`，未改动或热加载现有站点。由用户添加至 `/opt/1panel/www/sites/sbctl.domob.org/proxy/sbctl-subscriptions.conf`，再校验并热加载 OpenResty。`proxy_pass` 地址末尾不加 `/`，以保留完整的 `/s/令牌/文件名` 路径；页面与管理 API 仍使用已有根反代。公网订阅可读性待用户配置后验证。
 
 ## 文件与身份
 
