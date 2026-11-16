@@ -30,6 +30,11 @@ func (a *Agent) Initialize() {
 	}
 	check(os.MkdirAll(a.Settings.StateDir, 0700))
 	initialize(a.DBPath, "node")
+	// Repair historical nonterminal requests left behind by older executors.
+	// Only the highest revision can still be applied.
+	transaction(a.DBPath, true, func(d *DB) {
+		d.Exec("UPDATE requests SET state='superseded' WHERE revision<(SELECT max(revision) FROM requests) AND state NOT IN ('verified','superseded')")
+	})
 }
 func (a *Agent) Lock() func() {
 	return fileLock(filepath.Join(a.Settings.StateDir, "security.lock"), 60*time.Second)
@@ -165,6 +170,9 @@ func (a *Agent) Accept(r NodeRequest) M {
 			}
 		}
 		a.Guard(false, "", 0)
+		// Older accepted or failed work can no longer become the latest intent.
+		// Keep its document and applied_at for the next verification comparison.
+		d.Exec("UPDATE requests SET state='superseded' WHERE revision<? AND state NOT IN ('verified','superseded')", r.NodeRevision)
 		d.Exec("INSERT INTO requests(id,revision,payload_hash,document,state,accepted_at) VALUES (?,?,?,?,'accepted',?)", r.RequestID, r.NodeRevision, r.PayloadHash, string(canonical(r)), now())
 		for _, f := range r.Revoked {
 			d.Exec("INSERT OR IGNORE INTO revoked VALUES (?)", f)

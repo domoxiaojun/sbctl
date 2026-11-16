@@ -93,6 +93,27 @@ func passwordValid(encoded, password string) bool {
 	actual := argon2.IDKey([]byte(password), s, 3, 64*1024, 4, 32)
 	return subtle.ConstantTimeCompare(k, actual) == 1
 }
+
+// Argon2id uses substantial memory. Limit concurrent hashes independently of
+// the database-backed attempt budget, which is shared by API processes.
+var loginSlots = make(chan struct{}, 2)
+
+func reserveLoginAttempt(s Settings, name, client string) (string, string) {
+	account := hash([]byte("login-account:" + name))
+	source := hash([]byte("login-source:" + client))
+	ts := timestamp()
+	transaction(s.ControlDB, true, func(d *DB) {
+		d.Exec("DELETE FROM login_failures WHERE attempted_at<?", ts-900)
+		if integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", account)) >= 10 ||
+			integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", source)) >= 30 {
+			fail("LOGIN_RATE_LIMIT", "登录尝试过多，请稍后再试", 429)
+		}
+		// Reserve before hashing so parallel requests cannot all pass the same limit.
+		d.Exec("INSERT INTO login_failures VALUES (?,?)", account, ts)
+		d.Exec("INSERT INTO login_failures VALUES (?,?)", source, ts)
+	})
+	return account, source
+}
 func CreateAdmin(s Settings, name, display, password string) string {
 	if utf8.RuneCountInString(password) < 12 || utf8.RuneCountInString(password) > 1024 || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 80 {
 		fail("ADMIN_INVALID", "管理员密码至少需要 12 个字符")
@@ -108,13 +129,15 @@ func CreateAdmin(s Settings, name, display, password string) string {
 	return id
 }
 func Login(s Settings, name, password, client string) (string, M) {
-	subject := hash([]byte(name + ":" + client))
-	ts := timestamp()
+	select {
+	case loginSlots <- struct{}{}:
+		defer func() { <-loginSlots }()
+	default:
+		fail("LOGIN_BUSY", "登录请求繁忙，请稍后再试", 429)
+	}
+	account, source := reserveLoginAttempt(s, name, client)
 	var admin M
 	transaction(s.ControlDB, false, func(d *DB) {
-		if integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=? AND attempted_at>?", subject, ts-900)) >= 10 {
-			fail("LOGIN_RATE_LIMIT", "登录尝试过多，请稍后再试", 429)
-		}
 		admin = d.One("SELECT * FROM admins WHERE login_name=? AND enabled=1", name)
 	})
 	valid := false
@@ -124,16 +147,13 @@ func Login(s Settings, name, password, client string) (string, M) {
 		_ = passwordHash(password)
 	}
 	if !valid {
-		transaction(s.ControlDB, true, func(d *DB) {
-			d.Exec("DELETE FROM login_failures WHERE attempted_at<?", ts-900)
-			d.Exec("INSERT INTO login_failures VALUES (?,?)", subject, ts)
-		})
 		fail("LOGIN_FAILED", "账号或密码错误", 401)
 	}
 	t := token(48)
 	transaction(s.ControlDB, true, func(d *DB) {
+		ts := timestamp()
 		d.Exec("DELETE FROM sessions WHERE expires_at<?", ts)
-		d.Exec("DELETE FROM login_failures WHERE subject=?", subject)
+		d.Exec("DELETE FROM login_failures WHERE subject IN (?,?)", account, source)
 		d.Exec("INSERT INTO sessions VALUES (?,?,?,?)", hash([]byte(t)), admin["id"], ts+float64(s.SessionSeconds), now())
 	})
 	return t, M{"admin_id": admin["id"], "display_name": admin["display_name"]}

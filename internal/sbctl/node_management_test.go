@@ -10,6 +10,7 @@ import (
 type managementTransport struct {
 	Calls    []M
 	FailCode string
+	Receipt  M
 }
 
 func (m *managementTransport) Call(n NodeConnection, b M, stats bool) M {
@@ -21,12 +22,113 @@ func (m *managementTransport) Call(n NodeConnection, b M, stats bool) M {
 		return M{"ready": true, "node_id": "node_hk", "sampled_at": now()}
 	}
 	switch b["action"] {
+	case "maintenance_receipt":
+		if m.Receipt != nil {
+			return m.Receipt
+		}
+		return M{"state": "missing"}
 	case "inspect":
 		return M{"can_adopt": true, "container": "sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "observation_hash": strings.Repeat("c", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}}}
 	case "configure":
 		return M{"node_id": b["node_id"], "ready": true, "container": "sing-box", "config_dir": "/etc/sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}}}
 	default:
 		return M{"ready": false, "checks": []M{{"name": "binding", "ok": false, "message": "changed container"}}}
+	}
+}
+
+func TestNodeActionReconcilesCompletedMaintenanceReceipt(t *testing.T) {
+	c := testControl(t)
+	draft := draftFor(c)
+	catalog := ProtocolCatalog{NodeID: draft.ID, Hash: strings.Repeat("c", 64), CheckedAt: now(), Items: []ProtocolItem{}}
+	tr := &managementTransport{Receipt: M{"state": "completed", "result": M{
+		"node_id": draft.ID, "ready": true, "template_hash": strings.Repeat("a", 64),
+		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}},
+		"catalog":   catalog,
+	}}}
+	w := NewWorker(c, tr)
+	change := ProtocolChange{Action: "edit", Tag: "legacy", BaseHash: strings.Repeat("b", 64), Listen: "127.0.0.1", Port: 18090}
+	job := c.SubmitNodeJob("admin", "maintenance-receipt-recovery", NodeJobInput{Kind: "protocol_change", Draft: draft, ExpectedVersion: 0, Change: &change})
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("INSERT INTO operations(id,kind,user_id,subject,state,priority,created_at) VALUES (?,?,?,?,?,?,?)", "op_receipt_recovery", "disable_user", nil, "maintenance", "running", 100, now())
+		d.Exec("INSERT INTO outbox(id,operation_id,node_id,priority,state,next_attempt_at) VALUES (?,?,?,?,?,?)", "task_receipt_recovery", "op_receipt_recovery", draft.ID, 100, "queued", timestamp())
+	})
+	if !w.NodeStep() {
+		t.Fatal("node job was not processed")
+	}
+	if state := c.NodeJob(str(job["job_id"]))["state"]; state != "completed" {
+		t.Fatalf("receipt recovery failed: %+v", c.NodeJob(str(job["job_id"])))
+	}
+	if len(tr.Calls) != 1 || tr.Calls[0]["action"] != "maintenance_receipt" {
+		t.Fatalf("expected receipt reconciliation before mutation, calls=%v", tr.Calls)
+	}
+}
+
+type lostMaintenanceReplyTransport struct {
+	changed bool
+	receipt M
+	request NodeRequest
+}
+
+func (tr *lostMaintenanceReplyTransport) Call(_ NodeConnection, body M, _ bool) M {
+	switch body["action"] {
+	case "protocol_change":
+		tr.changed = true
+		fail("NODE_UNREACHABLE", "节点已提交，但回执丢失", 503)
+	case "maintenance_receipt":
+		return tr.receipt
+	case "submit":
+		r := parseRequest(body["request"])
+		tr.request = r
+		if tr.changed && r.TemplateHash != strings.Repeat("c", 64) {
+			fail("NODE_BINDING", "节点模板已变化", 409)
+		}
+		return M{"node_id": r.NodeID, "latest": M{"id": r.RequestID, "revision": r.NodeRevision, "payload_hash": r.PayloadHash, "state": "verified"}}
+	}
+	return M{}
+}
+
+func TestLostMaintenanceReplyThenDisableRecovers(t *testing.T) {
+	c := testControl(t)
+	tr := &lostMaintenanceReplyTransport{}
+	w := NewWorker(c, tr)
+	c.CreateUser("admin", "review-user-create-key01", CreateUser{DisplayName: "回执恢复", GroupIDs: []string{"grp_hk"}}, nil)
+	w.Step()
+	u := Views{c.Settings}.Users()[0]
+	change := ProtocolChange{Action: "edit", Tag: "anytls-in", BaseHash: strings.Repeat("b", 64), Listen: "::", Port: 5443}
+	job := c.SubmitNodeJob("admin", "review-maintenance-key01", NodeJobInput{Kind: "protocol_change", Draft: draftFor(c), Change: &change})
+	w.NodeStep()
+	if !tr.changed {
+		t.Fatal("维护没有在节点提交")
+	}
+	revision := integer(u["revision"])
+	op := c.DisableUser("admin", "review-disable-key01", str(u["id"]), DisableUser{Revision: &revision, Reason: "撤销"})
+	w.Step()
+	staleRevision, staleRequestID := tr.request.NodeRevision, tr.request.RequestID
+	tr.receipt = M{"state": "completed", "result": M{
+		"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("c", 64),
+		"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
+		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}},
+	}}
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("UPDATE node_jobs SET state='queued',lease_until=0 WHERE id=?", job["job_id"])
+	})
+	w.NodeStep()
+	if c.NodeJob(str(job["job_id"]))["state"] != "completed" {
+		t.Fatal("旧维护回执没有恢复")
+	}
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("UPDATE outbox SET next_attempt_at=0 WHERE operation_id=?", op["operation_id"])
+	})
+	w.Step()
+	if tr.request.TemplateHash != strings.Repeat("c", 64) {
+		t.Fatal("撤销请求没有使用恢复后的模板")
+	}
+	if tr.request.NodeRevision <= staleRevision || tr.request.RequestID == staleRequestID {
+		t.Fatal("恢复后撤销请求没有推进节点安全版本")
+	}
+	w.Reconcile()
+	if one(Views{c.Settings}.Operations(), str(op["operation_id"]))["state"] != "completed" {
+		t.Fatal("禁用操作未完成")
 	}
 }
 func draftFor(c *Control) NodeDraft {

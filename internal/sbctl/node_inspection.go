@@ -358,9 +358,6 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	revision := int64(0)
 	if existing {
 		transaction(filepath.Join(root, "node.db"), false, func(d *DB) {
-			if integer(d.Value("SELECT count(*) FROM requests WHERE state IN ('accepted','switching','applied')")) > 0 {
-				fail("NODE_BUSY", "节点正在应用授权，请稍后重试", 409)
-			}
 			row := d.One("SELECT document,revision,state FROM requests ORDER BY revision DESC LIMIT 1")
 			if row != nil {
 				if row["state"] != "verified" {
@@ -516,6 +513,12 @@ func diagnoseNode() M {
 }
 func NodeRPC(v M) M {
 	switch str(v["action"]) {
+	case "maintenance_receipt":
+		if len(v) != 3 {
+			fail("ACTION_REJECTED", "维护回执查询参数无效")
+		}
+		m := NodeMaintenance{LoadNodeSettings(), "/opt/sbctl/config/node.toml", nil}
+		return m.ReceiptStatus(str(v["request_id"]), str(v["input_hash"]))
 	case "protocols":
 		if len(v) != 1 {
 			fail("ACTION_REJECTED", "协议读取参数无效")

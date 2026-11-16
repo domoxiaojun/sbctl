@@ -62,8 +62,8 @@ func prepareSeries(d *DB, runtime Runtime, raw []M, initialFromZero bool) ([]ser
 		started := now()
 		if record != nil {
 			started = str(record["started_at"])
-			if str(record["protocol"]) != in.protocol || integer(record["port"]) != int64(in.port) {
-				fail("STATS_IDENTITY_CHANGED", "入口标签已用于不同协议或端口，请使用新标签保留历史")
+			if str(record["protocol"]) != in.protocol {
+				fail("STATS_IDENTITY_CHANGED", "入口标签已用于不同协议，请使用新标签保留历史")
 			}
 		}
 		for _, dir := range []string{"uplink", "downlink"} {
@@ -106,7 +106,7 @@ func commitSeries(d *DB, runtime Runtime, changes []seriesChange) {
 		if c.delta > math.MaxInt64-total {
 			fail("COUNTER_OVERFLOW", "统计累计超过存储范围")
 		}
-		d.Exec("UPDATE series_totals SET "+col+"=?,active=1 WHERE scope=? AND key=?", total+c.delta, c.scope, c.key)
+		d.Exec("UPDATE series_totals SET "+col+"=?,port=?,active=1 WHERE scope=? AND key=?", total+c.delta, c.port, c.scope, c.key)
 		d.Exec("INSERT INTO series_cursors VALUES (?,?,?,?,?,?) ON CONFLICT(scope,key,direction,epoch) DO UPDATE SET value=excluded.value,seen=excluded.seen", c.scope, c.key, c.dir, runtime.Epoch(), c.value, c.seen)
 	}
 	d.Exec("DELETE FROM series_cursors WHERE epoch<>?", runtime.Epoch())

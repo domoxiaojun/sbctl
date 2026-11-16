@@ -1,0 +1,14 @@
+=== RUN   TestReviewPortEditFreezesLedger
+    review_repro_test.go:27: CONFIRMED: maintenance succeeded; subsequent whole-node sample rejected with STATS_IDENTITY_CHANGED; sequence unchanged
+--- PASS: TestReviewPortEditFreezesLedger (0.20s)
+=== RUN   TestReviewSupersededPendingBlocksMaintenance
+    review_repro_test.go:41: CONFIRMED: revision 3 verified but superseded revision 2 remains accepted; maintenance restart returns NODE_BUSY
+--- PASS: TestReviewSupersededPendingBlocksMaintenance (0.15s)
+=== RUN   TestReviewLostMaintenanceReplyBlocksRevocation
+    review_repro_test.go:76: CONFIRMED: remote template commit/lost reply -> disable uses old binding -> retry blocked by revoke outbox; no recovery RPC sent
+--- PASS: TestReviewLostMaintenanceReplyBlocksRevocation (0.08s)
+=== RUN   TestReviewLoginLimitBypassByName
+    review_repro_test.go:86: CONFIRMED: 12 distinct nonexistent accounts from same client all reach password hashing and return 401; no per-client throttle
+--- PASS: TestReviewLoginLimitBypassByName (0.44s)
+PASS
+ok  	sbctl/internal/sbctl	1.312s

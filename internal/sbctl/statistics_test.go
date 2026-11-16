@@ -82,6 +82,25 @@ func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 	}
 	traffic.Ingest("node_hk", s)
 }
+
+func TestStatisticsSeriesPortChangeKeepsAccumulating(t *testing.T) {
+	root := t.TempDir()
+	l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
+	l.Create()
+	rt := testRuntime()
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, LocalUsers: []string{}, TotalInbounds: 1}
+	first := []M{{"name": "inbound>>>relay>>>traffic>>>uplink", "value": "100"}, {"name": "inbound>>>relay>>>traffic>>>downlink", "value": "200"}}
+	l.Ingest(rt, rt, first, false)
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 5443}}, LocalUsers: []string{}, TotalInbounds: 1}
+	second := []M{{"name": "inbound>>>relay>>>traffic>>>uplink", "value": "140"}, {"name": "inbound>>>relay>>>traffic>>>downlink", "value": "260"}}
+	if err := Attempt(func() { l.Ingest(rt, rt, second, false) }); err != nil {
+		t.Fatalf("port edit must not freeze the ledger: %v", err)
+	}
+	s := l.Snapshot()
+	if len(s.Inbounds) != 1 || s.Inbounds[0].Port != 5443 || s.Inbounds[0].Upload != "40" || s.Inbounds[0].Download != "60" {
+		t.Fatalf("port change was not recorded while preserving deltas: %+v", s.Inbounds)
+	}
+}
 func TestSnapshotLegacyChecksum(t *testing.T) {
 	s := Snapshot{SchemaVersion: 1, NodeID: "node_hk", LedgerID: "ledger_1", Seq: 1, StartedAt: now(), Users: []LedgerUser{}, Quality: DataQuality{"ok", false, 0}}
 	s.Seal()

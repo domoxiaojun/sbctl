@@ -1,0 +1,87 @@
+package sbctl
+
+import (
+ "path/filepath"
+ "strings"
+ "testing"
+)
+
+func TestReviewPortEditFreezesLedger(t *testing.T) {
+ m, _ := maintenanceFixture(t)
+ root := t.TempDir()
+ l := Ledger{filepath.Join(root,"ledger.db"), filepath.Join(root,"export.json"),"node_hk"}
+ l.Create()
+ rt := testRuntime()
+ rt.Statistics = statisticsManifest(object(read(filepath.Join(m.Settings.ConfigDir,"config.json"))), rt.Users)
+ l.Ingest(rt,rt,counters("10","20"),false)
+ oldSeq := l.Snapshot().Seq
+ p := protocolInput(m,"edit","legacy")
+ p.Listen,p.Port,p.TargetHost,p.TargetPort = "127.0.0.1",18091,"example.test",443
+ m.Apply("review_port_edit",&p)
+ m = updatedMaintenance(m)
+ rt.StartedAt = "epoch-after-port-edit"
+ rt.Statistics = statisticsManifest(object(read(filepath.Join(m.Settings.ConfigDir,"config.json"))),rt.Users)
+ err := Attempt(func(){l.Ingest(rt,rt,counters("100","200"),false)})
+ if err == nil || PublicFault(err).Code != "STATS_IDENTITY_CHANGED" { t.Fatalf("unexpected outcome: %v",err) }
+ if l.Snapshot().Seq != oldSeq { t.Fatal("expected entire sample rollback") }
+ t.Log("CONFIRMED: maintenance succeeded; subsequent whole-node sample rejected with STATS_IDENTITY_CHANGED; sequence unchanged")
+}
+
+func TestReviewSupersededPendingBlocksMaintenance(t *testing.T) {
+ m,e := maintenanceFixture(t)
+ a := NewAgent(m.Settings,e)
+ a.Accept(agentRequest(a,2,[]Credential{testCredential()},nil))
+ a.Accept(agentRequest(a,3,[]Credential{testCredential()},nil))
+ a.ApplyOnce()
+ if mapping(a.Status()["latest"])["state"] != "verified" {t.Fatal("latest not verified")}
+ var oldState any
+ transaction(a.DBPath,false,func(d *DB){oldState=d.Value("SELECT state FROM requests WHERE revision=2")})
+ err := Attempt(func(){m.Apply("review_restart",nil)})
+ if oldState != "accepted" || err == nil || PublicFault(err).Code != "NODE_BUSY" {t.Fatalf("unexpected: old=%v err=%v",oldState,err)}
+ t.Log("CONFIRMED: revision 3 verified but superseded revision 2 remains accepted; maintenance restart returns NODE_BUSY")
+}
+
+type reviewLostReply struct { old fakeTransport; applied bool; remoteCalls int }
+func (r *reviewLostReply) Call(n NodeConnection,b M,stats bool) M {
+ if b["action"]=="protocol_change" {
+  r.applied=true; r.remoteCalls++
+  fail("NODE_UNREACHABLE","remote commit followed by lost reply",503)
+ }
+ if b["action"]=="submit" && r.applied {
+  req:=parseRequest(b["request"])
+  if req.TemplateHash != strings.Repeat("c",64) {fail("NODE_BINDING","remote template changed",409)}
+ }
+ return r.old.Call(n,b,stats)
+}
+func TestReviewLostMaintenanceReplyBlocksRevocation(t *testing.T) {
+ c:=testControl(t)
+ tr:=&reviewLostReply{}
+ w:=NewWorker(c,tr)
+ created:=c.CreateUser("admin","review-create-user01",CreateUser{DisplayName:"Review",GroupIDs:[]string{"grp_hk"}},nil)
+ w.Step()
+ uid:=str(one(Views{c.Settings}.Operations(),str(created["operation_id"]))["user_id"])
+ p:=ProtocolChange{Action:"edit",Tag:"anytls-in",BaseHash:strings.Repeat("b",64),Listen:"::",Port:5443}
+ job:=c.SubmitNodeJob("admin","review-node-edit01",NodeJobInput{Kind:"protocol_change",Draft:draftFor(c),Change:&p})
+ w.NodeStep()
+ if c.NodeJob(str(job["job_id"]))["error_code"]!="NODE_UNREACHABLE" {t.Fatal("did not model reply loss")}
+ rev:=int64(1)
+ disabled:=c.DisableUser("admin","review-disable-user01",uid,DisableUser{&rev,"review"})
+ w.Step()
+ transaction(c.Settings.ControlDB,true,func(d *DB){d.Exec("UPDATE node_jobs SET state='queued',lease_until=0 WHERE id=?",job["job_id"])})
+ w.NodeStep()
+ j:=c.NodeJob(str(job["job_id"]))
+ if j["error_code"]!="NODE_BUSY" || tr.remoteCalls!=1 {t.Fatalf("unexpected retry: %v calls=%d",j,tr.remoteCalls)}
+ op:=one(Views{c.Settings}.Operations(),str(disabled["operation_id"]))
+ if op["state"]=="completed" {t.Fatal("revoke unexpectedly completed")}
+ t.Log("CONFIRMED: remote template commit/lost reply -> disable uses old binding -> retry blocked by revoke outbox; no recovery RPC sent")
+}
+
+func TestReviewLoginLimitBypassByName(t *testing.T) {
+ c:=testControl(t)
+ for i:=0;i<12;i++ {
+  name := "unknown_"+strings.Repeat("a",i+1)
+  err:=Attempt(func(){Login(c.Settings,name,"review-only-invalid-password","same-client")})
+  if err==nil || PublicFault(err).Code!="LOGIN_FAILED" {t.Fatalf("request %d unexpected: %v",i,err)}
+ }
+ t.Log("CONFIRMED: 12 distinct nonexistent accounts from same client all reach password hashing and return 401; no per-client throttle")
+}

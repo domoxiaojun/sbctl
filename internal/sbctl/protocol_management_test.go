@@ -200,3 +200,23 @@ func TestProtocolCrashRecoveryDoesNotRepeatRestart(t *testing.T) {
 		t.Fatal("recovery repeated restart or left barrier")
 	}
 }
+
+func TestMaintenanceReceiptClearsOnlyCompletedBarrier(t *testing.T) {
+	m, _ := maintenanceFixture(t)
+	id := "maintenance_receipt_barrier"
+	inputHash := digest(M{"action": "edit"})
+	pendingPath := filepath.Join(m.Settings.StateDir, "maintenance-pending.json")
+	atomicWrite(pendingPath, canonical(M{"id": id}), 0600)
+	if state := m.ReceiptStatus(id, inputHash)["state"]; state != "missing" || !exists(pendingPath) {
+		t.Fatal("missing receipt must leave unfinished barrier in place")
+	}
+	atomicWrite(filepath.Join(m.Settings.StateDir, "maintenance-"+id+".json"), canonical(M{"input_hash": inputHash, "result": M{"node_id": m.Settings.NodeID}}), 0600)
+	if state := m.ReceiptStatus(id, inputHash)["state"]; state != "completed" || exists(pendingPath) {
+		t.Fatal("completed receipt must release its matching barrier")
+	}
+	atomicWrite(pendingPath, canonical(M{"id": "other_maintenance"}), 0600)
+	expectFault(t, "REQUEST_CONFLICT", func() { m.ReceiptStatus(id, inputHash) })
+	if !exists(pendingPath) {
+		t.Fatal("receipt query removed another request's barrier")
+	}
+}

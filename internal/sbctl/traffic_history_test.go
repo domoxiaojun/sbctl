@@ -57,6 +57,27 @@ func TestTrafficHistoryUpgradeDatesAndFilters(t *testing.T) {
 		t.Fatal("history not exported")
 	}
 }
+
+func TestTrafficPortChangePreservesHistoryAndSnapshot(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	first := historySnapshot(1, "2026-01-01T00:00:00Z", "100", "200")
+	tr.Ingest("node_hk", first)
+	next := historySnapshot(2, "2026-01-01T00:00:15Z", "140", "260")
+	next.Inbounds[0].Port = 24424
+	next.Seal()
+	if !tr.Ingest("node_hk", next) {
+		t.Fatal("port change did not advance central snapshot")
+	}
+	var stored Snapshot
+	transaction(tr.Path, false, func(d *DB) {
+		decode([]byte(str(d.Value("SELECT document FROM snapshots WHERE node_id='node_hk'"))), &stored)
+	})
+	if stored.Seq != 2 || stored.Inbounds[0].Port != 24424 || stored.Inbounds[0].Upload != "140" {
+		t.Fatalf("port change lost central totals: %+v", stored.Inbounds)
+	}
+}
 func TestTrafficHistoryGapAndExportRecovery(t *testing.T) {
 	c := testControl(t)
 	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}

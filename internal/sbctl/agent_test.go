@@ -98,6 +98,35 @@ func TestNodeRevocationAndReplay(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeSupersedesOlderAcceptedRequest(t *testing.T) {
+	a, _ := testAgent(t)
+	a.Accept(agentRequest(a, 1, []Credential{testCredential()}, nil))
+	a.Accept(agentRequest(a, 2, []Credential{testCredential()}, nil))
+	transaction(a.DBPath, false, func(d *DB) {
+		if state := str(d.Value("SELECT state FROM requests WHERE revision=1")); state != "superseded" {
+			t.Fatalf("older accepted request remained %q", state)
+		}
+	})
+}
+func TestNodeInitializeRepairsHistoricalSupersededRequest(t *testing.T) {
+	a, e := testAgent(t)
+	a.Accept(agentRequest(a, 1, []Credential{testCredential()}, nil))
+	a.Accept(agentRequest(a, 2, []Credential{testCredential()}, nil))
+	a.ApplyOnce()
+	transaction(a.DBPath, true, func(d *DB) {
+		d.Exec("UPDATE requests SET state='accepted' WHERE revision=1")
+	})
+	NewAgent(a.Settings, e).Initialize()
+	transaction(a.DBPath, false, func(d *DB) {
+		if state := str(d.Value("SELECT state FROM requests WHERE revision=1")); state != "superseded" {
+			t.Fatalf("historical request remained %q", state)
+		}
+		if state := str(d.Value("SELECT state FROM requests WHERE revision=2")); state != "verified" {
+			t.Fatalf("latest verified request changed to %q", state)
+		}
+	})
+}
 func TestNodeEnableUsesNewGenerationAndRetainsRevocations(t *testing.T) {
 	a, _ := testAgent(t)
 	old := testCredential()

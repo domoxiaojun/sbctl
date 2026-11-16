@@ -298,6 +298,43 @@ type NodeMaintenance struct {
 	Engine       func(NodeSettings) Engine
 }
 
+// ReceiptStatus reconciles a durable completed receipt. An unfinished plan is
+// never resumed ahead of a queued authorization.
+func (m NodeMaintenance) ReceiptStatus(id, inputHash string) M {
+	validIdentity(id)
+	if !hashRE.MatchString(inputHash) {
+		fail("REQUEST_INVALID", "维护请求摘要无效", 422)
+	}
+	unlock := fileLock(filepath.Join(m.Settings.StateDir, "management.lock"), 3*time.Second)
+	defer unlock()
+	receiptPath := filepath.Join(m.Settings.StateDir, "maintenance-"+id+".json")
+	pendingPath := filepath.Join(m.Settings.StateDir, "maintenance-pending.json")
+	if exists(receiptPath) {
+		r := object(read(receiptPath))
+		if r["input_hash"] != inputHash {
+			fail("REQUEST_CONFLICT", "任务内容与回执不同", 409)
+		}
+		// A crash can happen between committing the receipt and removing the
+		// maintenance barrier. Clear only this completed request's barrier.
+		if exists(pendingPath) {
+			if object(read(pendingPath))["id"] != id {
+				fail("REQUEST_CONFLICT", "其他节点维护任务仍在恢复", 409)
+			}
+			check(os.Remove(pendingPath))
+		}
+		return M{"state": "completed", "result": r["result"]}
+	}
+	planPath := filepath.Join(m.Settings.StateDir, "maintenance-plan-"+id+".json")
+	if exists(planPath) && exists(pendingPath) {
+		plan, pending := object(read(planPath)), object(read(pendingPath))
+		if plan["input_hash"] != inputHash || pending["id"] != id {
+			fail("REQUEST_CONFLICT", "节点维护计划与请求不符", 409)
+		}
+		return M{"state": "pending"}
+	}
+	return M{"state": "missing"}
+}
+
 func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 	validIdentity(id)
 	s := m.Settings
@@ -324,7 +361,7 @@ func (m NodeMaintenance) Apply(id string, p *ProtocolChange) M {
 		return mapping(r["result"])
 	}
 	transaction(filepath.Join(s.StateDir, "node.db"), false, func(d *DB) {
-		if integer(d.Value("SELECT count(*) FROM requests WHERE state NOT IN ('verified','superseded')")) > 0 {
+		if state := d.Value("SELECT state FROM requests ORDER BY revision DESC LIMIT 1"); state != nil && state != "verified" {
 			fail("NODE_BUSY", "先完成或恢复节点授权任务，再维护协议", 409)
 		}
 	})

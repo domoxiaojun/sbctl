@@ -63,7 +63,7 @@ func (t Traffic) Ingest(node string, s Snapshot) bool {
 				if !ok || counter(cur.Upload) < counter(in.Upload) || counter(cur.Download) < counter(in.Download) {
 					fail("TOTAL_REGRESSION", "入口累计下降或历史入口缺失，保留历史累计")
 				}
-				if cur.Protocol != in.Protocol || cur.Port != in.Port || cur.StartedAt != in.StartedAt {
+				if cur.Protocol != in.Protocol || cur.StartedAt != in.StartedAt {
 					fail("HISTORY_REGRESSION", "入口统计身份或起点变化")
 				}
 			}

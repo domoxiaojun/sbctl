@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-16",
+  "timezone": "Asia/Singapore",
+  "commit": "1f17ae08b30cfbbe8a2da8ec047eabea0e822809",
+  "product_version": "0.10.4",
+  "go": {
+    "tests": "passed",
+    "vet": "passed",
+    "race": "passed",
+    "top_level_tests": 55
+  },
+  "frontend": {
+    "contract": "passed",
+    "unit_tests": 14,
+    "lint_errors": 0,
+    "lint_warnings": 3,
+    "types": "passed",
+    "build": "passed",
+    "pinned_build_node": "26.12.1",
+    "pinned_build_pnpm": "12.18.0",
+    "chromium_tests": 46,
+    "visual_cases_rerun": 6
+  },
+  "static": {
+    "shellcheck": "passed",
+    "actionlint": "passed",
+    "hadolint": "passed",
+    "taplo": "passed"
+  },
+  "reproductions": 4,
+  "security": {
+    "gitleaks_commits": 20,
+    "gitleaks_false_positives": 4,
+    "go_modules_scanned": 16,
+    "pnpm_manager_packages_scanned": 15,
+    "frontend_packages_scanned": 483,
+    "dependency_advisories": [
+      {
+        "name": "deepmerge",
+        "version": "4.3.1",
+        "advisories": [
+          "GHSA-gcqx-w48m-w2h4"
+        ]
+      },
+      {
+        "name": "minimatch",
+        "version": "10.2.6",
+        "advisories": [
+          "GHSA-g3hv-75wg-m249"
+        ]
+      }
+    ],
+    "zizmor_confirmed_exploit": false
+  },
+  "production_access": false,
+  "product_source_modified": false
+}
