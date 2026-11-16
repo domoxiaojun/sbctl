@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-11-16T10:56:11.468Z",
+  "version": "0.10.4",
+  "source_commit": "2f7099d57b8f04416956da2afb8d7ce390b8ea29",
+  "desktop_mobile_passed": true,
+  "visible_categories": [
+    "协议入口",
+    "节点本地用户"
+  ],
+  "old_url_fallback": "inbounds",
+  "old_user_filter_ignored": true,
+  "valid_dates_and_node_preserved": true,
+  "local_filter_rank_and_reload": true,
+  "user_detail_link_removed": "local_browser_verified_no_live_users",
+  "frontend_traffic_requests": 14,
+  "no_managed_category_requests": true,
+  "users_unchanged": 0,
+  "inbound_records": 20,
+  "local_records": 2,
+  "retained_managed_history": 5,
+  "totals_monotonic": true,
+  "history_started_at": "2026-11-16T05:55:46.371429Z",
+  "proxy_unchanged": true,
+  "runtime": {
+    "running": true,
+    "container_id": "d9a8cf52d57e95b7a8826387a4ed10863861a369d9f1b2c8ab1e9bf3c3d707f2",
+    "started_at": "2026-11-16T09:13:36.333217244Z",
+    "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+    "node_revision": 14
+  },
+  "browser_errors": [],
+  "public_subscription_route": "user_managed_unchanged"
+}

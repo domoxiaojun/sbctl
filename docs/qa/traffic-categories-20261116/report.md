@@ -18,3 +18,11 @@
 ## 发布与真实验收
 
 待双架构发行、ovhus 升级及真实桌面/手机检查后填写。
+
+## 发布与真实验收
+
+0.10.4 已部署至 ovhus。源码 `2f7099d57b8f04416956da2afb8d7ce390b8ea29`，发行 CI `43851022937`、镜像导出 CI `43852496342` 成功；镜像 digest 为 `ghcr.io/domoxiaojun/sbctl@sha256:3ae8671845ef0f3644484a1c026804f7df4f0456bc0576eb1444e8bf492a0e34`。程序包、镜像配置摘要、四服务健康及保留配置校验通过，备份 `/opt/sbctl/backups/release-v0.10.4-control-20261116T105539Z`。
+
+真实页面验收确认：375/1440 页面只显示“协议入口”和“节点本地用户”；旧 `scope=managed&user=...` 地址回退到协议入口，不产生隐藏用户筛选请求；节点和日期筛选有效；节点本地用户排行、精确筛选、刷新和刷新后状态保留；用户详情不再提供流量统计跳转。线上用户列表为空，历史 managed 统计记录仍保留于 API/账本，累计与日期基线未减少。yxvmhk 容器 ID、启动时间、配置摘要和节点版本保持不变，代理未重启。浏览器无运行错误，最终回执见 [live-acceptance.json](live-acceptance.json)。
+
+截图：[手机](live-inbounds-375.png)、[桌面](live-inbounds-1440.png)、[本地用户手机](live-local-375.png)、[本地用户桌面](live-local-1440.png)。用户自管站点反代保持不变。
