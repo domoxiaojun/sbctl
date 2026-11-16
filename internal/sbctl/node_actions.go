@@ -51,7 +51,7 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 			// Resume the same durable plan below. It ends completed or rolled back,
 			// and either outcome releases the barrier for the queued authorization.
 		default:
-			fail("NODE_BUSY", "节点授权任务尚未完成，请完成后重试维护任务", 409)
+			fail("AUTHORIZATION_PENDING", "节点授权任务尚未完成，维护任务排队等待", 409)
 		}
 	}
 	body := M{"action": "protocols"}

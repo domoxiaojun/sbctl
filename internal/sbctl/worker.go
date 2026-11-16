@@ -322,6 +322,10 @@ func (w *Worker) Reconcile() {
 	})
 }
 func (w *Worker) ExportInventory() {
+	// Different node jobs and CLI processes publish the same file. Serialize
+	// the database read as well as the rename so an older snapshot cannot win.
+	unlock := fileLock(w.Control.Settings.InventoryFile+".lock", 5*time.Second)
+	defer unlock()
 	nodes := []M{}
 	transaction(w.Control.Settings.ControlDB, false, func(d *DB) {
 		for _, r := range d.Rows("SELECT id,connection_json FROM nodes WHERE enabled=1") {

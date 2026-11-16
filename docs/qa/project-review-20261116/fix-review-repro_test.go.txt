@@ -1,0 +1,67 @@
+package sbctl
+
+import (
+	"strings"
+	"testing"
+)
+
+type reviewMaintenanceTransport struct{ *gatedTransport }
+
+func (g *reviewMaintenanceTransport) Call(n NodeConnection, body M, stats bool) M {
+	if body["action"] == "maintenance_receipt" {
+		return M{"state": "missing"}
+	}
+	return g.gatedTransport.Call(n, body, stats)
+}
+
+// This asserts the observed defect, so PASS means the failure was reproduced.
+func TestFixReviewQueuedRestartFailsDuringAuthorization(t *testing.T) {
+	c := testControl(t)
+	tr := &reviewMaintenanceTransport{newGatedTransport()}
+	w := NewWorker(c, tr)
+	c.CreateUser("admin", "review-parallel-create-01", CreateUser{DisplayName: "排队重启期间禁用", GroupIDs: []string{"grp_hk"}}, nil)
+	w.Step()
+	u := Views{c.Settings}.Users()[0]
+	job := c.SubmitNodeJob("admin", "review-queued-restart-01", NodeJobInput{Kind: "restart", Draft: draftFor(c)})
+	revision := integer(u["revision"])
+	c.DisableUser("admin", "review-parallel-disable-01", str(u["id"]), DisableUser{Revision: &revision, Reason: "撤销"})
+	release := tr.block("node_hk", "submit")
+	stop := runWorker(t, w, 2)
+	defer stop()
+	defer release()
+	waitFor(t, "the concurrent maintenance to fail", func() bool { return c.NodeJob(str(job["job_id"]))["state"] == "failed" })
+	r := c.NodeJob(str(job["job_id"]))
+	if r["error_code"] != "NODE_BUSY" || tr.started("submit") != 2 {
+		t.Fatalf("unexpected result: %v calls=%d", r, tr.started("submit"))
+	}
+	t.Log("queued restart became failed/NODE_BUSY while the same node's authorization was still in flight")
+}
+
+// ExportInventory is instrumented only in this isolated copy with a scheduling
+// hook after its DB read. The hook changes neither data nor write logic.
+func TestFixReviewInventoryCanPublishAnOlderSnapshotLast(t *testing.T) {
+	c := testControl(t)
+	w := NewWorker(c, nil)
+	readOld := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan struct{})
+	reviewInventoryReadHook = func(nodes []M) {
+		if len(nodes) == 1 {
+			close(readOld)
+			<-release
+		}
+	}
+	defer func() { reviewInventoryReadHook = nil }()
+	go func() { defer close(done); w.ExportInventory() }()
+	<-readOld
+	c.Register(M{"id": "node_sg", "name": "新加坡", "region": "ap", "location": "新加坡", "connection": M{"address": "100.70.0.3"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "sg.test", 443, "sg.test", nil}, {"tuic", "tuic-in", "sg.test", 443, "sg.test", nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+	if n := len(array(object(read(c.Settings.InventoryFile))["nodes"])); n != 2 {
+		t.Fatalf("newer export missing the second node: %d", n)
+	}
+	close(release)
+	<-done
+	if n := len(array(object(read(c.Settings.InventoryFile))["nodes"])); n != 1 {
+		t.Fatalf("expected stale export to overwrite the new inventory, got %d", n)
+	}
+	t.Log("new inventory with two nodes was overwritten by the older one-node snapshot")
+}

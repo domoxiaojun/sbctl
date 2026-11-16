@@ -231,10 +231,11 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 }
 func (w *Worker) ClaimNodeJob() M {
 	var job M
+	ts := timestamp()
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
-		job = d.One("SELECT j.* FROM node_jobs j WHERE (j.state='queued' OR (j.state='running' AND j.lease_until<?)) AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) ORDER BY j.created_at,j.id LIMIT 1", timestamp(), timestamp())
+		job = d.One("SELECT j.* FROM node_jobs j WHERE j.state IN ('queued','running') AND j.lease_until<? AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) AND (j.kind NOT IN ('configure','protocol_change','restart') OR NOT EXISTS(SELECT 1 FROM outbox o WHERE o.node_id=j.node_id AND o.state<>'done' AND o.lease_until>=?)) ORDER BY j.created_at,j.id LIMIT 1", ts, ts, ts)
 		if job != nil {
-			d.Exec("UPDATE node_jobs SET state='running',lease_owner=?,lease_until=?,updated_at=? WHERE id=?", w.Owner, timestamp()+360, now(), job["id"])
+			d.Exec("UPDATE node_jobs SET state='running',lease_owner=?,lease_until=?,updated_at=? WHERE id=?", w.Owner, ts+360, now(), job["id"])
 		}
 	})
 	return job
@@ -294,7 +295,7 @@ func (w *Worker) RunNodeJob(job M) {
 					fail("STALE_REVISION", "节点配置已由其他操作更新，请重新检查", 409)
 				}
 				if integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", draft.ID)) > 0 {
-					fail("NODE_BUSY", "节点正在处理授权任务，请完成后重试", 409)
+					fail("AUTHORIZATION_PENDING", "节点正在处理授权任务，维护任务排队等待", 409)
 				}
 				r := d.One("SELECT result_json FROM node_jobs WHERE id=?", input.InspectionID)
 				observation = object([]byte(str(r["result_json"])))
@@ -354,16 +355,20 @@ func (w *Worker) RunNodeJob(job M) {
 		}
 	})
 	state, message, code := "completed", "操作已完成", ""
+	nextAttempt := float64(0)
 	var output any
 	if err != nil {
 		state = "failed"
 		f := PublicFault(err)
 		code, message = f.Code, f.Message
+		if code == "AUTHORIZATION_PENDING" {
+			state, code, nextAttempt = "queued", "", timestamp()+1
+		}
 	} else {
 		output = string(canonical(result))
 	}
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
-		d.Exec("UPDATE node_jobs SET state=?,result_json=?,error_code=?,message=?,updated_at=?,lease_until=0 WHERE id=? AND lease_owner=?", state, output, code, message, now(), job["id"], w.Owner)
+		d.Exec("UPDATE node_jobs SET state=?,result_json=?,error_code=?,message=?,updated_at=?,lease_owner=NULL,lease_until=? WHERE id=? AND lease_owner=?", state, output, code, message, now(), nextAttempt, job["id"], w.Owner)
 	})
 }
 func DiscoveryExport(path string) {
