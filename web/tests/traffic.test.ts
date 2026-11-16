@@ -86,3 +86,24 @@ it('导出 CSV 保留精确字节并防止公式注入', () => {
  expect(local.split('\r\n')[1]).toBe(`${node.name},${node.id},张三,当前,1,2,3,2026-01-02T00:00:00Z,全部累计`)
  expect(local.endsWith('\r\n')).toBe(true)
 })
+
+import { monthRange } from '../src/lib/traffic'
+it('按月趋势由每日数据折叠，点击月份定位到整月且不超过今天', () => {
+ const now = Date.parse('2026-03-10T05:30:00Z'), seed = fixtures(now)
+ expect(monthRange('2026-02', now)).toEqual({ from: '2026-02-01', to: '2026-02-28' })
+ expect(monthRange('2024-02', now)).toEqual({ from: '2024-02-01', to: '2024-02-29' })
+ expect(monthRange('2026-03', now)).toEqual({ from: '2026-03-01', to: '2026-03-10' })
+ expect(trafficSearch({ granularity: 'month' }).granularity).toBe('month')
+ const params = { scope: 'inbounds', from: '2026-02-20', to: '2026-03-10' }
+ const daily = demoTraffic(seed, new URLSearchParams(params), now), monthly = demoTraffic(seed, new URLSearchParams({ ...params, granularity: 'month' }), now)
+ expect(monthly.granularity).toBe('month')
+ expect(monthly.trend.map(p => p.date)).toEqual(['2026-02', '2026-03'])
+ const sum = (points: typeof daily.trend) => trafficTotals(points.map(p => ({ upload_bytes: p.upload_bytes ?? '0', download_bytes: p.download_bytes ?? '0' })))
+ expect(sum(monthly.trend)).toEqual(sum(daily.trend))
+ // 演示数据只有最近 14 天明细：二月混有缺失日期，记为不完整。
+ expect(monthly.trend[0].status).toBe('partial')
+ const recent = demoTraffic(seed, new URLSearchParams({ granularity: 'month' }), now)
+ expect(recent.trend).toHaveLength(12)
+ expect(recent.trend.at(-1)!.date).toBe('2026-03')
+ expect(recent.trend[0]).toMatchObject({ date: '2025-04', status: 'unavailable', upload_bytes: null })
+})

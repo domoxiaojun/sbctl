@@ -253,7 +253,7 @@ func (v Views) TrafficReport(q url.Values) M {
 	if granularity == "" {
 		granularity = "day"
 	}
-	if granularity != "day" && granularity != "hour" {
+	if !contains([]string{"hour", "day", "month"}, granularity) {
 		fail("GRANULARITY_INVALID", "趋势粒度无效", 422)
 	}
 	if granularity == "hour" && end.Sub(start) > 7*24*time.Hour {
@@ -265,6 +265,10 @@ func (v Views) TrafficReport(q url.Values) M {
 		trendStart = trendEnd.AddDate(0, 0, -7)
 		if granularity == "hour" {
 			trendStart = trendEnd.AddDate(0, 0, -2)
+		}
+		if granularity == "month" {
+			// The current month and the eleven before it: at most 366 days.
+			trendStart = time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, trafficZone).AddDate(0, -11, 0)
 		}
 	}
 	daily := map[string]M{}
@@ -430,7 +434,7 @@ func (v Views) TrafficReport(q url.Values) M {
 	if granularity == "hour" {
 		trend = v.hourlyTrend(trendStart, trendEnd, group, selected, selectedKeys)
 	}
-	for day := trendStart; granularity == "day" && day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
+	for day := trendStart; granularity != "hour" && day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
 		key := day.Format(time.DateOnly)
 		point := M{"date": key, "upload_bytes": daily[key]["upload_bytes"], "download_bytes": daily[key]["download_bytes"], "status": "complete"}
 		known := integer(daily[key]["known"])
@@ -443,7 +447,36 @@ func (v Views) TrafficReport(q url.Values) M {
 		}
 		trend = append(trend, point)
 	}
+	if granularity == "month" {
+		trend = monthlyTrend(trend)
+	}
 	return M{"nodes": result, "users": users, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "scope": scope, "granularity": granularity, "trend": trend, "trend_from": trendStart.Format(time.DateOnly), "trend_to": trendEnd.AddDate(0, 0, -1).Format(time.DateOnly), "as_of": now()}
+}
+
+// monthlyTrend folds daily points into calendar months. A month is complete
+// only when each of its days in the range is; days without detail make it
+// partial, and a month with no detail at all stays unavailable.
+func monthlyTrend(days []M) []M {
+	months := []M{}
+	sums := map[string][2]*big.Int{}
+	for _, day := range days {
+		key := str(day["date"])[:7]
+		if len(months) == 0 || months[len(months)-1]["date"] != key {
+			months = append(months, M{"date": key, "upload_bytes": nil, "download_bytes": nil, "status": day["status"]})
+			sums[key] = [2]*big.Int{new(big.Int), new(big.Int)}
+		}
+		month := months[len(months)-1]
+		if day["status"] != month["status"] {
+			month["status"] = "partial"
+		}
+		if day["status"] == "unavailable" {
+			continue
+		}
+		sums[key][0].Add(sums[key][0], bytesInt(day["upload_bytes"]))
+		sums[key][1].Add(sums[key][1], bytesInt(day["download_bytes"]))
+		month["upload_bytes"], month["download_bytes"] = sums[key][0].String(), sums[key][1].String()
+	}
+	return months
 }
 
 // hourlyTrend sums the selected series of each node per hour. Hours are filed

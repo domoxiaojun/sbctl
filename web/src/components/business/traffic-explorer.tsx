@@ -20,8 +20,8 @@ export function TrafficExplorer() {
  const dates = { from: search.from ?? '', to: search.to ?? '' }
  const update = (next: TrafficFilters) => { setRefreshMessage(''); void navigate({ to: '.', search: old => ({ ...dates, q: old.q, node: old.node, protocol: old.protocol, activity: old.activity, local_user: old.local_user, scope: old.scope, sort: old.sort, granularity: old.granularity, ...next }), resetScroll: false }) }
  // 超过 7 天的区间只提供按日趋势；网址里的小时选择保留，缩短区间后自动恢复。
- const hourlyDisabled = !hourlyAllowed(dates.from, dates.to), hourly = search.granularity === 'hour' && !hourlyDisabled
- const filters: TrafficFilters = { q: search.q, node: search.node, ...dates, scope, ...(scope === 'inbounds' ? { protocol: search.protocol } : {}), activity: search.activity, ...(scope === 'local' ? { local_user: search.local_user } : {}), ...(hourly ? { granularity: 'hour' as const } : {}) }
+ const hourlyDisabled = !hourlyAllowed(dates.from, dates.to), granularity = search.granularity === 'hour' && hourlyDisabled ? undefined : search.granularity
+ const filters: TrafficFilters = { q: search.q, node: search.node, ...dates, scope, ...(scope === 'inbounds' ? { protocol: search.protocol } : {}), activity: search.activity, ...(scope === 'local' ? { local_user: search.local_user } : {}), ...(granularity ? { granularity } : {}) }
  const error = dateError(filters.from, filters.to)
  const query = useQuery({ queryKey: ['traffic', filters], queryFn: ({ signal }) => api.traffic(filters, signal), enabled: !error, refetchInterval: 15_000 })
  const catalog = useQuery({ queryKey: ['traffic-catalog'], queryFn: ({ signal }) => api.traffic({}, signal), staleTime: 60_000 })
@@ -38,7 +38,7 @@ export function TrafficExplorer() {
   if (result.error) { setRefreshMessage('刷新失败，请重试。'); return }
   setRefreshMessage(before === JSON.stringify([result.data?.nodes, result.data?.trend]) ? '已读取最新快照，尚无新的采样或用量变化。' : '统计已更新。')
  }
- const selectDay = (date: string) => update({ from: date, to: date })
+ const selectRange = (from: string, to: string) => update({ from, to })
  const exportCsv = () => {
   if (!report) return
   const url = URL.createObjectURL(new Blob([trafficCsv(report, scope)], { type: 'text/csv;charset=utf-8' })), link = document.createElement('a')
@@ -74,7 +74,7 @@ export function TrafficExplorer() {
   <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{refreshMessage || (sampled ? `最近采样 ${formatTime(sampled, true)}` : '等待统计快照')}</p><span>每 15 秒更新 · 入口与用户用量分别统计</span></div>
   {error ? null : query.isPending || query.error ? <DataState loading={query.isPending} error={query.error} retry={() => query.refetch()} /> : report && <>
    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3" aria-label="筛选结果汇总">{[['合计', totalBytes(sum)], ['上传', sum.upload_bytes], ['下载', sum.download_bytes]].map(([label, value]) => <div className="panel p-5" key={label}><p className="text-sm text-muted-foreground">{period ? '区间' : '累计'}{label}</p><strong className="text-2xl numeric block mt-2" title={nodes.length ? exactBytes(value) : undefined}>{nodes.length ? formatBytes(value) : '—'}</strong><p className="text-xs text-muted-foreground mt-2">当前筛选 · {rows.length} 条记录</p></div>)}</div>
-   <Suspense fallback={<DataState loading />}><TrafficTrend report={report} onSelect={selectDay} onGranularity={value => update({ granularity: value === 'hour' ? 'hour' : undefined })} hourlyDisabled={hourlyDisabled} /></Suspense>
+   <Suspense fallback={<DataState loading />}><TrafficTrend report={report} onSelect={selectRange} onGranularity={value => update({ granularity: value === 'day' ? undefined : value })} hourlyDisabled={hourlyDisabled} /></Suspense>
    <TrafficRankings report={report} scope={scope} onSelect={update} />
    {period && <details className="panel p-4 text-xs text-muted-foreground" open={report.periods.some(p => p.status === 'unavailable')}><summary className="cursor-pointer min-h-7">{report.periods.some(p => p.status !== 'complete') ? '该时段记录不完整 · 查看记录范围' : '该时段记录完整 · 查看记录范围'}</summary><div className="space-y-2 mt-2">{report.periods.map(p => <p key={p.node_id}>{report.nodes.find(n => n.id === p.node_id)?.name ?? p.node_id}：{p.status === 'unavailable' ? '该时段无日期明细，不能按零流量判断。' : p.status === 'partial' ? '当前显示已记录部分。' : '该时段记录完整。'} 明细起点：{formatTime(p.history_started_at, true)}。</p>)}<p>跨日用量按结束采样归档，正常日期边界最多偏移 3 分钟。</p></div></details>}
    <div className="space-y-3"><h2 className="text-sm text-muted-foreground">用量明细</h2>{scope === 'inbounds' ? <ProtocolTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} /> : <LocalUserTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} />}</div>

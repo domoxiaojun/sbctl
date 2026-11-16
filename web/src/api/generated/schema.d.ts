@@ -1039,7 +1039,7 @@ export interface components {
             /** @enum {string} */
             scope: "inbounds" | "local" | "managed";
             /** @enum {string} */
-            granularity: "day" | "hour";
+            granularity: "hour" | "day" | "month";
             trend: components["schemas"]["TrafficDay"][];
             trend_from: string;
             trend_to: string;
@@ -1098,7 +1098,7 @@ export interface components {
             deleted?: boolean;
         };
         TrafficDay: {
-            /** @description 按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，均为 UTC+8 */
+            /** @description 按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，按月为 YYYY-MM，均为 UTC+8 */
             date: string;
             upload_bytes: string | null;
             download_bytes: string | null;
@@ -2900,8 +2900,8 @@ export interface operations {
                 from?: string;
                 /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
                 to?: string;
-                /** @description 趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天 */
-                granularity?: "day" | "hour";
+                /** @description 趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天；按月时未选日期返回最近 12 个月 */
+                granularity?: "hour" | "day" | "month";
             };
             header?: never;
             path?: never;

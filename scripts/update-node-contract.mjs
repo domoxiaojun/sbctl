@@ -8,8 +8,8 @@ Object.assign(doc.components.schemas,{
  NodeLocalUser:schema({name:str,upload_bytes:str,download_bytes:str,started_at:str,active:bool}),
  TrafficPeriod:schema({node_id:str,history_started_at:{anyOf:[str,{type:'null'}]},status:{type:'string',enum:['cumulative','complete','partial','unavailable']}}),
  TrafficUser:schema({user_id:str,display_name:str,node_id:str,node_name:str,upload_bytes:str,download_bytes:str,quality:ref('Quality')}),
- TrafficDay:schema({date:{type:'string',description:'按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，均为 UTC+8'},upload_bytes:{anyOf:[str,{type:'null'}]},download_bytes:{anyOf:[str,{type:'null'}]},status:{type:'string',enum:['complete','partial','unavailable']}}),
- TrafficReport:schema({scope:{type:'string',enum:['inbounds','local','managed']},granularity:{type:'string',enum:['day','hour']},trend:{type:'array',items:ref('TrafficDay')},trend_from:str,trend_to:str,nodes:{type:'array',items:ref('Node')},users:{type:'array',items:ref('TrafficUser')},periods:{type:'array',items:ref('TrafficPeriod')},from:str,to:str,timezone:str,as_of:str}),
+ TrafficDay:schema({date:{type:'string',description:'按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，按月为 YYYY-MM，均为 UTC+8'},upload_bytes:{anyOf:[str,{type:'null'}]},download_bytes:{anyOf:[str,{type:'null'}]},status:{type:'string',enum:['complete','partial','unavailable']}}),
+ TrafficReport:schema({scope:{type:'string',enum:['inbounds','local','managed']},granularity:{type:'string',enum:['hour','day','month']},trend:{type:'array',items:ref('TrafficDay')},trend_from:str,trend_to:str,nodes:{type:'array',items:ref('Node')},users:{type:'array',items:ref('TrafficUser')},periods:{type:'array',items:ref('TrafficPeriod')},from:str,to:str,timezone:str,as_of:str}),
  NodeDraft:schema({id:str,name:str,region:str,location:str,group_id:str,group_name:str,connection:ref('NodeConnection'),container:str,config_dir:str,public_host:str,server_name:str},['id','name','region','location','group_id','group_name','connection','container','config_dir','public_host']),
  NodeJobInput:schema({kind:{type:'string',enum:['inspect','configure','check']},draft:ref('NodeDraft'),inspection_id:str,expected_version:num,desired_container:str,desired_image:str},['kind','draft','inspection_id','expected_version']),
  NodeJobAccepted:schema({job_id:str}),
@@ -31,7 +31,7 @@ function endpoint(path,method,id,response,request,status=200){const op={operatio
 endpoint('/api/v1/node-discovery','get','get__node_discovery','NodeDiscovery');
 endpoint('/api/v1/traffic','get','get__traffic','TrafficReport');
 doc.paths['/api/v1/traffic'].get.parameters=['node','protocol','activity','q','user','local_user','scope','from','to'].map(name=>({name,in:'query',schema:{type:'string'},description:['from','to'].includes(name)?'UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天':'统计筛选'}));
-doc.paths['/api/v1/traffic'].get.parameters.push({name:'granularity',in:'query',schema:{type:'string',enum:['day','hour']},description:'趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天'});
+doc.paths['/api/v1/traffic'].get.parameters.push({name:'granularity',in:'query',schema:{type:'string',enum:['hour','day','month']},description:'趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天；按月时未选日期返回最近 12 个月'});
 endpoint('/api/v1/node-onboarding','get','get__node_onboarding','NodeOnboarding');
 endpoint('/api/v1/node-jobs','post','post__node_jobs','NodeJobAccepted','NodeJobInput',202);
 endpoint('/api/v1/node-jobs/{id}','get','get__node_job','NodeJob');

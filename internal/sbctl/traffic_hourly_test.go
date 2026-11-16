@@ -157,3 +157,35 @@ func TestHistoryDocumentReusesUnchangedFiles(t *testing.T) {
 		t.Fatal("a removed export must read as nil")
 	}
 }
+
+func TestTrafficMonthlyTrendFoldsDays(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	// Samples from 23:58 on 31 January to 01:09 on 1 February in UTC+8.
+	ingestSeries(t, tr, time.Date(2026, 1, 31, 15, 58, 20, 0, time.UTC), 26, 100)
+	view := Views{c.Settings}
+	query := url.Values{"from": {"2026-01-30"}, "to": {"2026-02-02"}}
+	daily := view.TrafficReport(query)
+	query.Set("granularity", "month")
+	monthly := view.TrafficReport(query)
+	if monthly["granularity"] != "month" || len(array(monthly["trend"])) != 2 {
+		t.Fatalf("expected one point per calendar month: %v", monthly["trend"])
+	}
+	january, february := trendPoint(monthly, "2026-01"), trendPoint(monthly, "2026-02")
+	// 30 January has no detail and 31 January only starts the history.
+	if january["status"] != "partial" || str(january["upload_bytes"]) != "0" {
+		t.Fatalf("a month mixing missing and recorded days is partial: %v", january)
+	}
+	if february["status"] != "partial" || str(february["upload_bytes"]) != str(trendPoint(daily, "2026-02-01")["upload_bytes"]) {
+		t.Fatalf("a month sums its recorded days: %v", february)
+	}
+	empty := view.TrafficReport(url.Values{"from": {"2025-11-01"}, "to": {"2025-11-30"}, "granularity": {"month"}})
+	if point := trendPoint(empty, "2025-11"); point["status"] != "unavailable" || point["upload_bytes"] != nil {
+		t.Fatalf("a month without detail is unavailable, not zero: %v", point)
+	}
+	recent := array(view.TrafficReport(url.Values{"granularity": {"month"}})["trend"])
+	if len(recent) != 12 || mapping(recent[11])["date"] != time.Now().In(trafficZone).Format("2006-01") {
+		t.Fatalf("without dates the trend covers the last twelve months: %d points", len(recent))
+	}
+}

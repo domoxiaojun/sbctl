@@ -3,11 +3,11 @@ import { totalBytes } from './format'
 
 export type TrafficFilters = {
  q?: string; node?: string; protocol?: string; activity?: string; local_user?: string;
- from?: string; to?: string; scope?: 'inbounds' | 'local'; sort?: 'name' | 'bytes' | 'created'; granularity?: 'hour'
+ from?: string; to?: string; scope?: 'inbounds' | 'local'; sort?: 'name' | 'bytes' | 'created'; granularity?: 'hour' | 'month'
 }
 export function trafficSearch(raw: Record<string, unknown>): TrafficFilters {
  const text = (key: string) => typeof raw[key] === 'string' ? raw[key].slice(0, 100) : undefined
- return { local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined, granularity: raw.granularity === 'hour' ? 'hour' : undefined }
+ return { local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined, granularity: raw.granularity === 'hour' || raw.granularity === 'month' ? raw.granularity : undefined }
 }
 export function calendarDate(value = Date.now()) { return new Date(value + 8 * 3600_000).toISOString().slice(0, 10) }
 export function presetDates(preset: string, now = Date.now()) {
@@ -30,6 +30,11 @@ export function dateError(from?: string, to?: string) {
 // 按小时趋势一次最多 7 天；未选日期时服务端返回最近两天。
 export function hourlyAllowed(from?: string, to?: string) {
  return !from || !to || Date.parse(to) - Date.parse(from) <= 6 * 86400_000
+}
+// 某个月在统计时区内的起止日期，结束日期不超过今天。
+export function monthRange(month: string, now = Date.now()) {
+ const [year, index] = month.split('-').map(Number), last = new Date(Date.UTC(year, index, 0)).toISOString().slice(0, 10), today = calendarDate(now)
+ return { from: `${month}-01`, to: last > today ? today : last }
 }
 export function sortTraffic<T extends { upload_bytes: string; download_bytes: string }>(rows: T[], sort: string | undefined, name: (row: T) => string) {
  return [...rows].sort((a,b) => { if (sort !== 'name') { const diff = BigInt(totalBytes(b)) - BigInt(totalBytes(a)); if (diff !== 0n) return diff > 0n ? 1 : -1 } return name(a).localeCompare(name(b)) })

@@ -5,7 +5,7 @@ type State = { nodes: Schema['Node'][]; users: Schema['User'][]; groups: Schema[
 export function demoTraffic(state: State, params: URLSearchParams, now: number): Schema['TrafficReport'] {
  const from = params.get('from') || '', to = params.get('to') || ''
  const scope = (params.get('scope') || 'inbounds') as Schema['TrafficReport']['scope']
- const granularity = params.get('granularity') === 'hour' ? 'hour' : 'day'
+ const requested = params.get('granularity'), granularity = requested === 'hour' || requested === 'month' ? requested : 'day'
  if (dateError(from, to)) throw new Error(dateError(from, to))
  if (granularity === 'hour' && !hourlyAllowed(from, to)) throw new Error('按小时查看最多选择 7 天')
  const selected = state.nodes.filter(n => !params.get('node') || n.id === params.get('node'))
@@ -26,7 +26,8 @@ export function demoTraffic(state: State, params: URLSearchParams, now: number):
    return { user_id: u.id, display_name: u.display_name, node_id: n.id, node_name: n.name, quality: n.quality, ...bytes({ upload_bytes: divide(u.upload_bytes), download_bytes: divide(u.download_bytes) }) }
   })
  })
- const trendFrom = from || calendarDate(now - (granularity === 'hour' ? 1 : 6) * 86400000), trendTo = to || calendarDate(now)
+ const yearAgo = new Date(now + 8 * 3600_000); yearAgo.setUTCDate(1); yearAgo.setUTCMonth(yearAgo.getUTCMonth() - 11)
+ const trendFrom = from || (granularity === 'month' ? yearAgo.toISOString().slice(0, 10) : calendarDate(now - (granularity === 'hour' ? 1 : 6) * 86400000)), trendTo = to || calendarDate(now)
  const days: string[] = []
  for (let ms = Date.parse(trendFrom); ms <= Date.parse(trendTo); ms += 86400000) days.push(new Date(ms).toISOString().slice(0, 10))
  const historyStart = calendarDate(now - 14 * 86400000), available = days.filter(day => day >= historyStart)
@@ -50,5 +51,15 @@ export function demoTraffic(state: State, params: URLSearchParams, now: number):
    return { date: `${label}:00`, upload_bytes: share(day.upload_bytes), download_bytes: share(day.download_bytes), status: day.status }
   })
  })
- return { nodes, users, periods: nodes.map(n => ({ node_id: n.id, history_started_at: n.quality.started_at, status: !from ? 'cumulative' : available.length ? 'partial' : 'unavailable' })), from, to, scope, granularity, trend: granularity === 'hour' ? hours : trend, trend_from: trendFrom, trend_to: trendTo, timezone: 'Asia/Singapore', as_of: new Date(now).toISOString() }
+ // 月份由每日数据折叠而成：各日状态一致才沿用，否则记为不完整。
+ const months: Schema['TrafficDay'][] = []
+ for (const day of trend) {
+  let month = months.at(-1)
+  if (month?.date !== day.date.slice(0, 7)) months.push(month = { date: day.date.slice(0, 7), upload_bytes: null, download_bytes: null, status: day.status })
+  if (day.status !== month.status) month.status = 'partial'
+  if (day.upload_bytes === null || day.download_bytes === null) continue
+  month.upload_bytes = (BigInt(month.upload_bytes ?? '0') + BigInt(day.upload_bytes)).toString()
+  month.download_bytes = (BigInt(month.download_bytes ?? '0') + BigInt(day.download_bytes)).toString()
+ }
+ return { nodes, users, periods: nodes.map(n => ({ node_id: n.id, history_started_at: n.quality.started_at, status: !from ? 'cumulative' : available.length ? 'partial' : 'unavailable' })), from, to, scope, granularity, trend: granularity === 'hour' ? hours : granularity === 'month' ? months : trend, trend_from: trendFrom, trend_to: trendTo, timezone: 'Asia/Singapore', as_of: new Date(now).toISOString() }
 }

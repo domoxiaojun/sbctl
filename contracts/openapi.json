@@ -2227,11 +2227,12 @@
             "schema": {
               "type": "string",
               "enum": [
+                "hour",
                 "day",
-                "hour"
+                "month"
               ]
             },
-            "description": "趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天"
+            "description": "趋势粒度，默认按日；按小时时日期区间最多 7 天，未选日期时返回最近两天；按月时未选日期返回最近 12 个月"
           }
         ]
       }
@@ -4391,8 +4392,9 @@
           "granularity": {
             "type": "string",
             "enum": [
+              "hour",
               "day",
-              "hour"
+              "month"
             ]
           },
           "trend": {
@@ -4676,7 +4678,7 @@
         "properties": {
           "date": {
             "type": "string",
-            "description": "按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，均为 UTC+8"
+            "description": "按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，按月为 YYYY-MM，均为 UTC+8"
           },
           "upload_bytes": {
             "anyOf": [
