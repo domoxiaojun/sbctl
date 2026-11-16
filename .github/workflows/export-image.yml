@@ -1,0 +1,50 @@
+name: Export verified deployment image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Export exact amd64 image from release receipt
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          mkdir deployment
+          gh release download "$VERSION" --pattern release.json --dir deployment
+          image=$(jq -er .image deployment/release.json)
+          [[ "$image" =~ ^ghcr.io/domoxiaojun/sbctl@sha256:[a-f0-9]{64}$ ]]
+          test "$(jq -r .version deployment/release.json)" = "$VERSION"
+          docker pull --platform linux/amd64 "$image"
+          target="ghcr.io/domoxiaojun/sbctl:$VERSION"
+          docker tag "$image" "$target"
+          config_id=$(docker image inspect "$target" --format '{{.Id}}')
+          test "v$(docker run --rm --network none "$target" version | jq -r .version)" = "$VERSION"
+          jq -n --arg image "$image" --arg tag "$target" --arg config_id "$config_id" '{image:$image,tag:$tag,config_id:$config_id,platform:"linux/amd64"}' > deployment/image.json
+          docker save "$target" | gzip > "deployment/sbctl-$VERSION-image-amd64.tar.gz"
+          (cd deployment && sha256sum ./*.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: deployment-image
+          path: deployment/
+          if-no-files-found: error
+          retention-days: 14

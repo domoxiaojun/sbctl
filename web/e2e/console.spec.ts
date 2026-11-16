@@ -30,7 +30,9 @@ for (const width of [375, 1440]) test(`新增表单、持久操作恢复、订�
   await page.getByRole('checkbox', { name: '新加坡 6 个节点', exact: true }).check()
   await page.getByRole('button', { name: '提交配置', exact: true }).click()
   await expect(page).toHaveURL(/operations\/op-/)
-  await expect(page.getByText('已接收', { exact: true }).first()).toBeVisible()
+  // On CI the task may already be running when navigation finishes; verify
+  // its durable identity instead of requiring a transient queued badge.
+  await expect(page.getByRole('heading', { name: '添加用户 · 浏览器验收用户' })).toBeVisible()
   await page.reload()
   await expect(page.getByText('已完成', { exact: true })).toBeVisible({ timeout: 10_000 })
   await page.getByRole('link', { name: '查看用户详情 →' }).click()
