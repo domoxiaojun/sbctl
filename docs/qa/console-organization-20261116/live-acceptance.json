@@ -1,0 +1,31 @@
+{
+  "checked_at": "2026-11-16T07:35:51.421Z",
+  "version": "0.9.1",
+  "current_inbounds": 19,
+  "protocols": [
+    "direct",
+    "anytls",
+    "shadowsocks",
+    "vless",
+    "tuic",
+    "vmess"
+  ],
+  "history_started_at": "2026-11-16T05:55:46.371429Z",
+  "quality": {
+    "freshness": "current",
+    "gap_count": 12,
+    "has_historical_gap": true,
+    "integrity_state": "ok",
+    "sampled_at": "2026-11-16T07:35:26.373163Z",
+    "started_at": "2026-11-14T17:11:57.957976Z",
+    "synced_at": "2026-11-16T07:35:29.725284Z"
+  },
+  "cumulative_preserved": true,
+  "history_baseline_preserved": true,
+  "desktop_mobile_navigation_passed": true,
+  "traffic_requests_only_on_usage": true,
+  "browser_mutation_requests": [],
+  "browser_errors": [],
+  "proxy_runtime": "d8b5bb385993a5adb40f99d51c8ed7732fecd0c9be8e34b90ede0975948913bb 2026-11-16T04:08:31.580368836Z",
+  "proxy_config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22"
+}
