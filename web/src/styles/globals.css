@@ -170,6 +170,9 @@
   .online-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
   .icon-link { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 8px; color: var(--muted-foreground); flex-shrink: 0; transition: color 150ms, background 150ms; }
   .icon-link:hover { color: var(--foreground); background: var(--muted); }
+  .workspace-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 500; overflow-wrap: anywhere; transition: background 150ms; }
+  .workspace-link:hover { background: var(--muted); }
+  .workspace-link > svg { flex-shrink: 0; }
   .demo-banner { display: flex; align-items: center; gap: 8px; padding: 9px 32px; color: var(--muted-foreground); border-bottom: 1px solid var(--border); font-size: 12px; background: color-mix(in srgb,var(--card) 45%,var(--background)); }
   .demo-banner > svg { flex-shrink: 0; }
   .demo-banner strong { font-weight: 500; color: var(--foreground); }

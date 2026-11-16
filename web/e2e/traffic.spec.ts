@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { fixtures } from '../src/demo/fixtures'
 import { calendarDate } from '../src/lib/traffic'
 
-for (const width of [375,1440]) test(`流量筛选、日期、刷新和节点总览 ${width}px`,async({page},testInfo)=>{
+for (const width of [375,1440]) test(`流量筛选、日期、刷新和节点跳转 ${width}px`,async({page},testInfo)=>{
  await page.setViewportSize({width,height:1000})
  await page.emulateMedia({colorScheme:width===375?'dark':'light'})
  const seed=fixtures(Date.now())
@@ -12,8 +12,11 @@ for (const width of [375,1440]) test(`流量筛选、日期、刷新和节点总
  n.local_users.push({name:'vmess-user',active:true,started_at:new Date().toISOString(),upload_bytes:'397745587',download_bytes:'1203972810'})
  await page.addInitScript(seed=>sessionStorage.setItem('sbctl-f0-synthetic-state-v1',JSON.stringify({...seed,requests:{},signedIn:true})),seed)
  await page.goto(`/nodes/${n.id}`)
- await expect(page.getByRole('heading',{name:'全部协议入口流量'})).toBeVisible()
- await expect(page.locator('.detail-grid')).toContainText('1.49 GiB')
+ await expect(page.getByRole('heading',{name:'sing-box 管理'})).toBeVisible()
+ await expect(page.getByRole('region',{name:'协议入口'})).toContainText('VMESS')
+ await expect(page.getByLabel('流量筛选')).toHaveCount(0)
+ await page.getByRole('link',{name:'查看节点流量'}).click()
+ await expect(page).toHaveURL(new RegExp(`/usage\\?.*node=${n.id}`))
  await page.getByRole('combobox',{name:'筛选协议'}).click()
  await page.getByRole('option',{name:'VMESS',exact:true}).click()
  await expect(page).toHaveURL(/protocol=vmess/)
@@ -81,7 +84,7 @@ test('生产页面自动更新快照，缺少历史明细时不显示零流量',
  await expect(page.getByLabel('筛选结果汇总')).not.toContainText('0 B')
 })
 
-for (const width of [375, 1440]) test(`总览日趋势与排行联动 ${width}px`, async ({ page }, testInfo) => {
+for (const width of [375, 1440]) test(`统计日趋势与排行联动 ${width}px`, async ({ page }, testInfo) => {
  await page.setViewportSize({ width, height: 1000 })
  await page.emulateMedia({ colorScheme: width === 375 ? 'dark' : 'light', reducedMotion: 'reduce' })
  const errors: string[] = []
@@ -90,7 +93,9 @@ for (const width of [375, 1440]) test(`总览日趋势与排行联动 ${width}px
  first.inbounds=[{tag:'vmess',protocol:'vmess',port:23323,active:true,started_at:first.quality.started_at!,upload_bytes:'1073741824',download_bytes:'2147483648'}]
  first.inbound_upload_bytes='1073741824'; first.inbound_download_bytes='2147483648'
  await page.addInitScript(seed=>sessionStorage.setItem('sbctl-f0-synthetic-state-v1',JSON.stringify({...seed,requests:{},signedIn:true})),seed)
- await page.goto('/')
+ await page.goto('/usage')
+ await page.getByRole('button',{name:/选择统计日期/}).click()
+ await page.getByRole('button',{name:'近 7 天',exact:true}).click()
  await expect(page.getByRole('button',{name:'选择统计日期：近 7 天'})).toBeVisible()
  await expect(page.getByRole('img',{name:/每日流量趋势/})).toBeVisible()
  await expect(page.getByRole('region',{name:'协议用量排行'})).toBeVisible()
@@ -107,7 +112,6 @@ for (const width of [375, 1440]) test(`总览日趋势与排行联动 ${width}px
  await page.getByText('查看每日数据',{exact:true}).click()
  await page.getByRole('button',{name:`查看 ${calendarDate()} 流量`}).click()
  await expect(page.getByRole('button',{name:'选择统计日期：今天'})).toBeVisible()
- await page.getByRole('link',{name:'查看流量明细'}).click()
  await expect(page).toHaveURL(/\/usage\?.*protocol=vmess/)
  await expect(page.getByText('vmess',{exact:true}).filter({visible:true})).toBeVisible()
  await page.getByRole('button',{name:'高级筛选',exact:true}).click()
@@ -137,9 +141,11 @@ for (const width of [375, 1440]) test(`总览日趋势与排行联动 ${width}px
  await page.getByRole('button',{name:'下一页',exact:true}).click()
  await expect(page.getByRole('button',{name:'上一页',exact:true})).toBeEnabled()
  await page.getByRole('button',{name:'上一页',exact:true}).click()
+ await page.evaluate(()=>window.scrollTo(0,0))
  await page.screenshot({path:testInfo.outputPath(`dashboard-${width}.png`),fullPage:true})
  await page.goto('/')
- await expect(page.getByRole('img',{name:/每日流量趋势/})).toBeVisible()
+ await expect(page.getByRole('heading',{name:'全局总览'})).toBeVisible()
+ await expect(page.getByRole('img',{name:/每日流量趋势/})).toHaveCount(0)
  await page.screenshot({path:testInfo.outputPath(`overview-${width}.png`),fullPage:true})
  expect(errors).toEqual([])
 })

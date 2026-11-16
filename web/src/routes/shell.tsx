@@ -15,12 +15,12 @@ import { useTheme } from '@/lib/theme'
 import { clearPendingRequest } from '@/lib/pending-request'
 
 const nav = [
-  { to: '/', label: '总览', icon: LayoutDashboard },
-  { to: '/nodes', label: '节点管理', icon: Globe2 },
-  { to: '/users', label: '用户与授权', icon: Network },
-  { to: '/usage', label: '流量统计', icon: ArrowDownUp },
-  { to: '/operations', label: '操作记录', icon: ListChecks },
-  { to: '/alerts', label: '告警中心', icon: Bell },
+  { to: '/', label: '总览', icon: LayoutDashboard, group: '工作空间' },
+  { to: '/nodes', label: '节点与协议', icon: Globe2, group: '资源管理' },
+  { to: '/users', label: '用户与授权', icon: Network, group: '资源管理' },
+  { to: '/usage', label: '流量统计', icon: ArrowDownUp, group: '用量分析' },
+  { to: '/operations', label: '操作记录', icon: ListChecks, group: '运维' },
+  { to: '/alerts', label: '告警中心', icon: Bell, group: '运维' },
 ] as const
 
 export function Brand() {
@@ -38,7 +38,7 @@ function ConsoleLayout({ displayName, onLogout, loggingOut, logoutError }: { dis
   const { isMobile, setOpenMobile, state } = useSidebar()
   const { resolvedTheme, setTheme } = useTheme()
   const active = nav.find(item => item.to === '/' ? pathname === '/' : pathname.startsWith(item.to))
-  const title = active?.label ?? (pathname === '/components' ? '组件验收' : '设置与诊断')
+  const title = active?.label ?? (pathname === '/components' ? '组件验收' : '界面设置')
   const themeLabel = resolvedTheme === 'dark' ? '切换浅色主题' : '切换深色主题'
   useEffect(() => { document.getElementById('main-content')?.focus({ preventScroll: true }); window.scrollTo({ top: 0 }) }, [pathname])
 
@@ -47,20 +47,22 @@ function ConsoleLayout({ displayName, onLogout, loggingOut, logoutError }: { dis
     <Sidebar collapsible="icon" className="app-sidebar">
       <SidebarHeader><Brand /></SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>工作空间</SidebarGroupLabel>
-          <nav aria-label={isMobile ? '移动导航' : '主导航'}><SidebarMenu>
-            {nav.map(item => <SidebarMenuItem key={item.to}>
+        <nav aria-label={isMobile ? '移动导航' : '主导航'}>
+        {['工作空间', '资源管理', '用量分析', '运维'].map(group => <SidebarGroup key={group}>
+          <SidebarGroupLabel>{group}</SidebarGroupLabel>
+          <SidebarMenu>
+            {nav.filter(item => item.group === group).map(item => <SidebarMenuItem key={item.to}>
               <SidebarMenuButton isActive={active?.to === item.to} tooltip={item.label} render={<Link to={item.to} search={{}} aria-current={active?.to === item.to ? 'page' : undefined} onClick={() => setOpenMobile(false)} />}>
                 <item.icon /><span>{item.label}</span>{active?.to === item.to && <ChevronRight className="nav-active-arrow" />}
               </SidebarMenuButton>
             </SidebarMenuItem>)}
-          </SidebarMenu></nav>
-        </SidebarGroup>
+          </SidebarMenu>
+        </SidebarGroup>)}
+        </nav>
         <SidebarGroup className="mt-auto">
-          <SidebarGroupLabel>偏好与帮助</SidebarGroupLabel>
+          <SidebarGroupLabel>偏好</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem><SidebarMenuButton isActive={pathname === '/settings'} tooltip="设置与诊断" render={<Link to="/settings" onClick={() => setOpenMobile(false)} />}><Settings2 /><span>设置与诊断</span></SidebarMenuButton></SidebarMenuItem>
+            <SidebarMenuItem><SidebarMenuButton isActive={pathname === '/settings'} tooltip="界面设置" render={<Link to="/settings" search={{}} aria-current={pathname === '/settings' ? 'page' : undefined} onClick={() => setOpenMobile(false)} />}><Settings2 /><span>界面设置</span></SidebarMenuButton></SidebarMenuItem>
             {isDemo && <SidebarMenuItem><SidebarMenuButton isActive={pathname === '/components'} tooltip="组件验收" render={<Link to="/components" onClick={() => setOpenMobile(false)} />}><Blocks /><span>组件验收</span></SidebarMenuButton></SidebarMenuItem>}
           </SidebarMenu>
         </SidebarGroup>
