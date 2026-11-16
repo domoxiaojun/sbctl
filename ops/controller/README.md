@@ -13,7 +13,7 @@
 | sync | sbctl sync | 拉取并持久保存节点统计快照 |
 | subscriptions | sbctl subscriptions | 只读订阅文件，不持有控制库和主密钥 |
 
-当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.10.2`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。yxvmhk 节点工具升级至兼容的 0.10.1，保留代理内核 1.12.9；程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。0.10.2 仅更新主控，修正归档网址刷新后的筛选与批量恢复判断。
+当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.10.3`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。yxvmhk 节点工具升级至兼容的 0.10.1，保留代理内核 1.12.9；程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。0.10.2 修正归档网址刷新后的筛选与批量恢复判断；0.10.3 增加已归档用户删除，仅更新主控，原节点工具和代理实例保持不变，见 [删除验收](../../docs/qa/user-delete-20261116/report.md)。
 
 | 请求 | 后端地址 |
 | --- | --- |

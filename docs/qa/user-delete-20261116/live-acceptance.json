@@ -1,0 +1,26 @@
+{
+  "checked_at": "2026-11-16T10:17:42.210Z",
+  "version": "0.10.3",
+  "test_user": "usr_f5b3a361b88e42d5f1a752e1ccca6f2d",
+  "deleted": true,
+  "delete_replay": true,
+  "csrf_rejected": true,
+  "stale_version_rejected": true,
+  "detail_and_subscription_404": true,
+  "reenable_rejected": true,
+  "other_users_unchanged": true,
+  "operation_history_preserved": 2,
+  "traffic_history_preserved": true,
+  "traffic_records": 1,
+  "desktop_mobile_passed": true,
+  "proxy_unchanged": true,
+  "runtime": {
+    "running": true,
+    "container_id": "d9a8cf52d57e95b7a8826387a4ed10863861a369d9f1b2c8ab1e9bf3c3d707f2",
+    "started_at": "2026-11-16T09:13:36.333217244Z",
+    "config_hash": "e82b5bbfd7046ab760981befa94990b942a0386109d323fc2d544bf64b6b4c22",
+    "node_revision": 14
+  },
+  "browser_errors": [],
+  "public_subscription_route": "user_managed_unchanged"
+}

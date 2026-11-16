@@ -1,0 +1,9 @@
+{
+  "version": "v0.10.3",
+  "commit": "4662f9bda8db87426181e7cb5f0537d9aaf7bc5e",
+  "image": "ghcr.io/domoxiaojun/sbctl@sha256:d39f248b2310daf2bcbae7f8ca3ef2637ce066597c360bb6935081255abbe820",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64"
+  ]
+}
