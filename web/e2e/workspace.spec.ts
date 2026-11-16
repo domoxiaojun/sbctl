@@ -72,3 +72,16 @@ test('尚未同步的节点不会显示零入口为实际配置', async ({ page 
   await expect(inventory).toContainText('尚未收到入口快照')
   await expect(inventory).not.toContainText('0 个当前入口')
 })
+
+test('已有节点绑定更新后保留结果并返回当前节点', async ({ page }) => {
+  await page.goto('/nodes/sg-01/setup')
+  await page.getByRole('button', { name: '检查连接与容器', exact: true }).click()
+  await expect(page.getByText('实际运行信息', { exact: true })).toBeVisible()
+  await page.getByRole('textbox', { name: '接管后的容器名称', exact: true }).fill('sing-box-updated')
+  await page.getByRole('checkbox', { name: '我确认接管此节点，并接受必要时的短暂重连。' }).check()
+  await page.getByRole('button', { name: '确认更新绑定', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '节点已接入' })).toBeVisible()
+  await page.getByRole('link', { name: '查看节点详情' }).click()
+  await expect(page).toHaveURL(/\/nodes\/sg-01$/)
+  await expect(page.getByRole('region', { name: 'sing-box 管理' })).toContainText('sing-box-updated')
+})
