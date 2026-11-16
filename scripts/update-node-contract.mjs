@@ -33,4 +33,4 @@ endpoint('/api/v1/node-jobs/{id}','get','get__node_job','NodeJob');
 endpoint('/api/v1/node-jobs/{id}/retry','post','post__node_job_retry','NodeJobAccepted',null,202);
 endpoint('/api/v1/nodes/{id}/config','get','get__node_config','NodeConfiguration');
 endpoint('/api/v1/nodes/{id}/metadata','post','post__node_metadata','NodeSaved','NodeMetadata');
-doc.info.version='0.6.0';fs.writeFileSync(path,JSON.stringify(doc,null,2)+'\n');
+doc.info.version='0.6.1';fs.writeFileSync(path,JSON.stringify(doc,null,2)+'\n');

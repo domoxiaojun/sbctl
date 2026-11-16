@@ -1,8 +1,8 @@
 # Built binaries are cross-compiled with CGO_ENABLED=0 before this image is built.
 FROM debian:trixie-slim
-ARG TARGETARCH=amd64
+ARG TARGETARCH
 ARG BUILD_REVISION=local
-ARG BUILD_VERSION=0.6.0
+ARG BUILD_VERSION=0.6.1
 LABEL org.opencontainers.image.source="https://github.com/domoxiaojun/sbctl" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.version="${BUILD_VERSION}"

@@ -1,6 +1,6 @@
 name: sbctl-control
 x-common: &common
-  image: ${SBCTL_IMAGE:-ghcr.io/domoxiaojun/sbctl:v0.6.0}
+  image: ${SBCTL_IMAGE:-ghcr.io/domoxiaojun/sbctl:v0.6.1}
   read_only: true
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
