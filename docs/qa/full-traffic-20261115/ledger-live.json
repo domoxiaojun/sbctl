@@ -1,0 +1,217 @@
+{
+  "ledger_id": "ledger_1b56f2ae913d7099ccc1ac318c2d5124",
+  "snapshot_seq": 1247,
+  "sampled_at": "2026-11-14T19:58:15.113543Z",
+  "data_quality": {
+    "integrity_state": "ok",
+    "has_historical_gap": true,
+    "gap_count": 8
+  },
+  "users": [
+    {
+      "user_id": "usr_085d4a783c0ec5f466c71ecd61b6f90c",
+      "upload_bytes": "1708",
+      "download_bytes": "7427"
+    },
+    {
+      "user_id": "usr_1967633b8a9a142df496fce7cc82358b",
+      "upload_bytes": "1708",
+      "download_bytes": "7404"
+    },
+    {
+      "user_id": "usr_b4160542ce9d2be257e351b3894b16a5",
+      "upload_bytes": "0",
+      "download_bytes": "0"
+    }
+  ],
+  "total_inbounds": 19,
+  "inbounds": [
+    {
+      "tag": "any-basg",
+      "protocol": "direct",
+      "upload_bytes": "17687",
+      "download_bytes": "17294",
+      "port": 5434,
+      "started_at": "2026-11-14T19:49:10.708962Z",
+      "active": true
+    },
+    {
+      "tag": "any-osk",
+      "protocol": "direct",
+      "upload_bytes": "18684",
+      "download_bytes": "19477",
+      "port": 5431,
+      "started_at": "2026-11-14T19:49:10.709027Z",
+      "active": true
+    },
+    {
+      "tag": "any-sg",
+      "protocol": "direct",
+      "upload_bytes": "38072",
+      "download_bytes": "44218",
+      "port": 5433,
+      "started_at": "2026-11-14T19:49:10.709080Z",
+      "active": true
+    },
+    {
+      "tag": "any-tyo",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 5432,
+      "started_at": "2026-11-14T19:49:10.709126Z",
+      "active": true
+    },
+    {
+      "tag": "anytls-in",
+      "protocol": "anytls",
+      "upload_bytes": "5920",
+      "download_bytes": "25868",
+      "port": 5443,
+      "started_at": "2026-11-14T19:48:17.571808Z",
+      "active": true
+    },
+    {
+      "tag": "anytls-sg",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 54431,
+      "started_at": "2026-11-14T19:49:10.709248Z",
+      "active": true
+    },
+    {
+      "tag": "hua-hk",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 8444,
+      "started_at": "2026-11-14T19:49:10.709303Z",
+      "active": true
+    },
+    {
+      "tag": "sbctl-in-shadowsocks-15313",
+      "protocol": "shadowsocks",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 15313,
+      "started_at": "2026-11-14T19:49:10.709360Z",
+      "active": true
+    },
+    {
+      "tag": "sbctl-in-vless-9443",
+      "protocol": "vless",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 9443,
+      "started_at": "2026-11-14T19:49:10.709418Z",
+      "active": true
+    },
+    {
+      "tag": "snell-my",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 32324,
+      "started_at": "2026-11-14T19:49:10.709486Z",
+      "active": true
+    },
+    {
+      "tag": "ss2022",
+      "protocol": "shadowsocks",
+      "upload_bytes": "747",
+      "download_bytes": "2106192",
+      "port": 15319,
+      "started_at": "2026-11-14T19:49:10.709539Z",
+      "active": true
+    },
+    {
+      "tag": "sszbasg",
+      "protocol": "shadowsocks",
+      "upload_bytes": "18616",
+      "download_bytes": "57040",
+      "port": 15343,
+      "started_at": "2026-11-14T19:49:10.709580Z",
+      "active": true
+    },
+    {
+      "tag": "sszosk",
+      "protocol": "shadowsocks",
+      "upload_bytes": "21405",
+      "download_bytes": "57733",
+      "port": 15340,
+      "started_at": "2026-11-14T19:49:10.709629Z",
+      "active": true
+    },
+    {
+      "tag": "ssztyo",
+      "protocol": "shadowsocks",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 15341,
+      "started_at": "2026-11-14T19:49:10.709671Z",
+      "active": true
+    },
+    {
+      "tag": "tuic-in",
+      "protocol": "tuic",
+      "upload_bytes": "5920",
+      "download_bytes": "25870",
+      "port": 4443,
+      "started_at": "2026-11-14T19:48:17.571871Z",
+      "active": true
+    },
+    {
+      "tag": "tuic-sg",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 44431,
+      "started_at": "2026-11-14T19:49:10.709769Z",
+      "active": true
+    },
+    {
+      "tag": "vless-my",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 9433,
+      "started_at": "2026-11-14T19:49:10.709840Z",
+      "active": true
+    },
+    {
+      "tag": "vmess",
+      "protocol": "vmess",
+      "upload_bytes": "14471",
+      "download_bytes": "2155690",
+      "port": 23323,
+      "started_at": "2026-11-14T19:49:10.709887Z",
+      "active": true
+    },
+    {
+      "tag": "vmess-sg",
+      "protocol": "direct",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "port": 23233,
+      "started_at": "2026-11-14T19:49:10.709928Z",
+      "active": true
+    }
+  ],
+  "local_users": [
+    {
+      "name": "domo",
+      "upload_bytes": "14471",
+      "download_bytes": "2155690",
+      "started_at": "2026-11-14T19:49:10.709982Z",
+      "active": true
+    },
+    {
+      "name": "sbctl-local-sbctl-in-vless-9443-1",
+      "upload_bytes": "0",
+      "download_bytes": "0",
+      "started_at": "2026-11-14T19:49:10.710022Z",
+      "active": true
+    }
+  ]
+}

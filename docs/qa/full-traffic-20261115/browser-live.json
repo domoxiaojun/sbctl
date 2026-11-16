@@ -1,0 +1,25 @@
+{
+  "checked_at": "2026-11-14T19:56:29.495Z",
+  "origin": "https://sbctl.domob.org",
+  "login": "passed",
+  "live_api": "passed",
+  "scope_switching": "passed",
+  "widths": [
+    1440,
+    375
+  ],
+  "page_errors": [],
+  "node": {
+    "id": "yxvmhk",
+    "total_inbounds": 19,
+    "quality": {
+      "freshness": "current",
+      "gap_count": 8,
+      "has_historical_gap": true,
+      "integrity_state": "ok",
+      "sampled_at": "2026-11-14T19:56:23.307222Z",
+      "started_at": "2026-11-14T17:11:57.957976Z",
+      "synced_at": "2026-11-14T19:56:28.154929Z"
+    }
+  }
+}

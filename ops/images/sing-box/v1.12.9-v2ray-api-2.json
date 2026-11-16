@@ -1,0 +1,38 @@
+{
+  "image": "ghcr.io/domoxiaojun/sing-box",
+  "tag": "v1.12.9-v2ray-api-2",
+  "digest": "sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+  "visibility": "public",
+  "upstream_repository": "https://github.com/SagerNet/sing-box",
+  "upstream_version": "1.12.9",
+  "upstream_commit": "328a6de7976182700aaa4f7e2c134bd568b47d88",
+  "build_repository": "https://github.com/domoxiaojun/sing-box",
+  "build_branch": "codex/v2ray-api",
+  "build_commit": "4e903e491e14888b023174ee778608f9b95c88bd",
+  "build_run": "https://github.com/domoxiaojun/sing-box/actions/runs/43585079972",
+  "go_version": "1.25.1",
+  "cgo_enabled": false,
+  "builder_image": "golang:1.25.1-alpine@sha256:b6ed3fd0452c0e9bcdef5597f29cc1418f61672e9d3a2f55bf02e7222c014abd",
+  "runtime_base_image": "ghcr.io/sagernet/sing-box@sha256:bfc7c8a0bd9534db2b946de0acee614791146cd3939b9b08fdf60d407c29ad18",
+  "build_tags": ["with_gvisor", "with_quic", "with_dhcp", "with_wireguard", "with_utls", "with_acme", "with_clash_api", "with_tailscale", "with_v2ray_api"],
+  "platforms": {
+    "linux/amd64": {
+      "digest": "sha256:561f8fd4c3423beaa28550e8f82b278ed868df7484bdb7bd0aab15537bf7cb90",
+      "binary_sha256": "620b0ae5fe80372e4e12cdb01e990fc1c056d8f07ba473d074b828c6fbe549c9",
+      "ci_verified": true
+    },
+    "linux/arm64": {
+      "digest": "sha256:74b9af54d7f636d475564cacb01b04334f9ad792fd284ddd1a4747ef313c42d3",
+      "ci_verified": true
+    }
+  },
+  "ci_checks": ["version_and_build_tags", "clash_api", "v2ray_grpc_api", "anytls_tcp_echo_and_user_counters", "anytls_udp_echo_and_user_counters", "tuic_tcp_echo_and_user_counters", "tuic_udp_echo_and_user_counters"],
+  "pilot_validation": {
+    "node": "yxvmhk",
+    "date": "2026-11-14",
+    "anonymous_pull": true,
+    "version_and_tags": true,
+    "runtime_uid": 994,
+    "production_switched": false
+  }
+}

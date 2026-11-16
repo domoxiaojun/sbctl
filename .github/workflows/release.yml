@@ -1,0 +1,157 @@
+name: Release sbctl
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sbctl-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/domoxiaojun/sbctl
+  GOFLAGS: -mod=readonly
+
+jobs:
+  build:
+    if: github.repository == 'domoxiaojun/sbctl' && startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Verify Go and frontend
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          make check
+          npm install --global pnpm@12.18.0
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web api:check
+          pnpm --dir web test
+          pnpm --dir web lint
+          pnpm --dir web build
+          mkdir -p "dist/linux-$ARCH"
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "dist/linux-$ARCH/sbctl" ./cmd/sbctl
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "dist/linux-$ARCH/sbctl-node" ./cmd/sbctl-node
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "v$("dist/linux-$ARCH/sbctl" version | jq -r .version)" = "$GITHUB_REF_NAME"
+          test "v$("dist/linux-$ARCH/sbctl-node" version | jq -r .version)" = "$GITHUB_REF_NAME"
+      - name: Verify browser lifecycle
+        if: matrix.arch == 'amd64'
+        working-directory: web
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test e2e/console.spec.ts e2e/user-grants.spec.ts --grep '重新启用|授权调整|授权预览|响应丢失后恢复原操作'
+      - name: Package native executables
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p release
+          archive="sbctl-$GITHUB_REF_NAME-linux-$ARCH.tar.gz"
+          tar -C "dist/linux-$ARCH" -czf "release/$archive" sbctl sbctl-node
+          (cd release && sha256sum "$archive" > "$archive.sha256")
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build candidate image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ops/controller/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: sbctl:candidate
+          build-args: |
+            BUILD_REVISION=${{ github.sha }}
+            BUILD_VERSION=${{ github.ref_name }}
+          provenance: false
+      - name: Smoke-test candidate runtime
+        run: |
+          test "v$(docker run --rm --network none sbctl:candidate version | jq -r .version)" = "$GITHUB_REF_NAME"
+          test "v$(docker run --rm --network none --entrypoint /opt/sbctl/bin/sbctl-node sbctl:candidate version | jq -r .version)" = "$GITHUB_REF_NAME"
+          docker run -d --name sbctl-smoke --read-only --cap-drop ALL -p 127.0.0.1:18081:8080 sbctl:candidate subscriptions --listen :8080
+          trap 'docker rm -f sbctl-smoke >/dev/null' EXIT
+          curl --retry 10 --retry-delay 1 --retry-connrefused --fail --silent http://127.0.0.1:18081/healthz | jq -e --arg version "${GITHUB_REF_NAME#v}" '.status == "ok" and .version == $version'
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18081/api/v1/users)" = 404
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push verified platform image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          ref="$IMAGE:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCH"
+          docker tag sbctl:candidate "$ref"
+          docker push "$ref"
+          docker image inspect "$ref" --format '{{json .RepoDigests}}' | jq -er '.[0]' > "release/image-$ARCH.txt"
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-${{ matrix.arch }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish multi-platform image and GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          (cd release && sha256sum -c ./*.sha256)
+          docker buildx imagetools create --tag "$IMAGE:$GITHUB_REF_NAME" --tag "$IMAGE:latest" "$(cat release/image-amd64.txt)" "$(cat release/image-arm64.txt)"
+          docker buildx imagetools inspect "$IMAGE:$GITHUB_REF_NAME" --raw > release/manifest.json
+          jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]' release/manifest.json
+          digest="$(docker buildx imagetools inspect "$IMAGE:$GITHUB_REF_NAME" | awk '$1 == "Digest:" {print $2; exit}')"
+          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          jq -n --arg version "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" --arg image "$IMAGE@$digest" '{version:$version,commit:$commit,image:$image,platforms:["linux/amd64","linux/arm64"]}' > release/release.json
+          {
+            printf '# sbctl %s\n\n' "$GITHUB_REF_NAME"
+            printf 'Go 主控、节点工具及 React 控制台。包含用户重新启用与节点组授权调整。\n\n'
+            # shellcheck disable=SC2016
+            printf '镜像：`%s:%s`\n\n固定引用：`%s@%s`\n\n' "$IMAGE" "$GITHUB_REF_NAME" "$IMAGE" "$digest"
+            printf '提供 Linux amd64/arm64 静态程序和 SHA-256 校验文件。保留已有数据，不运行 initialize。\n'
+          } > release/notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "sbctl $GITHUB_REF_NAME" --notes-file release/notes.md release/*.tar.gz release/*.sha256 release/release.json release/manifest.json
+          cat release/notes.md >> "$GITHUB_STEP_SUMMARY"

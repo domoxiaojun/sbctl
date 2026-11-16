@@ -1,0 +1,11 @@
+{
+  "verified_date": "2026-11-14",
+  "verification_method": "tailscale status --json over each existing SSH alias",
+  "nodes": [
+    {"name": "ovhus", "backend_state": "Running", "online": true, "ipv4": "100.70.0.9", "ipv6": "fd7a:115c:a1e0:70::9"},
+    {"name": "oraclesg", "backend_state": "Running", "online": true, "ipv4": "100.70.0.3", "ipv6": "fd7a:115c:a1e0:70::3"},
+    {"name": "yxvmhk", "backend_state": "Running", "online": true, "ipv4": "100.70.0.10", "ipv6": "fd7a:115c:a1e0:70::a"}
+  ],
+  "tailscale_acl_verified": false,
+  "restricted_ssh_helpers_deployed": false
+}

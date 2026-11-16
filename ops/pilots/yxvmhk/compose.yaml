@@ -1,0 +1,30 @@
+name: sbctl-yxvmhk
+services:
+  sing-box:
+    image: ghcr.io/domoxiaojun/sing-box@sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94
+    container_name: sbctl-yxvmhk-sing-box
+    network_mode: host
+    user: "994:994"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    command: ["-D", "/var/lib/sing-box", "-C", "/etc/sing-box", "run"]
+    volumes:
+      - /etc/sing-box:/etc/sing-box:ro
+      - /var/lib/sing-box:/var/lib/sing-box
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+    labels:
+      io.sbctl.stage: stats-compose-pilot
+      io.sbctl.node: yxvmhk

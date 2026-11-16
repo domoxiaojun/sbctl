@@ -1,0 +1,14 @@
+[Unit]
+Description=SBCTL read-only Tailscale discovery snapshot
+After=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sbctl/bin/sbctl discovery-export --output /opt/sbctl/data/discovery/tailscale.json
+User=root
+Group=root
+UMask=0022
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sbctl/data/discovery

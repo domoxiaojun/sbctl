@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh SBCTL host discovery
+
+[Timer]
+OnBootSec=10s
+OnUnitActiveSec=30s
+Unit=sbctl-discovery.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,59 @@
+name: sbctl-control
+x-common: &common
+  image: ${SBCTL_IMAGE:-ghcr.io/domoxiaojun/sbctl:v0.6.0}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+  tmpfs: ["/tmp:size=32m,mode=1777"]
+  environment:
+    SBCTL_CONFIG: /opt/sbctl/config/server.toml
+  logging:
+    driver: json-file
+    options: {max-size: 5m, max-file: "2"}
+services:
+  api:
+    <<: *common
+    ports: [127.0.0.1:18100:8080, 100.70.0.9:18100:8080]
+    volumes:
+      - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
+      - /opt/sbctl/config/master.key:/run/secrets/master.key:ro
+      - /opt/sbctl/data/control:/data/control
+      - /opt/sbctl/data/publication:/data/publication
+      - /opt/sbctl/data/telemetry:/data/telemetry:ro
+      - /opt/sbctl/data/discovery:/data/discovery:ro
+      - /opt/sbctl/config/ssh/publish_ed25519.pub:/run/secrets/ssh/publish_ed25519.pub:ro
+      - /opt/sbctl/config/ssh/stats_ed25519.pub:/run/secrets/ssh/stats_ed25519.pub:ro
+  worker:
+    <<: *common
+    command: [worker]
+    volumes:
+      - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
+      - /opt/sbctl/config/master.key:/run/secrets/master.key:ro
+      - /opt/sbctl/config/ssh/publish_ed25519:/run/secrets/ssh/publish_ed25519:ro
+      - /opt/sbctl/config/ssh/worker_stats_ed25519:/run/secrets/ssh/stats_ed25519:ro
+      - /opt/sbctl/config/ssh/known_hosts:/run/secrets/ssh/known_hosts:ro
+      - /opt/sbctl/data/control:/data/control
+      - /opt/sbctl/data/publication:/data/publication
+      - /opt/sbctl/data/telemetry:/data/telemetry:ro
+      - /opt/sbctl/data/inventory:/data/inventory
+  sync:
+    <<: *common
+    user: 10002:10002
+    command: [sync]
+    volumes:
+      - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
+      - /opt/sbctl/config/ssh/stats_ed25519:/run/secrets/ssh/stats_ed25519:ro
+      - /opt/sbctl/config/ssh/known_hosts:/run/secrets/ssh/known_hosts:ro
+      - /opt/sbctl/data/traffic:/data/traffic
+      - /opt/sbctl/data/telemetry:/data/telemetry
+      - /opt/sbctl/data/inventory:/data/inventory:ro
+  subscriptions:
+    <<: *common
+    user: 10003:10003
+    command: [subscriptions, --listen, ":8080"]
+    ports: [127.0.0.1:18101:8080]
+    environment:
+      SBCTL_PUBLIC_DIR: /data/subscriptions
+    volumes:
+      - /opt/sbctl/data/publication/subscriptions:/data/subscriptions:ro

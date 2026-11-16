@@ -2,6 +2,8 @@
 
 日期：2026 年 11 月 14 日。范围：本地 React 原型、API 草案、生成类型、演示交互和生产包边界。
 
+本文件保留 F0 初版验证记录。用户反馈后的最新视觉、控件来源与截图见[界面重做记录](ui-refresh.md)。
+
 ## 实现与修复
 
 F0 提供总览、节点、用户、流量、操作、告警、设置和组件验收页面，使用 React 19、TypeScript 5.9.3、Vite 8、Tailwind 4、shadcn/ui Base UI 组件、TanStack Query／Router／Table、React Hook Form 和 Recharts。具体版本由 `web/package.json` 与 `web/pnpm-lock.yaml` 锁定。

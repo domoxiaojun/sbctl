@@ -1,0 +1,25 @@
+{
+  "node": "yxvmhk",
+  "stage": "stats-compose-pilot",
+  "compose_path": "/etc/sing-box/compose.yaml",
+  "network_mode": "host",
+  "container_id": "a0a4825d40aad2899d4acab5dd0bfc49118c380df569ff19d0ed00f68956481b",
+  "started_at": "2026-11-14T10:51:34.009272172Z",
+  "source_epoch": "a0a4825d40aad2899d4acab5dd0bfc49118c380df569ff19d0ed00f68956481b@2026-11-14T10:51:34.009272172Z",
+  "image": "ghcr.io/domoxiaojun/sing-box@sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+  "running": true,
+  "uid": 994,
+  "restart_count": 0,
+  "config_sha256": "0be48c641e82b6defba2f6f6c54585b9f00995e54ce543351724ebc156662272",
+  "configured_listeners_verified": 36,
+  "protocol_validation": "see probe result",
+  "v2ray_api_ready": true,
+  "statistics_listener": "127.0.0.1:10085",
+  "statistics_validation": "see probe result",
+  "tailscale_connected": true,
+  "tailscale_ips": [
+    "100.70.0.10",
+    "fd7a:115c:a1e0:70::a"
+  ],
+  "sbctl_backend_connected": false
+}

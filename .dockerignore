@@ -1,0 +1,14 @@
+**
+!ops/
+!ops/controller/
+!ops/controller/Dockerfile
+!dist/
+!dist/linux-amd64/
+!dist/linux-amd64/sbctl
+!dist/linux-amd64/sbctl-node
+!dist/linux-arm64/
+!dist/linux-arm64/sbctl
+!dist/linux-arm64/sbctl-node
+!web/
+!web/dist/
+!web/dist/**

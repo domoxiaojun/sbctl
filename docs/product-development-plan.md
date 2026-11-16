@@ -1,6 +1,6 @@
 # sbctl 产品开发方案
 
-版本：0.4。更新日期：2026 年 11 月 14 日。状态：F0 前端原型已完成，M0–M6 待实施。
+版本：0.5。更新日期：2026 年 11 月 15 日。状态：主控与节点工具全面迁移 Go；原完整里程碑的多节点与故障矩阵仍需逐项验收。
 
 sbctl 用于集中管理约 20 台运行 sing-box 的 VPS，为少量受邀用户提供独立凭证、跨节点流量累计和 Surge、Mihomo 订阅。管理员以 React Web 后台为日常入口，CLI 用于维护与自动化。产品以常驻管理 VPS 为控制端，通过 Tailscale 和受限 OpenSSH 管理节点；节点自行持久保存已经采集的流量，中心负责汇总、配置发布和订阅分发。
 
@@ -8,7 +8,11 @@ sbctl 用于集中管理约 20 台运行 sing-box 的 VPS，为少量受邀用�
 
 本轮审查的修订依据、验收映射与未决事项见[开发文档审查记录](development-plan-review.md)。0.4 将服务器端业务服务统一为 Docker Compose 部署，补齐权限、持久恢复、统计和接口契约；不代表已完成容器迁移或代码实现。
 
-开发进度：F0 已交付 React 工程、16 个路径的 OpenAPI 草案、22 个 schema 及生成类型、双主题和核心交互原型。运行入口见[项目说明](../README.md)，检查与截图见[F0 验证记录](f0-validation.md)；后端与节点能力仍未接入。
+开发进度：React 前端已接入管理 API；主控、CLI、节点发布与采集统一使用 Go。2026-11-15 用户明确要求不保留旧 sbctl 数据，本次采用新 schema 和全新初始化。运行与验收状态见[项目说明](../README.md)、[执行计划](../plan.md)和[主控部署](../ops/controller/README.md)。
+
+2026-11-15 统计范围补充：用户选择全部 sing-box 协议入口与用户用量，不统计 VPS 网卡。0.5.0 新增入口累计/协议汇总和节点本地命名用户累计，已有 sbctl 用户历史保留；按首次采样建立新项目基线，入口与用户口径不相加。匿名/共享密码连接只归属入口，同名用户在同节点合并；此扩展不等于所有协议的用户授权管理或完整多节点里程碑均已完成。
+
+2026-11-15 开发续接：本地已补齐重新启用的 Go 领域逻辑、API、CLI、网页确认与原任务恢复。原身份和流量历史保留，按当前授权组生成新代凭据、新订阅令牌，旧凭据及旧链接继续撤销。此增量尚未部署，线上状态沿用上一份部署回执；M4/M5 的真实节点和完整故障验收仍独立推进。
 
 ## 一 产品定位与目标
 
@@ -54,9 +58,9 @@ sbctl 用于集中管理约 20 台运行 sing-box 的 VPS，为少量受邀用�
 | 数据库 | 嵌入式 SQLite 文件，无数据库网络服务；控制库和流量库分离 |
 | 管理界面 | 一期自建 React Web 后台，浅色／深色主题及手机适配；CLI 保留；现有 zashboard 仅供受信任管理员诊断 |
 | 前端技术 | React、TypeScript、Vite、Tailwind CSS、shadcn/ui；优先采用当前稳定且相互兼容的版本 |
-| 管理 API | Python FastAPI；与 CLI 共用领域服务和持久任务，只通过受限管理网络访问 |
+| 管理 API | Go net/http；与 CLI 共用领域服务和持久任务，只通过受限管理网络访问 |
 | 部署形式 | 服务器端业务服务使用 Docker Compose；Tailscale、OpenSSH、受限节点工具与采集器留在 Linux 宿主机，本机不安装或运行 Docker |
-| Python 运行 | 全部通过 uv，项目使用 .venv 和锁文件 |
+| Go 运行 | 主控和节点独立静态程序；go.mod/go.sum 锁定依赖，CGO_ENABLED=0 |
 | 备用用户池 | 一期不做可复用槽位；确有新增免重启需求时再增加不复用的备用身份 |
 
 源码基线采用 sing-box v1.14.4。该版本的 SIGHUP 会关闭并重建实例，因此本产品不承诺用户变更时保留现有连接。配置检查也不执行实例启动，必须另做启动与认证验收。[重载实现](https://github.com/SagerNet/sing-box/blob/v1.14.4/cmd/sing-box/cmd_run.go)、[检查实现](https://github.com/SagerNet/sing-box/blob/v1.14.4/cmd/sing-box/cmd_check.go)。
@@ -125,7 +129,7 @@ P0 是首个可用版本必须完成的能力；P1 在 P0 通过后按实际需�
 ```mermaid
 flowchart LR
     A[管理员浏览器] -->|Tailscale HTTPS| W[React 静态前端与同源入口]
-    W -->|API| V[FastAPI 与领域服务]
+    W -->|API| V[Go API 与领域服务]
     K[管理 CLI] --> D
     V --> D[(控制数据库)]
     D --> C[持久发布任务 worker]
@@ -144,7 +148,7 @@ flowchart LR
     F -->|公网代理协议| B
 ```
 
-图中的统计回传由控制端主动发起 SSH 连接读取，不授权代理节点主动登录控制端。Tailscale 负责管理网络连接，OpenSSH 和节点工具负责命令权限。CLI 直接调用同一领域服务，不依赖 FastAPI HTTP 服务在线；浏览器仅访问管理 API。
+图中的统计回传由控制端主动发起 SSH 连接读取，不授权代理节点主动登录控制端。Tailscale 负责管理网络连接，OpenSSH 和节点工具负责命令权限。CLI 直接调用同一领域服务，不依赖 Go API HTTP 服务在线；浏览器仅访问管理 API。
 
 ### 组件职责
 
@@ -163,21 +167,21 @@ flowchart LR
 
 ### 技术栈
 
-前端采用 React、TypeScript、Vite、Tailwind CSS 与 shadcn/ui。Vite 输出静态单页应用，由管理 VPS 的 Caddy 容器提供 HTTPS 和同源 `/api/v1` 反向代理。FastAPI 在私有 bridge 网络内监听容器的 `0.0.0.0`，不发布宿主端口；仅 Caddy 接入 API 网络。Caddy 的宿主 HTTPS 端口显式绑定 Tailscale 地址，不能在容器内绑定不存在的宿主地址。该管理后台的页面渲染和交互在浏览器完成，部署时无需常驻 Node.js 前端服务。[shadcn Vite 安装](https://ui.shadcn.com/docs/installation/vite)。
+前端采用 React、TypeScript、Vite、Tailwind CSS 与 shadcn/ui。Vite 输出静态单页应用，由 Go API 提供静态文件；主控端口 18100 同时提供页面和 `/api/v1`。HTTPS 反向代理站点由用户自行配置，订阅路径 `/s/` 单独代理至 18101。页面渲染和交互在浏览器完成，部署时无需常驻 Node.js 前端服务。[shadcn Vite 安装](https://ui.shadcn.com/docs/installation/vite)。
 
 shadcn/ui 的基础交互统一选择 Base UI，组件源码放入项目并允许按产品需求修改；Tailwind CSS 通过语义化主题变量控制色彩、布局、间距和响应式样式。使用官方组件与 Blocks 作为起点，保留来源与定制差异；引入新组件时检查实际依赖，避免混用不同基础实现造成交互和样式不一致。[shadcn 介绍](https://ui.shadcn.com/docs)。
 
-控制端采用 Python、uv、FastAPI、Typer、Pydantic 和 SQLite。Web API 与 CLI 调用同一领域服务，复用身份、事务 outbox、授权和统计口径；HTTP 请求只提交持久任务，SSH 和节点变更由 worker 执行。FastAPI 的 OpenAPI 契约用于生成前端请求与响应类型。[FastAPI 特性](https://fastapi.tiangolo.com/features/)。
+控制端采用 Go 1.27.3、net/http、modernc.org/sqlite、Argon2id 和 AES-GCM。Web API 与 CLI 调用同一领域服务，复用身份、事务 outbox、授权和统计口径；HTTP 请求只提交持久任务，SSH 和节点变更由 worker 执行。独立 OpenAPI 契约生成前端类型，Go 测试校验实际响应。
 
 系统 OpenSSH 作为网络执行器，通过参数数组启动，禁止 shell 字符串拼接；SSH 主机指纹必须预先核实。JSON 和 YAML 使用结构化序列化，Surge 文本使用独立格式化器。
 
-节点工具采用 Go 单独编译为 Linux 可执行文件，提供发布、采集、导出等固定入口，避免在 20 台节点分别维护 Python 环境。节点 SQLite 为程序内嵌存储，不增加数据库服务或监听端口。驱动、gRPC 依赖和工具链在 M0 锁定并验证实际节点架构。
+节点工具和主控共用 Go 模块、版本化数据结构与摘要实现，编译为 Linux amd64/arm64 独立静态程序，提供发布、采集、导出固定入口。节点 SQLite 为内嵌存储，不增加数据库服务或监听端口；不再安装 Python 环境。
 
 sing-box 作为独立容器镜像构建，镜像包含固定内核和最小启动守卫。控制端与节点工具不会将其作为内嵌服务启动，也不会复制协议入站实现。
 
 ### 前端与 API 依赖基线
 
-以下以 2026 年 11 月 14 日查询官方 npm Registry、PyPI 和 Node.js 发行索引得到的版本快照为起点，前端条目已按 F0 实际安装与验证结果回写。精确依赖和锁文件在 `web/`；安装、类型、构建和 Chromium 组件运行检查已通过。FastAPI 仍为后续初始化候选，生产启动不自动升级。
+以下以 2026 年 11 月 14 日查询官方 npm Registry 和 Node.js 发行索引得到的版本快照为起点，前端条目已按 F0 实际安装与验证结果回写。精确依赖和锁文件在 `web/`；安装、类型、构建和 Chromium 组件运行检查已通过。Go 依赖已固定在 go.mod/go.sum，生产启动不自动升级。
 
 | 职责 | 依赖及候选版本 | 使用方式 |
 | --- | --- | --- |
@@ -193,9 +197,9 @@ sing-box 作为独立容器镜像构建，镜像包含固定内核和最小启�
 | 表单与校验 | React Hook Form 7.92.0、`@hookform/resolvers` 7.0.6、Zod 4.6.7 | 表单状态与客户端输入校验；服务端仍执行独立鉴权和校验 |
 | 图表 | Recharts 3.10.1 | 使用 shadcn Chart 样式层展示已有累计数据 |
 | 测试 | Vitest 5.1.0、Playwright 1.65.1 | 有业务价值的组件逻辑测试和真实浏览器流程验收 |
-| 管理 API | FastAPI 0.162.7 | 与规划的 Python 领域层衔接，Python 及其他依赖在初始化时一并锁定 |
+| 管理 API | Go 1.27.3 / net/http | 与 CLI、worker 和节点共用模块，依赖由 go.mod/go.sum 固定 |
 
-React 官方当前文档版本为 19.3；补丁号以本次注册表快照为准。[React 版本](https://react.dev/versions)、[React 包元数据](https://registry.npmjs.org/react/latest)、[Vite 包元数据](https://registry.npmjs.org/vite/latest)、[Tailwind 包元数据](https://registry.npmjs.org/tailwindcss/latest)、[shadcn 包元数据](https://registry.npmjs.org/shadcn/latest)、[Node.js 发行索引](https://nodejs.org/dist/index.json)、[FastAPI 包元数据](https://pypi.org/pypi/fastapi/json)。
+React 官方当前文档版本为 19.3；补丁号以本次注册表快照为准。[React 版本](https://react.dev/versions)、[React 包元数据](https://registry.npmjs.org/react/latest)、[Vite 包元数据](https://registry.npmjs.org/vite/latest)、[Tailwind 包元数据](https://registry.npmjs.org/tailwindcss/latest)、[shadcn 包元数据](https://registry.npmjs.org/shadcn/latest)、[Node.js 发行索引](https://nodejs.org/dist/index.json)。
 
 TypeScript 初始候选 7.0.2 不满足 openapi-typescript 的 `^5` peer 范围以及 typescript-eslint 的 `<6.1` 范围，F0 因此锁定共同兼容的 5.9.3。此次采用已有 Node.js 26.12.1 完成验证，未为候选补丁号升级本机工具链。
 
@@ -205,7 +209,7 @@ TypeScript 初始候选 7.0.2 不满足 openapi-typescript 的 `^5` peer 范围�
 
 ### 运行服务
 
-- 管理 VPS：Caddy 静态前端与反向代理、FastAPI、发布 worker、统计同步 worker 为不同 Compose 服务，CLI 按需使用同版本控制镜像。
+- 管理 VPS：Go API、发布 worker、统计同步和订阅读取为四个 Compose 服务，CLI 使用同版本 Go 程序。HTTPS 站点由用户维护。
 - 代理节点：sing-box 为业务容器；tailscaled、OpenSSH、固定发布 helper、采集 timer 与账本留在宿主机。宿主 systemd oneshot 只调度固定 helper，helper 操作登记的容器。
 - 节点发布恢复检查：宿主启动后及定时检查未完成操作，处理提交与 helper 启动之间的崩溃窗口，不依赖 SSH 会话存活。
 - 订阅主机：Nginx 或 Caddy 静态服务容器，只读挂载发布目录；tailscaled、OpenSSH 和受限发布工具留宿主机。
@@ -260,6 +264,8 @@ SSH 发布账号使用 root 拥有的固定入口和受限提权，只能提交�
 
 统计账号通过固定 `runtime-status` 入口读取白名单容器的精简元数据，不直接访问 Docker API。该入口只返回完整容器 ID、原样启动时间、运行标志、构建及配置摘要，不返回完整 inspect、环境变量、挂载秘密或日志，不接受任意对象和格式模板。宿主采集器继续独立于业务容器运行。
 
+本轮单节点内网验收曾复用 ovhus 现有 OpenResty 与通配证书，没有另占 80/443。验收后依用户要求撤销 sbctl 专属站点配置，站点交由用户自行部署；API 与订阅读取仍分别绑定宿主回环端口。实施状态与后续边界记录在 `ops/controller/README.md`。
+
 ## 六 数据模型
 
 ### 控制数据库
@@ -306,11 +312,11 @@ opening_balances 只允许独立维护导入流程写入，日常 Web/API 不直
 
 ### SQLite 运行与迁移契约
 
-记录 Python 实际 `sqlite3.sqlite_version` 及 Go 驱动实际嵌入的 SQLite 版本，而不只记录包版本。运行库须包含官方 WAL-reset 修复；官方列出的修复版本为 3.51.3 及后续版本，另有 3.44.6、3.50.7 回补。初始化时选用包含修复的受支持版本，并记录编译选项。[SQLite WAL 限制与修复](https://www.sqlite.org/wal.html)。
+记录 `sbctl doctor` 返回的实际 SQLite 版本及 go.mod 中驱动版本。使用 `journal_mode=DELETE`、`synchronous=FULL`、短事务和单写者迁移锁；不依赖系统安装的 SQLite。数据库 schema v2 与旧 Python 版本隔离，本次按用户要求全新初始化。
 
 控制 API、CLI 与 worker 使用短写事务、有界 busy_timeout 和明确的繁忙错误，网络请求不占写事务。迁移通过单写者锁执行，服务在 schema 未就绪时不启动写入；旧程序遇到不兼容新 schema 必须拒绝启动。磁盘满、锁超时和事务失败均不能返回“已接收”。
 
-控制身份读取活跃流量库使用只读连接 `mode=ro`，不能将持续变化的库标为 immutable。writer 负责创建 WAL/SHM 并提供必要读权限；只读启动条件不成立时返回统计暂不可用，或读取 writer 生成的一致性只读副本，不为此授予流量目录写权限。Linux 集成验证 writer 启停、checkpoint 和容器只读挂载行为。每个库独立备份与恢复，不用 ATTACH 假设跨库原子提交。
+控制身份只读取 writer 从已提交流量库原子导出的 JSON，不挂载活跃流量数据库。统计进程独占流量数据库写权限；writer 停止时保留累计并依据采样／同步时间显示过期。Linux 集成验证 writer 启停、原子导出和容器只读挂载。每个库独立备份与恢复，不用 ATTACH 假设跨库原子提交。
 
 ### 节点存储
 
@@ -400,7 +406,7 @@ opening_balances 只允许独立维护导入流程写入，日常 Web/API 不直
 
 用户清单按入站的固定协议映射到节点模板，不接受路由、出站、监听端口、日志路径、证书路径或额外服务。Node ID、模板及内核兼容条件不匹配时拒绝写入。JSON 必须通过类型化结构处理，不能把用户输入作为模板代码执行。
 
-请求规范化方式随 schema_version 固定；Python 与 Go 使用相同契约夹具验证摘要一致，不直接依赖各语言默认 JSON 输出。payload_hash 排除自身，覆盖其余业务字段与身份、版本、请求编号等关键元数据。时间戳不作为发布顺序依据，顺序由持久递增版本控制。
+请求规范化方式随 schema_version 固定；中心与节点共用 Go 模型，并使用相同契约夹具验证摘要一致，不直接依赖各语言默认 JSON 输出。payload_hash 排除自身，覆盖其余业务字段与身份、版本、请求编号等关键元数据。时间戳不作为发布顺序依据，顺序由持久递增版本控制。
 
 ### 回执
 
@@ -489,7 +495,7 @@ flowchart LR
 
 ### 安全恢复
 
-候选检查失败且尚未切换时，普通新增保留当前服务。若本次包含撤销，必须显示 `revoke_blocked` 和高优先级告警，不得报完成。**此时是否强制停止仍在运行的整个 sing-box 容器尚待用户选择**：保留旧服务会让被撤销用户暂时仍能使用；强制停止会中断该节点全部用户。该异常分支在 M2 开发前确定，不能把“接受正常重启重连”解释为已同意此处停服。
+候选检查失败且尚未切换时，普通新增保留当前服务。若本次包含撤销，必须显示 `revoke_blocked` 和高优先级告警，不得报完成。**用户已选择保留旧服务，标记撤销受阻并告警**。被撤销用户在故障修复前可能仍可使用；不能将此状态报为撤销完成。启动守卫保持阻塞，避免服务重启时静默重新载入已知陈旧授权；维护修复后重试最新版本。
 
 切换后本机启动失败时，可回退到已验证的程序或模板，但必须结合最新已接受的安全授权状态重新生成配置。不得直接复制包含旧授权的完整备份。无法生成可启动且不恢复撤销凭证的配置时，保持受影响服务停止并告警。
 
@@ -552,6 +558,10 @@ flowchart LR
 
 泄漏的凭证立即进入撤销流程，不保留过渡期。重新启用用户生成新的凭证，历史用量仍归原 user_id，旧凭证保持撤销。
 
+重新启用只接受已禁用用户的当前 revision，并沿用其授权组在提交时的有效节点集合。每个用户/节点/协议的凭据代数递增；保留旧凭据与撤销记录，不复用旧 AnyTLS 密码或 TUIC UUID/密码。旧订阅令牌先从公开索引吊销，再原子提交新令牌、配置中状态及 outbox；公开索引无法更新时整笔启用不提交。新订阅只包含已经验证的新凭据，管理员需重新交付链接。
+
+不要求全部失联节点先完成旧撤销才允许提交启用。旧撤销任务继续保留，节点请求始终包含最新授权意图和全部旧撤销记录；操作绑定用户版本，后续启用/禁用发生后，旧任务不能把新状态视作自身目标完成。旧任务最终由新意图替代时显示 superseded；已完成操作的订阅结果保留历史含义。历史节点继续参与用量汇总，但不增加重新启用后的当前授权和订阅节点数量。
+
 订阅令牌轮换只改变下载入口，客户端需要取得新链接；它不会自动让已经下载的代理密码失效。若令牌泄漏，应由操作范围明确是否同时轮换相应代理凭证。
 
 ### 备用身份的后续扩展
@@ -588,7 +598,7 @@ flowchart LR
 
 用户 counter 按实际路由流量延迟创建，因此“没有返回 counter”不能一律解释为零。仅当运行绑定和 stats 配置均已确认、该用户属于预期统计集合、此周期对应方向从未出现 counter 时，才可记为尚无已观测流量；曾出现的 counter 消失、统计清单未知或响应不完整时保留旧游标并报告异常。有效零计数与配置缺失要分开验收。[Counter 创建与查询实现](https://github.com/SagerNet/sing-box/blob/v1.14.4/experimental/v2rayapi/stats.go)。
 
-SQLite 账本使用本地持久磁盘、事务和与持久性目标一致的同步设置；默认 WAL、synchronous=FULL。启动时验证实际设置，写失败不得推进游标或导出序号。SQLite 文件不放在网络文件系统上。[SQLite WAL 说明](https://www.sqlite.org/wal.html)。
+SQLite 账本使用本地持久磁盘、事务和与持久性目标一致的同步设置；首发采用 DELETE 日志、synchronous=FULL。启动时验证实际设置，写失败不得推进游标或导出序号。SQLite 文件不放在网络文件系统上。[SQLite WAL 说明](https://www.sqlite.org/wal.html)。
 
 ### 统计起点
 
@@ -711,7 +721,7 @@ DNS01 凭据只授予必要范围；不能把全域 DNS 管理密钥复制到全
 
 每份内核镜像记录上游 tag、commit、Go 工具链、构建标签、目标架构、二进制摘要、基础镜像 digest、最终镜像 digest、启动守卫版本和构建时间。保留该版本需要的默认构建能力后增加 with_v2ray_api，不只保留一个统计标签。
 
-以 v1.14.4 的 go.mod 为基线，构建工具链须满足其 Go 版本要求；具体受支持补丁版本和依赖锁定在构建记录中。[上游构建要求](https://github.com/SagerNet/sing-box/blob/v1.14.4/go.mod)。
+当前试点固定在已部署兼容的 v1.12.9，使用 Go 1.25.1 构建并保留原默认能力，再加入 with_v2ray_api；源码、架构与摘要见 `ops/images/sing-box/v1.12.9-v2ray-api-2.json`。后续内核升级单独验证，不与接管同时更换配置版本。
 
 只构建登记节点实际需要的 Linux 架构，默认验收 amd64、arm64。镜像在 Linux CI 集中构建并分发，节点不安装编译环境，本机不运行 Docker。Compose 引用不可变 digest，不能用浮动标签代表已验收版本；发布前检查版本、统计接口及 AnyTLS、TUIC、Clash API 所需能力。
 
@@ -727,14 +737,14 @@ v2ray_api 的未来去向不作为当前已知弃用事实。实现上隔离统�
 
 ### 视觉与布局
 
-默认采用简洁的运维控制台风格：石板灰背景、青绿色主操作、清晰数据层级和克制的边框与阴影。浅色／深色主题同时设计，首次跟随系统，可手动切换。中文界面优先；正文使用系统无衬线中文字体，节点地址、版本和数字使用等宽或等宽数字，静态资源不依赖外部字体 CDN。
+按用户最新反馈，采用暖白／石墨黑的日夜主题，主操作使用赤陶橙，图表以紫灰辅助，不使用经典蓝白。界面保留清晰数据层级和克制的边框与阴影，基础控件来自当前 shadcn Base UI registry。浅色／深色主题同时设计，首次跟随系统，可手动切换；具体来源与实现记录见[界面重做记录](ui-refresh.md)。中文界面优先；正文使用系统无衬线中文字体，节点地址、版本和数字使用等宽或等宽数字，静态资源不依赖外部字体 CDN。
 
 | 设计要素 | 页面规格 |
 | --- | --- |
 | 桌面框架 | 左侧可折叠导航，顶部面包屑与页面操作，内容区展示关键状态、筛选和主表格 |
 | 信息层级 | 总览优先显示待撤销、失联及统计过期，再展示规模与累计；每页一个主操作 |
-| 浅色配色起点 | 背景 `#f8fafc`、卡片 `#ffffff`、主文字 `#0f172a`、主色 `#0f766e` |
-| 深色配色起点 | 背景 `#0b1220`、卡片 `#111827`、主文字 `#e2e8f0`、强调色 `#2dd4bf` |
+| 浅色配色 | 背景 `#f7f6f4`、卡片 `#ffffff`、主文字 `#292624`、主色 `#bb4d2d`、辅助紫灰 `#9681ae` |
+| 深色配色 | 背景 `#151413`、卡片 `#1e1c1a`、主文字 `#eeeae5`、强调色 `#f69b79`、辅助紫灰 `#ae9ac5` |
 | 设计变量 | Tailwind 与 CSS 语义变量统一管理 background、foreground、card、muted、primary、destructive 和 chart；组件内不散写颜色 |
 | 间距与尺寸 | 4/8px 间距体系，卡片圆角 12px、控件圆角 8px；移动端输入字号至少 16px、主要触摸区至少 44px |
 | 状态表达 | 在线、执行中、过期、失败均有文字与图标；授权状态和网络健康分别展示 |
@@ -805,11 +815,11 @@ Caddy 对页面路由提供 SPA fallback，但 `/api/v1` 和缺失静态资源�
 
 ### 本地界面开发与真实接入
 
-F0 可以在没有 VPS 的情况下开发页面框架、主题和关键组件，先建立最小 OpenAPI 草案及其演示夹具，由草案生成类型，并明确显示“演示数据”。M1 接入 FastAPI 后以其生成契约为权威，通过差异核对统一草案与前端类型，不长期维护两套手写模型。发布构建关闭演示入口；真实 API 失败时不能偷偷回退为演示成功。前端浏览器验收、后端集成验证及两节点实际操作验收分别记录。
+F0 可以在没有 VPS 的情况下开发页面框架、主题和关键组件，先建立最小 OpenAPI 草案及其演示夹具，由草案生成类型，并明确显示“演示数据”。Go API 使用独立 OpenAPI 契约作为接口规范，测试校验真实响应与契约一致；前端从该契约生成类型。发布构建关闭演示入口；真实 API 失败时不能偷偷回退为演示成功。前端浏览器验收、后端集成验证及两节点实际操作验收分别记录。
 
 ### 基本命令
 
-以下为预期 CLI 契约，正式运行使用管理 VPS 同版本控制镜像中的项目环境，并通过 uv run 执行。宿主运维如何启动该镜像在部署手册定义，不要求本机运行 Docker。
+以下为完整里程碑预期 CLI 契约；当前已实现命令以 `sbctl help` 为准，正式运行直接使用同版本 Go 可执行文件。宿主运维如何启动该镜像在部署手册定义，不要求本机运行 Docker。
 
 | 命令 | 行为 |
 | --- | --- |
@@ -939,79 +949,38 @@ JSON 输出含 schema_version、result、operation_id（无任务时为 null）�
 
 ## 十八 项目结构与工程约束
 
-以下为计划创建的目录，不代表当前已经存在对应实现。
+当前核心结构：
 
 ```text
 sbctl/
-  pyproject.toml
-  uv.lock
-  .python-version
-  src/sbctl/
-    cli/
-    api/
-    auth/
-    domain/
-    control_store/
-    usage_store/
-    workers/
-    ssh_transport/
-    subscriptions/
-    diagnostics/
-  web/
-    package.json
-    pnpm-lock.yaml
-    components.json
-    src/
-      routes/
-      features/
-      components/ui/
-      components/business/
-      api/generated/
-      lib/
-      styles/
-    tests/
-    e2e/
-  node-helper/
-    cmd/sbctl-node/
-    internal/apply/
-    internal/ledger/
-    internal/export/
-    internal/runtime/
-    internal/startguard/
-    internal/contracts/
-    go.mod
-    go.sum
+  go.mod
+  go.sum
+  Makefile
+  cmd/sbctl/
+  cmd/sbctl-node/
+  internal/sbctl/
+    schema/
+    *_test.go
   contracts/
     openapi.json
-    schemas/
-    fixtures/
-  templates/
+    embed.go
+  web/
+    src/
+    tests/
+    e2e/
+  ops/controller/
+    Dockerfile
+    compose.yaml
     node/
-    surge/
-    mihomo/
-  deploy/
-    ansible/
-    docker/
-    compose/
-    systemd/
-    tailscale/
-    caddy/
-  tests/
-    unit/
-    integration/
-    fault_injection/
   docs/
-    product-development-plan.md
-    development-plan-review.md
-    runbooks/
   plan.md
 ```
 
 ### 依赖与运行
 
-Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统一通过 uv run；服务器镜像构建阶段按锁文件准备环境，生产用冻结且不自动同步依赖的 uv 运行方式。具体 Python、Go、驱动及实际 SQLite 运行库版本在初始化/试点固定。[uv 项目与环境说明](https://docs.astral.sh/uv/guides/projects/)。
+Go 使用单一模块并提交 go.mod/go.sum。`make check` 执行静态检查与竞争测试，`make build-linux` 生成 CGO_ENABLED=0 的 Linux amd64/arm64 程序；运行时不下载依赖。
 
-前端使用 `web/` 下的单一 pnpm 项目，提交 package.json、pnpm-lock.yaml、components.json 和组件源码；固定 Node.js、pnpm 及直接依赖版本。安装使用冻结锁文件，构建产物带有版本信息；组件更新通过差异审查和必要验证纳入，不在部署时运行动态 `latest` 安装。Python 环境和前端工具链分开管理。
+前端使用 `web/` 下的单一 pnpm 项目，提交 package.json、pnpm-lock.yaml、components.json 和组件源码；固定 Node.js、pnpm 及直接依赖版本。安装使用冻结锁文件，构建产物带有版本信息；组件更新通过差异审查和必要验证纳入，不在部署时运行动态 `latest` 安装。Go 和前端工具链分别锁定。
 
 开发机不安装任何数据库，不使用 Docker 命令或 Docker 测试环境。应用实现后的数据库验证只使用应用已有的内嵌 SQLite 能力及临时文件。镜像构建、Compose 启停、宿主 systemd helper、Linux 文件权限、持久恢复和实际网络隔离验证放在 Linux CI 或经安排的试点 VPS；不能用本机源码检查替代这些结果。Compose、Docker Engine 及镜像仓库版本和容量在 M0 登记。
 
@@ -1021,11 +990,11 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 
 | 改动 | 必要检查 |
 | --- | --- |
-| Python 逻辑 | 项目测试、uv run ruff check、uv run basedpyright |
+| Go 逻辑 | go test ./...、go vet ./...，涉及持久任务与并发时 go test -race ./... |
 | React / TypeScript | 项目声明的 pnpm lint、pnpm typecheck、pnpm build；交互变更运行相关 Vitest 与 Playwright 场景 |
 | API 契约 | OpenAPI 生成与前端类型一致性；鉴权、幂等、并发冲突和字节字符串契约测试 |
 | 页面与组件 | 浅色／深色及 375、768、1440px 视口；键盘、缩放、减少动态效果和必要的截图验收 |
-| Go 节点工具 | 相关 go test；并发与持久性模块补充竞争检测 |
+| Go 节点工具 | 发布、重启恢复和账本测试；Linux 实机协议验证 |
 | TOML | taplo 校验 |
 | Shell | shellcheck；优先把逻辑放进类型化程序 |
 | Dockerfile | hadolint；镜像构建及启动在 Linux CI 完成 |
@@ -1039,7 +1008,7 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 
 ## 十九 开发里程碑与任务清单
 
-当前 F0 的 4 项任务已完成，其余 44 项尚未完成。以下工作量是原始规划估计，按一名熟悉 React、TypeScript、Python、Go 和 Linux 的开发者估算，不包含等待域名、服务器权限和真实客户端验收的时间；后续工作量在 M0 实测后校正，F0 耗时不用于推断节点开发耗时。
+当前 F0 的 4 项任务已完成，其余 44 项尚未按原完整里程碑退出条件全部验收；当前 ovhus/yxvmhk 单节点内网实施结果另见执行计划。以下工作量是原始规划估计，按一名熟悉 React、TypeScript、Go 和 Linux 的开发者估算，不包含等待域名、服务器权限和真实客户端验收的时间；后续工作量在 M0 实测后校正，F0 耗时不用于推断节点开发耗时。
 
 | 里程碑 | 交付 | 前置 | 估计工作量 |
 | --- | --- | --- | --- |
@@ -1076,12 +1045,14 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 
 ### M1 控制数据、API 与 CLI
 
-- [ ] M1.1 建立 uv 项目、类型检查、测试入口和配置模型。
-- [ ] M1.2 实现控制库/流量库权限分离、告警归属、迁移锁和运行库版本检查，验证只读 WAL 启停及写失败语义。
+- [ ] M1.1 建立 Go 模块、静态检查、测试入口和配置模型。
+- [ ] M1.2 实现控制库/流量库权限分离、告警归属、迁移锁和运行库版本检查，验证原子只读导出、writer 启停及写失败语义。
 - [ ] M1.3 实现永久身份、凭证代数、秘密加密与脱敏输出。
 - [ ] M1.4 实现公网端点登记、直接/动态组授权并集、不可变操作目标、事务 outbox 与领取代数校验。
+
+  ✅ 2026-11-16 本地增量：已有用户节点组授权预览/提交、组并集、保留凭据、新增/撤销任务、预览变化保护、API/CLI/Web 和订阅更新已实现。未完成的旧撤销纳入后续操作，订阅故障不阻塞节点撤销。直接节点授权、组成员变更自动传播和真实多节点验收仍待完成；详见 [授权调整验证](qa/user-grants-20261116/report.md)。
 - [ ] M1.5 实现只读 doctor、操作状态和 JSON 契约。
-- [ ] M1.6 实现 FastAPI 与 CLI 共享领域服务、第十四章 P0 接口和服务端有界查询，以生成 OpenAPI 核对 F0 草案并统一前端类型。
+- [ ] M1.6 实现 Go API 与 CLI 共享领域服务、第十四章 P0 接口和服务端有界查询，以独立 OpenAPI 校验实际响应并统一前端类型。
 - [ ] M1.7 实现管理员初始化、登录会话、服务端鉴权、CSRF、注销和秘密响应保护。
 - [ ] M1.8 实现幂等 key 过期摘要保留、资源版本冲突、202 回执和响应丢失/页面刷新后的原任务恢复。
 
@@ -1114,6 +1085,9 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 - [ ] M4.1 实现 Surge 与 Mihomo 的完整配置及节点列表生成。
 - [ ] M4.2 实现每用户发布版本、持久阶段、文件组切换、回执对账与令牌撤销记录。
 - [ ] M4.3 实现新增、部分就绪、禁用和重新启用的完整状态。
+
+  ✅ 本地增量：重新启用的 API、CLI、Web、幂等恢复、新凭据/令牌、旧任务防覆盖和历史用量保留已实现；原有新增/禁用有单节点部署回执。整项仍待重新启用部署后的真实节点及部分就绪验收，不提前勾选完整里程碑。
+
 - [ ] M4.4 实现逐节点/协议/新代凭证的过渡计时、部分发布与丢失回执恢复、禁用抢占和旧代删除。
 - [ ] M4.5 实现链接交付、令牌轮换、日志脱敏和渲染注入防护。
 - [ ] M4.6 将总览、节点、用户与授权页面接入真实 API，支持 URL 筛选与分页、详情和操作进度恢复。
@@ -1193,7 +1167,7 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 | AT45 | 写响应丢失后刷新、同 key 异路径/内容、过期 key 重试 | 找回原结果或明确过期错误，不重复创建；旧表单 revision 不覆盖最新禁用状态 |
 | AT46 | worker 租约过期接管后旧进程迟到 | 旧领取代数不能分配版本或提交新副作用；在途旧请求受节点版本与锁约束 |
 | AT47 | 重叠组授权、移除一个来源、禁用后组成员变化、节点退役 | 有效授权按来源并集计算，禁用不被组变更恢复；退役保留历史及未完成撤销，订阅只含已验证公网端点 |
-| AT48 | WAL writer 启停、并发写锁、满盘及旧程序启动新 schema | 只读账号不获得写权限；正确报忙/不可用，不虚假接收；不兼容 schema 拒绝写入，运行库含所需修复 |
+| AT48 | DELETE 日志 writer 启停、原子导出、并发写锁、满盘及旧程序启动新 schema | 只读账号不获得写权限；正确报忙/不可用，不虚假接收；不兼容 schema 拒绝写入，运行库含所需修复 |
 | AT49 | 节点或订阅文件及安全记录整体恢复旧卷 | 恢复前已停止入口并保留独立恢复标记；可信对账前不启动，不短暂恢复旧凭证或旧订阅链接 |
 | AT50 | 私有 HTTPS 启停、SPA 深链接、API 404、旧页面分块加载 | Tailscale 未就绪不回退公网，API 不返回页面伪成功，缓存/旧 hash 资源策略有效；真实 Safari 核心流程通过 |
 | AT51 | 撤销新配置预检失败，旧容器仍在运行 | 按已选异常策略执行且显示 revoke_blocked/实际服务状态；策略未定不能标此项通过 |
@@ -1219,7 +1193,7 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 | 重启影响 | 接受用户变更引起节点重启及现有连接重连 | 已由用户确认 |
 | 流量误差 | 不超过 10%；业务字节对照口径见第二章 | 阈值已确认，对照区间在 M0 固定 |
 | 禁用执行 | 可管理节点立即执行；发现失联节点管理链路恢复后优先执行 | 行为已确认，M2/M5 冻结产品实测时限 |
-| 撤销预检失败策略 | 强制停止整个受影响 sing-box 容器，或保留旧服务并阻塞撤销；影响见第九章 | 待用户决定，M2 前确定 |
+| 撤销预检失败策略 | 保留旧服务，标记 revoke_blocked 并告警；故障处理前旧凭据可能仍有效 | 用户已确认，实际故障验收待完成 |
 | 采样与同步 | 默认 15 秒与 60 秒，按 10% 误差对照结果校正 | M0 候选，M3/M5 实测 |
 | 普通轮换过渡期 | 每节点/协议的新代首次确认发布后 24 小时 | 默认设计，M4 验证 |
 | 发布并发 | 普通 1 台试点后最多 3 台；禁用及撤销最多 10 台并立即触发 | M0 测量后固定 |
@@ -1228,7 +1202,7 @@ Python 使用项目 .venv，提交 pyproject.toml 和 uv.lock。Python 命令统
 | 日志与备份 | 保存期限、异地位置、加密恢复材料 | M5 前 |
 | 主动通知渠道 | 一期默认关闭，用户配置后启用 | 后续按需求 |
 
-用户已确认服务器端改为 Docker 容器，接受重启重连、流量误差不超过 10%，以及可管理节点立即执行禁用、失联节点恢复后执行。M0 固定业务字节对照区间和候选参数，M2/M3/M5 依据实际实现确认撤销时限与累计误差；不能把立即触发任务等同于零延迟生效。撤销预检失败时强制停服的异常策略尚未确认，不阻止 F0 和独立能力试点推进。
+用户已确认服务器端改为 Docker 容器，接受重启重连、流量误差不超过 10%，以及可管理节点立即执行禁用、失联节点恢复后执行。M0 固定业务字节对照区间和候选参数，M2/M3/M5 依据实际实现确认撤销时限与累计误差；不能把立即触发任务等同于零延迟生效。撤销预检失败时已选择保留旧服务并告警，不将异常停服作为默认策略。
 
 开工资源仍需登记管理 VPS、两台可重启试点节点、现有 sing-box 配置及部署方式、Tailnet 权限、镜像仓库、订阅主机与域名、证书现状和真实客户端版本。可先用现有 SSH 做只读摸底，正式管理链路试点前完成 Tailscale 接入与限制验证。实际地址可在实施时填入配置，不改变已确定的架构。
 

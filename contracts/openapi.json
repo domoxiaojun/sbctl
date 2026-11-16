@@ -1,28 +1,18 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "sbctl F0 管理 API 草案",
-    "version": "0.1.0",
-    "description": "仅覆盖 F0 界面契约；M1 以 FastAPI 生成契约核对。生产服务端尚未实现。所有业务请求需要登录，写请求校验 CSRF、幂等与 revision。"
+    "title": "sbctl 管理 API",
+    "version": "0.6.0",
+    "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
-  "servers": [
-    {
-      "url": "/api/v1"
-    }
-  ],
-  "security": [
-    {
-      "sessionCookie": []
-    }
-  ],
   "paths": {
-    "/session": {
+    "/api/v1/session": {
       "get": {
+        "summary": "Session",
         "operationId": "get__session",
-        "parameters": [],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -31,8 +21,48 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -44,11 +74,21 @@
         }
       },
       "post": {
+        "summary": "Sign In",
         "operationId": "post__session",
-        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -57,8 +97,48 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -67,37 +147,57 @@
               }
             }
           }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Login"
-              }
-            }
-          }
-        },
-        "security": []
+        }
       },
       "delete": {
-        "operationId": "logout",
-        "parameters": [
-          {
-            "name": "X-CSRF-Token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "summary": "Sign Out",
+        "operationId": "delete__session",
         "responses": {
           "204": {
-            "description": "会话已注销"
+            "description": "Successful Response"
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -109,13 +209,13 @@
         }
       }
     },
-    "/overview": {
+    "/api/v1/overview": {
       "get": {
+        "summary": "Overview",
         "operationId": "get__overview",
-        "parameters": [],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -124,8 +224,48 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -137,67 +277,87 @@
         }
       }
     },
-    "/nodes": {
+    "/api/v1/nodes": {
       "get": {
+        "summary": "Nodes",
         "operationId": "get__nodes",
         "parameters": [
           {
             "name": "q",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string",
-              "maxLength": 100
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
             }
           },
           {
             "name": "page",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "integer",
+              "maximum": 100000,
               "minimum": 1,
-              "default": 1
+              "default": 1,
+              "title": "Page"
             }
           },
           {
             "name": "page_size",
             "in": "query",
+            "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 1,
               "maximum": 50,
-              "default": 8
+              "minimum": 1,
+              "default": 8,
+              "title": "Page Size"
             }
           },
           {
             "name": "status",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Status"
             }
           },
           {
             "name": "region",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Region"
             }
           },
           {
             "name": "sort",
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
               "enum": [
                 "name",
                 "bytes",
                 "created"
-              ]
+              ],
+              "type": "string",
+              "default": "created",
+              "title": "Sort"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -206,80 +366,219 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         }
       }
     },
-    "/users": {
+    "/api/v1/nodes/{node_id}": {
       "get": {
-        "operationId": "get__users",
+        "summary": "Node",
+        "operationId": "get__nodes__id_",
         "parameters": [
           {
-            "name": "q",
-            "in": "query",
+            "name": "node_id",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string",
-              "maxLength": 100
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50,
-              "default": 8
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "name",
-                "bytes",
-                "created"
-              ]
+              "title": "Node Id"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "成功",
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Node"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "summary": "Users",
+        "operationId": "get__users",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 8,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Region"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "bytes",
+                "created"
+              ],
+              "type": "string",
+              "default": "created",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -288,60 +587,74 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
               }
-            }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         }
       },
       "post": {
+        "summary": "Create User",
         "operationId": "post__users",
         "parameters": [
-          {
-            "name": "X-CSRF-Token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
           {
             "name": "Idempotency-Key",
             "in": "header",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
             }
           }
         ],
-        "responses": {
-          "202": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Accepted"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
         "requestBody": {
           "required": true,
           "content": {
@@ -351,428 +664,10 @@
               }
             }
           }
-        }
-      }
-    },
-    "/usage": {
-      "get": {
-        "operationId": "get__usage",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 100
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50,
-              "default": 8
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "name",
-                "bytes",
-                "created"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UsagePage"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/operations": {
-      "get": {
-        "operationId": "get__operations",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 100
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50,
-              "default": 8
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "name",
-                "bytes",
-                "created"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OperationPage"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/alerts": {
-      "get": {
-        "operationId": "get__alerts",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "maxLength": 100
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "default": 1
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 50,
-              "default": 8
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "name",
-                "bytes",
-                "created"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AlertPage"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/groups": {
-      "get": {
-        "operationId": "get_groups",
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Group"
-                  }
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/nodes/{id}": {
-      "get": {
-        "operationId": "get__nodes__id_",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Node"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/users/{id}": {
-      "get": {
-        "operationId": "get__users__id_",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/operations/{id}": {
-      "get": {
-        "operationId": "get__operations__id_",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Operation"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/users/{id}/disable": {
-      "post": {
-        "operationId": "post__users__id__disable",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-CSRF-Token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        },
         "responses": {
           "202": {
-            "description": "成功",
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -781,17 +676,164 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
                 }
               }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}": {
+      "get": {
+        "summary": "User",
+        "operationId": "get__users__id_",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
             }
           }
-        },
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/disable": {
+      "post": {
+        "summary": "Disable User",
+        "operationId": "post__users__id__disable",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -801,168 +843,10 @@
               }
             }
           }
-        }
-      }
-    },
-    "/alerts/{id}/ack": {
-      "post": {
-        "operationId": "post__alerts__id__ack",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-CSRF-Token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        },
         "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Alert"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/users/{id}/subscription": {
-      "get": {
-        "operationId": "get__users__id__subscription",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Subscription"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/users/{id}/subscription-link": {
-      "post": {
-        "operationId": "post__users__id__subscription_link",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-CSRF-Token",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubscriptionLink"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "请求失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/requests/{id}": {
-      "get": {
-        "operationId": "get__requests__id_",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功",
+          "202": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
@@ -971,8 +855,289 @@
               }
             }
           },
-          "default": {
-            "description": "请求失败",
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/subscription": {
+      "get": {
+        "summary": "Subscription",
+        "operationId": "get__users__id__subscription",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscription"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/subscription-link": {
+      "post": {
+        "summary": "Subscription Link",
+        "operationId": "post__users__id__subscription_link",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionLink"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/groups": {
+      "get": {
+        "summary": "Groups",
+        "operationId": "get__groups",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Group"
+                  },
+                  "type": "array",
+                  "title": "Response Get  Groups"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -983,166 +1148,1592 @@
           }
         }
       }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "summary": "Usage",
+        "operationId": "get__usage",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 8,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Region"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "bytes",
+                "created"
+              ],
+              "type": "string",
+              "default": "created",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsagePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/operations": {
+      "get": {
+        "summary": "Operations",
+        "operationId": "get__operations",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 8,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Region"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "bytes",
+                "created"
+              ],
+              "type": "string",
+              "default": "created",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/operations/{operation_id}": {
+      "get": {
+        "summary": "Operation",
+        "operationId": "get__operations__id_",
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Operation"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "summary": "Alerts",
+        "operationId": "get__alerts",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100000,
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 8,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "default": "",
+              "title": "Status"
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80,
+              "default": "",
+              "title": "Region"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "name",
+                "bytes",
+                "created"
+              ],
+              "type": "string",
+              "default": "created",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/alerts/{alert_id}/ack": {
+      "post": {
+        "summary": "Acknowledge",
+        "operationId": "post__alerts__id__ack",
+        "parameters": [
+          {
+            "name": "alert_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Alert Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alert"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{key}": {
+      "get": {
+        "summary": "Request Result",
+        "operationId": "get__requests__id_",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/node-discovery": {
+      "get": {
+        "operationId": "get__node_discovery",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeDiscovery"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/node-onboarding": {
+      "get": {
+        "operationId": "get__node_onboarding",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeOnboarding"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/node-jobs": {
+      "post": {
+        "operationId": "post__node_jobs",
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeJobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeJobInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/node-jobs/{id}": {
+      "get": {
+        "operationId": "get__node_job",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeJob"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/node-jobs/{id}/retry": {
+      "post": {
+        "operationId": "post__node_job_retry",
+        "responses": {
+          "202": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeJobAccepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{id}/config": {
+      "get": {
+        "operationId": "get__node_config",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeConfiguration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{id}/metadata": {
+      "post": {
+        "operationId": "post__node_metadata",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSaved"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeMetadata"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/traffic": {
+      "get": {
+        "operationId": "get__traffic",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/users/{user_id}/enable": {
+      "post": {
+        "summary": "重新启用用户",
+        "operationId": "post__users__id__enable",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnableUser"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "description": "保留永久身份与历史用量，按当前授权组生成新代凭证及新订阅令牌；旧凭证与链接持续撤销。相同请求标识返回原操作，过期用户版本返回 409。"
+      }
+    },
+    "/api/v1/users/{user_id}/grants/preview": {
+      "post": {
+        "summary": "预览用户节点组授权调整",
+        "operationId": "preview_user_grants",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantSelection"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "授权影响预览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantPreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "description": "只读计算节点组并集，返回新增、保留、撤销节点及预览摘要；不创建操作或凭据。"
+      }
+    },
+    "/api/v1/users/{user_id}/grants": {
+      "post": {
+        "summary": "提交用户节点组授权调整",
+        "operationId": "update_user_grants",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGrants"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "操作已持久接收",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Accepted"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "description": "按已确认预览提交授权变更；并发变化拒绝覆盖。撤销优先执行，保留节点沿用凭据，再次加入使用新代凭据。订阅链接不变，仅发布已验证授权；发布失败不阻塞节点撤销。"
+      }
     }
   },
   "components": {
-    "securitySchemes": {
-      "sessionCookie": {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "sbctl_session"
-      }
-    },
     "schemas": {
-      "Error": {
-        "type": "object",
-        "additionalProperties": false,
+      "Accepted": {
         "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
+          "operation_id": {
+            "type": "string",
+            "title": "Operation Id"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "operation_id"
+        ],
+        "title": "Accepted"
+      },
+      "Alert": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "info"
+            ],
+            "title": "Severity"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "acknowledged",
+              "resolved"
+            ],
+            "title": "State"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "description",
+          "severity",
+          "state",
+          "node_id",
+          "created_at"
+        ],
+        "title": "Alert"
+      },
+      "AlertPage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Page Size"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "AlertPage"
+      },
+      "CreateUser": {
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Display Name"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 160,
+            "title": "Note",
+            "default": ""
+          },
+          "group_ids": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{2,79}$"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Group Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "display_name",
+          "group_ids"
+        ],
+        "title": "CreateUser"
+      },
+      "DisableUser": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Revision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "reason"
+        ],
+        "title": "DisableUser"
+      },
+      "Error": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "code",
           "message"
-        ]
+        ],
+        "title": "Error"
       },
-      "Session": {
-        "type": "object",
-        "additionalProperties": false,
+      "Group": {
         "properties": {
-          "admin_id": {
-            "type": "string"
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
-          "display_name": {
-            "type": "string"
+          "name": {
+            "type": "string",
+            "title": "Name"
           },
-          "csrf_token": {
-            "type": "string"
+          "node_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Node Ids"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
-          "admin_id",
-          "display_name",
-          "csrf_token"
-        ]
+          "id",
+          "name",
+          "node_ids"
+        ],
+        "title": "Group"
       },
       "Login": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "login_name": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Login Name"
           },
           "password": {
             "type": "string",
-            "minLength": 1
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Password"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "login_name",
           "password"
-        ]
-      },
-      "Quality": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "freshness": {
-            "type": "string",
-            "enum": [
-              "current",
-              "stale",
-              "unknown"
-            ]
-          },
-          "integrity_state": {
-            "type": "string",
-            "enum": [
-              "ok",
-              "counter_error",
-              "state_lost"
-            ]
-          },
-          "has_historical_gap": {
-            "type": "boolean"
-          },
-          "gap_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "started_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "sampled_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "synced_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "freshness",
-          "integrity_state",
-          "has_historical_gap",
-          "gap_count",
-          "started_at",
-          "sampled_at",
-          "synced_at"
-        ]
+        ],
+        "title": "Login"
       },
       "Node": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "title": "Name"
           },
           "region": {
-            "type": "string"
+            "type": "string",
+            "title": "Region"
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "title": "Location"
           },
           "management_address": {
-            "type": "string"
+            "type": "string",
+            "title": "Management Address"
           },
           "public_host": {
-            "type": "string"
+            "type": "string",
+            "title": "Public Host"
           },
           "protocols": {
-            "type": "array",
             "items": {
               "type": "string",
               "enum": [
                 "AnyTLS",
                 "TUIC v5"
               ]
-            }
+            },
+            "type": "array",
+            "title": "Protocols"
           },
           "status": {
             "type": "string",
@@ -1150,33 +2741,62 @@
               "online",
               "degraded",
               "offline"
-            ]
+            ],
+            "title": "Status"
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "title": "Version"
           },
           "revision": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Revision"
           },
           "users_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Users Count"
           },
           "upload_bytes": {
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
+            "title": "Upload Bytes"
           },
           "download_bytes": {
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
+            "title": "Download Bytes"
           },
           "quality": {
             "$ref": "#/components/schemas/Quality"
+          },
+          "inbounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeInbound"
+            }
+          },
+          "inbound_upload_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "inbound_download_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "local_users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeLocalUser"
+            }
+          },
+          "total_inbounds": {
+            "type": "integer"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "id",
           "name",
@@ -1191,203 +2811,72 @@
           "users_count",
           "upload_bytes",
           "download_bytes",
-          "quality"
-        ]
+          "quality",
+          "inbounds",
+          "inbound_upload_bytes",
+          "inbound_download_bytes",
+          "local_users",
+          "total_inbounds"
+        ],
+        "title": "Node"
       },
-      "Group": {
-        "type": "object",
-        "additionalProperties": false,
+      "NodePage": {
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "node_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "node_ids"
-        ]
-      },
-      "User": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "display_name": {
-            "type": "string"
-          },
-          "note": {
-            "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "disabled",
-              "provisioning"
-            ]
-          },
-          "revision": {
+          "total": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Total"
           },
-          "group_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "node_count": {
+          "page": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 1,
+            "title": "Page"
           },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
+          "page_size": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Page Size"
           },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
-          },
-          "subscription_state": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "published",
-              "revoke_pending",
-              "revoked"
-            ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "quality": {
-            "$ref": "#/components/schemas/Quality"
-          }
-        },
-        "required": [
-          "id",
-          "display_name",
-          "note",
-          "status",
-          "revision",
-          "group_ids",
-          "node_count",
-          "upload_bytes",
-          "download_bytes",
-          "subscription_state",
-          "created_at",
-          "quality"
-        ]
-      },
-      "CreateUser": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 40
-          },
-          "note": {
-            "type": "string",
-            "maxLength": 160
-          },
-          "group_ids": {
-            "type": "array",
+          "items": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/Node"
             },
-            "minItems": 1
+            "type": "array",
+            "title": "Items"
           }
         },
-        "required": [
-          "display_name",
-          "note",
-          "group_ids"
-        ]
-      },
-      "DisableUser": {
-        "type": "object",
         "additionalProperties": false,
-        "properties": {
-          "revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 160
-          }
-        },
-        "required": [
-          "revision",
-          "reason"
-        ]
-      },
-      "OperationTarget": {
         "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "node_id": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "applied",
-              "verified",
-              "unreachable"
-            ]
-          },
-          "message": {
-            "type": "string"
-          }
-        },
         "required": [
-          "node_id",
-          "name",
-          "state",
-          "message"
-        ]
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "NodePage"
       },
       "Operation": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "title": "Id"
           },
           "kind": {
             "type": "string",
             "enum": [
               "create_user",
               "disable_user",
+              "enable_user",
               "rotate_credentials",
-              "publish"
-            ]
+              "publish",
+              "update_grants"
+            ],
+            "title": "Kind"
           },
           "subject": {
-            "type": "string"
+            "type": "string",
+            "title": "Subject"
           },
           "user_id": {
             "anyOf": [
@@ -1397,7 +2886,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "User Id"
           },
           "state": {
             "type": "string",
@@ -1406,18 +2896,22 @@
               "running",
               "partial",
               "completed",
-              "failed"
-            ]
+              "failed",
+              "superseded"
+            ],
+            "title": "State"
           },
           "created_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "title": "Created At"
           },
           "targets": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/OperationTarget"
-            }
+            },
+            "type": "array",
+            "title": "Targets"
           },
           "subscription_state": {
             "type": "string",
@@ -1426,9 +2920,12 @@
               "published",
               "revoke_pending",
               "revoked"
-            ]
+            ],
+            "title": "Subscription State"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "id",
           "kind",
@@ -1438,201 +2935,161 @@
           "created_at",
           "targets",
           "subscription_state"
-        ]
+        ],
+        "title": "Operation"
       },
-      "Accepted": {
-        "type": "object",
-        "additionalProperties": false,
+      "OperationPage": {
         "properties": {
-          "operation_id": {
-            "type": "string"
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Page Size"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Operation"
+            },
+            "type": "array",
+            "title": "Items"
           }
         },
-        "required": [
-          "operation_id"
-        ]
-      },
-      "Alert": {
-        "type": "object",
         "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "OperationPage"
+      },
+      "OperationTarget": {
         "properties": {
-          "id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "severity": {
+          "node_id": {
             "type": "string",
-            "enum": [
-              "high",
-              "medium",
-              "info"
-            ]
+            "title": "Node Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
           },
           "state": {
             "type": "string",
             "enum": [
-              "open",
-              "acknowledged",
-              "resolved"
-            ]
+              "queued",
+              "applied",
+              "verified",
+              "unreachable",
+              "failed",
+              "revoke_blocked",
+              "superseded"
+            ],
+            "title": "State"
           },
-          "node_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "created_at": {
+          "message": {
             "type": "string",
-            "format": "date-time"
+            "title": "Message"
           }
         },
-        "required": [
-          "id",
-          "title",
-          "description",
-          "severity",
-          "state",
-          "node_id",
-          "created_at"
-        ]
-      },
-      "Usage": {
-        "type": "object",
         "additionalProperties": false,
-        "properties": {
-          "user_id": {
-            "type": "string"
-          },
-          "display_name": {
-            "type": "string"
-          },
-          "node_count": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
-          },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
-          },
-          "quality": {
-            "$ref": "#/components/schemas/Quality"
-          }
-        },
+        "type": "object",
         "required": [
-          "user_id",
-          "display_name",
-          "node_count",
-          "upload_bytes",
-          "download_bytes",
-          "quality"
-        ]
+          "node_id",
+          "name",
+          "state",
+          "message"
+        ],
+        "title": "OperationTarget"
       },
       "Overview": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "node_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Node Count"
           },
           "online_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Online Count"
           },
           "degraded_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Degraded Count"
           },
           "offline_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Offline Count"
           },
           "user_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "User Count"
           },
           "pending_count": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Pending Count"
           },
           "upload_bytes": {
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
+            "title": "Upload Bytes"
           },
           "download_bytes": {
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$",
-            "description": "非负十进制字节字符串，禁止浮点传输"
+            "title": "Download Bytes"
           },
           "regions": {
-            "type": "array",
             "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "id": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "node_count": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "online_count": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "id",
-                "name",
-                "node_count",
-                "online_count"
-              ]
-            }
+              "$ref": "#/components/schemas/Region"
+            },
+            "type": "array",
+            "title": "Regions"
           },
           "operations": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/Operation"
-            }
+            },
+            "type": "array",
+            "title": "Operations"
           },
           "alerts": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/Alert"
-            }
+            },
+            "type": "array",
+            "title": "Alerts"
           },
           "top_usage": {
-            "type": "array",
             "items": {
               "$ref": "#/components/schemas/Usage"
-            }
+            },
+            "type": "array",
+            "title": "Top Usage"
           },
           "as_of": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "title": "As Of"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "node_count",
           "online_count",
@@ -1647,11 +3104,137 @@
           "alerts",
           "top_usage",
           "as_of"
-        ]
+        ],
+        "title": "Overview"
+      },
+      "Quality": {
+        "properties": {
+          "freshness": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "unknown"
+            ],
+            "title": "Freshness"
+          },
+          "integrity_state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "counter_error",
+              "state_lost"
+            ],
+            "title": "Integrity State"
+          },
+          "has_historical_gap": {
+            "type": "boolean",
+            "title": "Has Historical Gap"
+          },
+          "gap_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Gap Count"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampled At"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "freshness",
+          "integrity_state",
+          "has_historical_gap",
+          "gap_count",
+          "started_at",
+          "sampled_at",
+          "synced_at"
+        ],
+        "title": "Quality"
+      },
+      "Region": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Node Count"
+          },
+          "online_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Online Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "node_count",
+          "online_count"
+        ],
+        "title": "Region"
+      },
+      "Session": {
+        "properties": {
+          "admin_id": {
+            "type": "string",
+            "title": "Admin Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "admin_id",
+          "display_name",
+          "csrf_token"
+        ],
+        "title": "Session"
       },
       "Subscription": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "state": {
             "type": "string",
@@ -1660,190 +3243,861 @@
               "published",
               "revoke_pending",
               "revoked"
-            ]
+            ],
+            "title": "State"
           },
           "published_nodes": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Published Nodes"
           },
           "total_nodes": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "title": "Total Nodes"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "state",
           "published_nodes",
           "total_nodes"
-        ]
+        ],
+        "title": "Subscription"
       },
       "SubscriptionLink": {
-        "type": "object",
-        "additionalProperties": false,
         "properties": {
           "url": {
             "type": "string",
-            "format": "uri"
+            "title": "Url"
+          },
+          "mihomo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mihomo Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "SubscriptionLink"
+      },
+      "Usage": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Node Count"
+          },
+          "upload_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Upload Bytes"
+          },
+          "download_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Download Bytes"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "user_id",
+          "display_name",
+          "node_count",
+          "upload_bytes",
+          "download_bytes",
+          "quality"
+        ],
+        "title": "Usage"
+      },
+      "UsagePage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Page Size"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Usage"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "UsagePage"
+      },
+      "User": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "provisioning"
+            ],
+            "title": "Status"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Revision"
+          },
+          "group_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Group Ids"
+          },
+          "node_count": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Node Count"
+          },
+          "upload_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Upload Bytes"
+          },
+          "download_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "title": "Download Bytes"
+          },
+          "subscription_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "published",
+              "revoke_pending",
+              "revoked"
+            ],
+            "title": "Subscription State"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "note",
+          "status",
+          "revision",
+          "group_ids",
+          "node_count",
+          "upload_bytes",
+          "download_bytes",
+          "subscription_state",
+          "created_at",
+          "quality"
+        ],
+        "title": "User"
+      },
+      "UserPage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 50,
+            "minimum": 1,
+            "title": "Page Size"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/User"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "page_size",
+          "items"
+        ],
+        "title": "UserPage"
+      },
+      "NodeConnection": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "publish_user": {
+            "type": "string"
+          },
+          "stats_user": {
+            "type": "string"
+          },
+          "publish_key": {
+            "type": "string"
+          },
+          "stats_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "host_key": {
+            "type": "string"
           }
         },
         "required": [
-          "url"
-        ]
+          "address",
+          "port",
+          "publish_user",
+          "stats_user",
+          "publish_key",
+          "stats_key",
+          "version"
+        ],
+        "additionalProperties": false
       },
-      "NodePage": {
+      "NodeDraft": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
-          "items": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "group_id": {
+            "type": "string"
+          },
+          "group_name": {
+            "type": "string"
+          },
+          "connection": {
+            "$ref": "#/components/schemas/NodeConnection"
+          },
+          "container": {
+            "type": "string"
+          },
+          "config_dir": {
+            "type": "string"
+          },
+          "public_host": {
+            "type": "string"
+          },
+          "server_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "region",
+          "location",
+          "group_id",
+          "group_name",
+          "connection",
+          "container",
+          "config_dir",
+          "public_host"
+        ],
+        "additionalProperties": false
+      },
+      "NodeJobInput": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "inspect",
+              "configure",
+              "check"
+            ]
+          },
+          "draft": {
+            "$ref": "#/components/schemas/NodeDraft"
+          },
+          "inspection_id": {
+            "type": "string"
+          },
+          "expected_version": {
+            "type": "integer"
+          },
+          "desired_container": {
+            "type": "string"
+          },
+          "desired_image": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "draft",
+          "inspection_id",
+          "expected_version"
+        ],
+        "additionalProperties": false
+      },
+      "NodeJobAccepted": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "additionalProperties": false
+      },
+      "NodeJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "node_id",
+          "state",
+          "result",
+          "error_code",
+          "message",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "NodeConfiguration": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/NodeDraft"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "binding": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_check": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "draft",
+          "version",
+          "binding",
+          "checked_at",
+          "last_check"
+        ],
+        "additionalProperties": false
+      },
+      "NodeMetadata": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/NodeDraft"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draft",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "NodeSaved": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "saved",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "NodeDiscovery": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hosts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "address": {
+                  "type": "string"
+                },
+                "online": {
+                  "type": "boolean"
+                },
+                "os": {
+                  "type": "string"
+                },
+                "node_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "address",
+                "online",
+                "os",
+                "node_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "sampled_at",
+          "hosts",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "NodeOnboarding": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "type": "object",
+            "properties": {
+              "publish": {
+                "type": "string"
+              },
+              "stats": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "publish",
+              "stats"
+            ],
+            "additionalProperties": false
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "release": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "keys",
+          "instructions",
+          "release"
+        ],
+        "additionalProperties": false
+      },
+      "NodeInbound": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tag",
+          "protocol",
+          "port",
+          "upload_bytes",
+          "download_bytes",
+          "started_at",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "NodeLocalUser": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "upload_bytes",
+          "download_bytes",
+          "started_at",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficReport": {
+        "type": "object",
+        "properties": {
+          "nodes": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Node"
             }
           },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
+          "as_of": {
+            "type": "string"
           }
         },
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
+          "nodes",
+          "as_of"
+        ],
+        "additionalProperties": false
       },
-      "UserPage": {
-        "type": "object",
-        "additionalProperties": false,
+      "EnableUser": {
         "properties": {
-          "items": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Revision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "reason"
+        ],
+        "title": "EnableUser"
+      },
+      "GrantSelection": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "group_ids": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/User"
-            }
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
           }
         },
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
+          "revision",
+          "group_ids"
+        ],
+        "additionalProperties": false
       },
-      "UsagePage": {
+      "UpdateGrants": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
-          "items": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "group_ids": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Usage"
-            }
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
           },
-          "total": {
-            "type": "integer",
-            "minimum": 0
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
           },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
+          "preview_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
+          "revision",
+          "group_ids",
+          "reason",
+          "preview_hash"
+        ],
+        "additionalProperties": false
       },
-      "OperationPage": {
+      "GrantNode": {
         "type": "object",
-        "additionalProperties": false,
         "properties": {
-          "items": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "GrantPreview": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "group_ids": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Operation"
-            }
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 100
           },
-          "total": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
-          }
-        },
-        "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
-      },
-      "AlertPage": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "items": {
+          "added": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Alert"
+              "$ref": "#/components/schemas/GrantNode"
             }
           },
-          "total": {
-            "type": "integer",
-            "minimum": 0
+          "retained": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantNode"
+            }
           },
-          "page": {
-            "type": "integer",
-            "minimum": 1
+          "removed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantNode"
+            }
           },
-          "page_size": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50
+          "changed": {
+            "type": "boolean"
+          },
+          "preview_hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
           }
         },
         "required": [
-          "items",
-          "total",
-          "page",
-          "page_size"
-        ]
+          "revision",
+          "group_ids",
+          "added",
+          "retained",
+          "removed",
+          "changed",
+          "preview_hash"
+        ],
+        "additionalProperties": false
       }
     }
   }

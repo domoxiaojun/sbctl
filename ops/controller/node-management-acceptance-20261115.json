@@ -1,0 +1,243 @@
+{
+  "discovery": {
+    "available": true,
+    "hosts": [
+      {
+        "address": "100.70.0.4",
+        "name": "Domo-OP",
+        "node_id": "",
+        "online": true,
+        "os": "linux"
+      },
+      {
+        "address": "100.70.0.2",
+        "name": "Domo-R2S",
+        "node_id": "",
+        "online": true,
+        "os": "linux"
+      },
+      {
+        "address": "100.70.0.11",
+        "name": "grokbot-box",
+        "node_id": "",
+        "online": false,
+        "os": "linux"
+      },
+      {
+        "address": "100.70.0.3",
+        "name": "oraclesg",
+        "node_id": "",
+        "online": true,
+        "os": "linux"
+      },
+      {
+        "address": "100.70.0.10",
+        "name": "yxvmhk",
+        "node_id": "yxvmhk",
+        "online": true,
+        "os": "linux"
+      }
+    ],
+    "message": "已读取 Tailscale 主机",
+    "sampled_at": "2026-11-14T18:49:25.024931Z"
+  },
+  "inspection": {
+    "created_at": "2026-11-14T18:49:55.276877Z",
+    "error_code": "",
+    "id": "njob_5a997f85c9fe193cc189f5a08a55ac28",
+    "kind": "inspect",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "can_adopt": true,
+      "checked_at": "2026-11-14T18:51:39.227470Z",
+      "compose_hash": "7376a1552189df8004b029d3435787df0c1b8ceae71244283fdde21c1b52a99f",
+      "config_dir": "/etc/sing-box",
+      "config_hash": "5e7742d8f3608895f2b5a39c4c164d497125be661e74594589ee15f9c313ef6d",
+      "container": "sing-box",
+      "container_id": "32d03cf367d8c652b166068a6ef62013d64cedf6150f9fe3ba42e1ec0354c8a0",
+      "endpoints": [
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 5443,
+          "protocol": "anytls",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "anytls-in"
+        },
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 4443,
+          "protocol": "tuic",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "tuic-in"
+        }
+      ],
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "existing_node_id": "yxvmhk",
+      "gid": 994,
+      "guard_current": false,
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "impact": "保存节点绑定并安装启动守卫；必要时重建当前容器，连接会短暂重连。默认保留当前镜像和容器名，也可指定新值。",
+      "managed_credentials": 0,
+      "observation_hash": "11fcf8ec0e5b0e2144f29cb376dbd8c40139cdcc56991fd5705cdb1528d13d72",
+      "preserved_users": 0,
+      "running": true,
+      "server_name": "hk.domob.org",
+      "uid": 994,
+      "version": "sing-box version 1.12.9"
+    },
+    "state": "completed",
+    "updated_at": "2026-11-14T18:51:42.876205Z"
+  },
+  "configure": {
+    "created_at": "2026-11-14T18:52:06.238468Z",
+    "error_code": "",
+    "id": "njob_aed5af02cc95995027269bb2b7edbc60",
+    "kind": "configure",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "checked_at": "2026-11-14T18:52:15.531337Z",
+      "config_dir": "/etc/sing-box",
+      "container": "sing-box",
+      "endpoints": [
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 5443,
+          "protocol": "anytls",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "anytls-in"
+        },
+        {
+          "alpn": [
+            "h3"
+          ],
+          "port": 4443,
+          "protocol": "tuic",
+          "server": "87.83.104.24",
+          "sni": "hk.domob.org",
+          "tag": "tuic-in"
+        }
+      ],
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "management_job_id": "njob_aed5af02cc95995027269bb2b7edbc60",
+      "node_id": "yxvmhk",
+      "ready": true,
+      "runtime": {
+        "config_hash": "5e7742d8f3608895f2b5a39c4c164d497125be661e74594589ee15f9c313ef6d",
+        "container_id": "1c7c134e649207d9baf5a2f78227838652881e864bc5475da5be0b27c7332513",
+        "image_digest": "sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "node_revision": 2,
+        "paused": false,
+        "restarting": false,
+        "running": true,
+        "started_at": "2026-11-14T18:52:12.210772395Z",
+        "users": []
+      },
+      "template_hash": "68eec764561fd99aa18ab74de71154cfa11b1dcc59ccac2aa583f9dd3e762dc9"
+    },
+    "state": "completed",
+    "updated_at": "2026-11-14T18:52:15.730678Z"
+  },
+  "diagnostic": {
+    "created_at": "2026-11-14T18:53:17.135870Z",
+    "error_code": "",
+    "id": "njob_bcd641e67fcf753e4ea9ad1930216574",
+    "kind": "check",
+    "message": "操作已完成",
+    "node_id": "yxvmhk",
+    "result": {
+      "checked_at": "2026-11-14T18:53:20.572226Z",
+      "checks": [
+        {
+          "message": "固定命令可达，容器运行信息已读取",
+          "name": "SSH 与容器",
+          "ok": true
+        },
+        {
+          "message": "容器、配置和启动守卫一致",
+          "name": "运行绑定",
+          "ok": true
+        },
+        {
+          "message": "独立统计账号可达且采样在 30 秒内更新",
+          "name": "统计通道",
+          "ok": true
+        }
+      ],
+      "config_dir": "/etc/sing-box",
+      "container": "sing-box",
+      "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+      "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+      "node_id": "yxvmhk",
+      "observed": {
+        "can_adopt": true,
+        "checked_at": "2026-11-14T18:53:20.693579Z",
+        "compose_hash": "69e01d629922138072f5b67070c633b0b204120009a15722d68015e884017ff5",
+        "config_dir": "/etc/sing-box",
+        "config_hash": "5e7742d8f3608895f2b5a39c4c164d497125be661e74594589ee15f9c313ef6d",
+        "container": "sing-box",
+        "container_id": "1c7c134e649207d9baf5a2f78227838652881e864bc5475da5be0b27c7332513",
+        "endpoints": [
+          {
+            "alpn": [
+              "h3"
+            ],
+            "port": 5443,
+            "protocol": "anytls",
+            "server": "87.83.104.24",
+            "sni": "hk.domob.org",
+            "tag": "anytls-in"
+          },
+          {
+            "alpn": [
+              "h3"
+            ],
+            "port": 4443,
+            "protocol": "tuic",
+            "server": "87.83.104.24",
+            "sni": "hk.domob.org",
+            "tag": "tuic-in"
+          }
+        ],
+        "engine_build_id": "d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "existing_node_id": "yxvmhk",
+        "gid": 994,
+        "guard_current": true,
+        "image": "ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2",
+        "impact": "保存节点绑定并安装启动守卫；必要时重建当前容器，连接会短暂重连。默认保留当前镜像和容器名，也可指定新值。",
+        "managed_credentials": 0,
+        "observation_hash": "8a75a4f581ec610721a6518e42659eba3d3ce882281960bfcafe7f238c4501fa",
+        "preserved_users": 0,
+        "running": true,
+        "server_name": "",
+        "uid": 994,
+        "version": "sing-box version 1.12.9"
+      },
+      "ready": true,
+      "runtime": {
+        "config_hash": "5e7742d8f3608895f2b5a39c4c164d497125be661e74594589ee15f9c313ef6d",
+        "container_id": "1c7c134e649207d9baf5a2f78227838652881e864bc5475da5be0b27c7332513",
+        "image_digest": "sha256:d9edd64387dfafad2eb1e15efdcf4bd904a2d0939a577107c678f3f8d033ce94",
+        "node_revision": 2,
+        "paused": false,
+        "restarting": false,
+        "running": true,
+        "started_at": "2026-11-14T18:52:12.210772395Z",
+        "users": []
+      }
+    },
+    "state": "completed",
+    "updated_at": "2026-11-14T18:53:24.423354Z"
+  }
+}

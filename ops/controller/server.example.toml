@@ -1,0 +1,15 @@
+public_base_url = "https://subscription.example.invalid"
+allowed_origins = ["https://admin.example.invalid"]
+control_db = "/data/control/control.db"
+traffic_db = "/data/traffic/traffic.db"
+traffic_snapshot = "/data/telemetry/traffic.json"
+public_dir = "/data/publication/subscriptions"
+inventory_file = "/data/inventory/nodes.json"
+key_file = "/run/secrets/master.key"
+ssh_dir = "/run/secrets/ssh"
+web_dir = "/opt/sbctl/web"
+secure_cookie = true
+session_seconds = 28800
+max_users = 100
+stale_seconds = 180
+sync_seconds = 15

@@ -1,0 +1,9 @@
+{
+  "business_unchanged": true,
+  "existing_tags_preserved": true,
+  "existing_names_preserved": true,
+  "inbound_count": 19,
+  "stats_inbounds": 19,
+  "stats_user_count": 2,
+  "stats_listen": "127.0.0.1:10085"
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=SBCTL durable node authorization executor
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/opt/sbctl/bin/sbctl-node worker
+Environment=SBCTL_NODE_CONFIG=/opt/sbctl/config/node.toml
+Restart=on-failure
+RestartSec=5
+UMask=0077
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

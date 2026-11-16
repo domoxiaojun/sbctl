@@ -1,0 +1,21 @@
+[Unit]
+Description=SBCTL independent durable traffic collector
+After=docker.service sbctl-node.service
+
+[Service]
+Type=simple
+User=sbctl-stats
+Group=sbctl-stats
+EnvironmentFile=/opt/sbctl/config/collector.env
+ExecStart=/opt/sbctl/bin/sbctl-node collect ${SBCTL_NODE_ID}
+Restart=on-failure
+RestartSec=5
+UMask=0027
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sbctl/data/ledger
+# Only the fixed runtime helper can elevate; there is no Docker-group membership.
+
+[Install]
+WantedBy=multi-user.target

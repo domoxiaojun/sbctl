@@ -1,0 +1,34 @@
+{
+  "checked_at": "2026-11-14T19:50:16.603465Z",
+  "ledger_preserved": true,
+  "managed_history_unchanged": true,
+  "inbounds": [
+    {
+      "identity": "ss2022",
+      "upload_delta": 747,
+      "download_delta": 2106192
+    },
+    {
+      "identity": "vmess",
+      "upload_delta": 916,
+      "download_delta": 2107017
+    }
+  ],
+  "local_users": [
+    {
+      "identity": "domo",
+      "upload_delta": 916,
+      "download_delta": 2107017
+    },
+    {
+      "identity": "sbctl-local-sbctl-in-vless-9443-1",
+      "upload_delta": 0,
+      "download_delta": 0
+    }
+  ],
+  "data_quality": {
+    "integrity_state": "ok",
+    "has_historical_gap": true,
+    "gap_count": 5
+  }
+}

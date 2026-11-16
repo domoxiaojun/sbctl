@@ -3,7 +3,7 @@ import { api, ApiError } from '@/api/client'
 
 const storageKey = 'sbctl-pending-create'
 const changeEvent = 'sbctl-pending-request-changed'
-type PendingRequest = { key: string; kind: 'create_user' | 'disable_user'; target_id?: string }
+type PendingRequest = { key: string; kind: 'create_user' | 'disable_user' | 'enable_user' | 'update_grants'; target_id?: string }
 
 function snapshot() { try { return sessionStorage.getItem(storageKey) } catch { return null } }
 function subscribe(onChange: () => void) {
@@ -33,7 +33,8 @@ export async function submitUserRequest(kind: PendingRequest['kind'], send: (key
   } catch (error) {
     // Network/server failures may have committed. Keep the original key for lookup.
     if (error instanceof ApiError && (
-      [400, 401, 403, 404, 422].includes(error.status) || error.code === 'STALE_REVISION'
+      [400, 401, 403, 404, 422].includes(error.status) ||
+      ['STALE_REVISION', 'NOT_DISABLED', 'USER_DISABLED', 'GRANT_PREVIEW_CHANGED', 'GRANT_UNCHANGED', 'USER_LIMIT', 'NODE_BUSY', 'SUBSCRIPTION_REVOKE_PENDING', 'SUBSCRIPTION_MISSING'].includes(error.code)
     )) clearPendingRequest()
     throw error
   }

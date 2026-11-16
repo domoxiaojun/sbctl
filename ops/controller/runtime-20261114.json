@@ -1,0 +1,45 @@
+{
+  "controller": "ovhus",
+  "controller_address": "100.70.0.9",
+  "domain": "sbctl.domob.org",
+  "access": "loopback-backends-only",
+  "site_configured": false,
+  "site_managed_by": "user",
+  "public_subscription_enabled": false,
+  "control_image": "sha256:69f0ed2581234d11d91745dd4412b73f7854da39c39c67dd84cbd88fb54b337c",
+  "managed_node": "yxvmhk",
+  "revoke_preflight_policy": "preserve",
+  "traffic": {
+    "download_error": 0.005578041076660156,
+    "download_payload": 8388608,
+    "download_recorded": 8435400,
+    "measured_at": "2026-11-14T12:24:40.169247+00:00",
+    "upload_error": 0.0067119598388671875,
+    "upload_payload": 2097152,
+    "upload_recorded": 2111228
+  },
+  "revoke": {
+    "checked_at": "2026-11-14T12:30:30.695162+00:00",
+    "disable": "completed",
+    "operation_id": "op_861008a698314e8cb9fe2c46efc09894",
+    "resumed_existing_operation": true,
+    "subscription_status": 404,
+    "verification_check_seconds": 0.02
+  },
+  "node": {
+    "latest": {
+      "accepted_at": "2026-11-14T12:24:45.880077+00:00",
+      "applied_at": "2026-11-14T12:24:49.469137+00:00",
+      "applied_epoch": "81a813bfeb64c687f71316c279ff863b7c4dcc687219876ed0d394c741f2c95f@2026-11-14T12:24:48.804992471Z",
+      "config_hash": "581bdec57261ee5624a7c3e1bb3ab2a015c843f2b6621cd8ef24e3fa7efb613d",
+      "error_code": null,
+      "id": "req_9f409b19fa724f568022599341b44081",
+      "payload_hash": "0f56f1c302629c751ddcd41699d5b250d48cdbbe4086ed11e52b1436633c8245",
+      "revision": 3,
+      "state": "verified",
+      "verified_at": "2026-11-14T12:28:43.095690+00:00"
+    },
+    "node_id": "yxvmhk"
+  },
+  "native_client_app_import_tested": false
+}
