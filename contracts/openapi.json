@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -2169,6 +2169,30 @@
             "description": "统计筛选"
           },
           {
+            "name": "user",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "local_user",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
             "name": "from",
             "in": "query",
             "schema": {
@@ -3988,6 +4012,26 @@
       "TrafficReport": {
         "type": "object",
         "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "inbounds",
+              "local",
+              "managed"
+            ]
+          },
+          "trend": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficDay"
+            }
+          },
+          "trend_from": {
+            "type": "string"
+          },
+          "trend_to": {
+            "type": "string"
+          },
           "nodes": {
             "type": "array",
             "items": {
@@ -4020,6 +4064,10 @@
           }
         },
         "required": [
+          "scope",
+          "trend",
+          "trend_from",
+          "trend_to",
           "nodes",
           "users",
           "periods",
@@ -4241,6 +4289,49 @@
           "upload_bytes",
           "download_bytes",
           "quality"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficDay": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "upload_bytes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "download_bytes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "date",
+          "upload_bytes",
+          "download_bytes",
+          "status"
         ],
         "additionalProperties": false
       }

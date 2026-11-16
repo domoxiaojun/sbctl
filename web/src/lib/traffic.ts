@@ -2,12 +2,12 @@ import type { Schema } from '@/api/types'
 import { totalBytes } from './format'
 
 export type TrafficFilters = {
- q?: string; node?: string; protocol?: string; activity?: string;
+ q?: string; node?: string; protocol?: string; activity?: string; user?: string; local_user?: string;
  from?: string; to?: string; scope?: 'inbounds' | 'local' | 'managed'; sort?: 'name' | 'bytes' | 'created'
 }
 export function trafficSearch(raw: Record<string, unknown>): TrafficFilters {
  const text = (key: string) => typeof raw[key] === 'string' ? raw[key].slice(0, 100) : undefined
- return { node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local', 'managed'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined }
+ return { user: text('user'), local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local', 'managed'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined }
 }
 export function calendarDate(value = Date.now()) { return new Date(value + 8 * 3600_000).toISOString().slice(0, 10) }
 export function presetDates(preset: string, now = Date.now()) {
@@ -36,4 +36,22 @@ export function trafficTotals(rows: { upload_bytes: string; download_bytes: stri
 export function knownTrafficNodes(report: Schema['TrafficReport']) {
  const unavailable = new Set(report.periods.filter(p => p.status === 'unavailable').map(p => p.node_id))
  return report.nodes.filter(n => !unavailable.has(n.id))
+}
+
+export type TrafficRank = { id: string; name: string; upload_bytes: string; download_bytes: string; filter: TrafficFilters }
+export function trafficRankings(report: Schema['TrafficReport'], scope: TrafficFilters['scope'] = 'inbounds') {
+ const nodes = knownTrafficNodes(report)
+ const byNode = new Map<string, TrafficRank>(), byIdentity = new Map<string, TrafficRank>()
+ const add = (map: Map<string, TrafficRank>, id: string, name: string, row: { upload_bytes: string; download_bytes: string }, filter: TrafficFilters) => {
+  const old = map.get(id)
+  map.set(id, { id, name, ...trafficTotals(old ? [old, row] : [row]), filter })
+ }
+ for (const node of nodes) {
+  const rows = scope === 'managed' ? report.users.filter(u => u.node_id === node.id) : scope === 'local' ? node.local_users : node.inbounds
+  add(byNode, node.id, node.name, trafficTotals(rows), { node: node.id })
+  if (scope === 'inbounds') for (const row of node.inbounds) add(byIdentity, row.protocol, row.protocol.toUpperCase(), row, { protocol: row.protocol })
+  else if (scope === 'managed') for (const row of report.users.filter(u => u.node_id === node.id)) add(byIdentity, row.user_id, row.display_name, row, { user: row.user_id })
+  else for (const row of node.local_users) add(byIdentity, JSON.stringify([node.id, row.name]), `${row.name} · ${node.name}`, row, { node: node.id, local_user: row.name })
+ }
+ return { nodes: sortTraffic([...byNode.values()], 'bytes', r => r.name), identities: sortTraffic([...byIdentity.values()], 'bytes', r => r.name) }
 }

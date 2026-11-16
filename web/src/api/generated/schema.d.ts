@@ -933,6 +933,11 @@ export interface components {
             active: boolean;
         };
         TrafficReport: {
+            /** @enum {string} */
+            scope: "inbounds" | "local" | "managed";
+            trend: components["schemas"]["TrafficDay"][];
+            trend_from: string;
+            trend_to: string;
             nodes: components["schemas"]["Node"][];
             users: components["schemas"]["TrafficUser"][];
             periods: components["schemas"]["TrafficPeriod"][];
@@ -985,6 +990,13 @@ export interface components {
             upload_bytes: string;
             download_bytes: string;
             quality: components["schemas"]["Quality"];
+        };
+        TrafficDay: {
+            date: string;
+            upload_bytes: string | null;
+            download_bytes: string | null;
+            /** @enum {string} */
+            status: "complete" | "partial" | "unavailable";
         };
     };
     responses: never;
@@ -2666,6 +2678,12 @@ export interface operations {
                 activity?: string;
                 /** @description 统计筛选 */
                 q?: string;
+                /** @description 统计筛选 */
+                user?: string;
+                /** @description 统计筛选 */
+                local_user?: string;
+                /** @description 统计筛选 */
+                scope?: string;
                 /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
                 from?: string;
                 /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */

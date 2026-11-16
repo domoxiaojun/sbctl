@@ -117,6 +117,25 @@ func trafficDates(q url.Values) (time.Time, time.Time) {
 }
 func (v Views) TrafficReport(q url.Values) M {
 	start, end := trafficDates(q)
+	scope := q.Get("scope")
+	if scope == "" {
+		scope = "inbounds"
+	}
+	group := map[string]string{"inbounds": "inbounds", "local": "local_users", "managed": "users"}[scope]
+	if group == "" {
+		fail("SCOPE_INVALID", "统计范围无效", 422)
+	}
+	trendStart, trendEnd := start, end
+	if start.IsZero() {
+		today := time.Now().In(trafficZone)
+		trendEnd = time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, trafficZone).AddDate(0, 0, 1)
+		trendStart = trendEnd.AddDate(0, 0, -7)
+	}
+	daily := map[string]M{}
+	selectedNodes := 0
+	for day := trendStart; day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
+		daily[day.Format(time.DateOnly)] = M{"known": 0, "partial": false, "upload_bytes": "0", "download_bytes": "0"}
+	}
 	telemetry := v.Telemetry()
 	nodes := v.nodesFrom(telemetry)
 	result := []M{}
@@ -134,37 +153,44 @@ func (v Views) TrafficReport(q url.Values) M {
 		if q.Get("node") != "" && id != q.Get("node") {
 			continue
 		}
+		selectedNodes++
 		entry := mapping(telemetry[id])
 		snap := mapping(entry["snapshot"])
 		period := M{"node_id": id, "history_started_at": entry["history_started_at"], "status": "cumulative"}
 		aggregates := M{"inbounds": M{}, "local_users": M{}, "users": M{}}
-		if !start.IsZero() {
-			seen, incomplete := false, false
-			for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
-				path := historyPath(v.Settings.TrafficSnapshot, id, day.Format(time.DateOnly))
-				if !exists(path) {
-					incomplete = true
-					continue
-				}
-				doc := object(read(path))
-				seen = true
-				requiredEnd := day.AddDate(0, 0, 1)
-				if requiredEnd.After(time.Now()) {
-					requiredEnd = time.Now()
-				}
-				if stamp(str(doc["from"])).After(day) || stamp(str(doc["to"])).Before(requiredEnd.Add(-180*time.Second)) || boolean(doc["incomplete"]) {
-					incomplete = true
-				}
-				for _, group := range []string{"inbounds", "local_users", "users"} {
-					for key, raw := range mapping(doc[group]) {
-						agg := mapping(mapping(aggregates[group])[key])
+		documents := map[string]M{}
+		seen, incomplete := false, false
+		for day := trendStart; day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
+			key := day.Format(time.DateOnly)
+			path := historyPath(v.Settings.TrafficSnapshot, id, key)
+			if !exists(path) {
+				incomplete = true
+				continue
+			}
+			doc := object(read(path))
+			documents[key] = doc
+			seen = true
+			requiredEnd := day.AddDate(0, 0, 1)
+			if requiredEnd.After(time.Now()) {
+				requiredEnd = time.Now()
+			}
+			partial := stamp(str(doc["from"])).After(day) || stamp(str(doc["to"])).Before(requiredEnd.Add(-180*time.Second)) || boolean(doc["incomplete"])
+			incomplete = incomplete || partial
+			daily[key]["known"] = integer(daily[key]["known"]) + 1
+			daily[key]["partial"] = boolean(daily[key]["partial"]) || partial
+			if !start.IsZero() {
+				for _, category := range []string{"inbounds", "local_users", "users"} {
+					for key, raw := range mapping(doc[category]) {
+						agg := mapping(mapping(aggregates[category])[key])
 						for _, direction := range []string{"upload_bytes", "download_bytes"} {
 							agg[direction] = new(big.Int).Add(bytesInt(agg[direction]), bytesInt(mapping(raw)[direction])).String()
 						}
-						mapping(aggregates[group])[key] = agg
+						mapping(aggregates[category])[key] = agg
 					}
 				}
 			}
+		}
+		if !start.IsZero() {
 			period["status"] = "complete"
 			if incomplete {
 				period["status"] = "partial"
@@ -182,6 +208,9 @@ func (v Views) TrafficReport(q url.Values) M {
 			}
 			for _, raw := range array(node[group]) {
 				row := mapping(raw)
+				if group == "local_users" && q.Get("local_user") != "" && str(row["name"]) != q.Get("local_user") {
+					continue
+				}
 				if q.Get("protocol") != "" && group == "inbounds" && str(row["protocol"]) != q.Get("protocol") {
 					continue
 				}
@@ -211,7 +240,7 @@ func (v Views) TrafficReport(q url.Values) M {
 		for _, raw := range array(snap["users"]) {
 			u := mapping(raw)
 			uid := str(u["user_id"])
-			if names[uid] == "" {
+			if names[uid] == "" || (q.Get("user") != "" && uid != q.Get("user")) {
 				continue
 			}
 			if query := strings.ToLower(q.Get("q")); query != "" && !strings.Contains(strings.ToLower(names[uid]+" "+uid+" "+str(node["name"])), query) {
@@ -225,7 +254,45 @@ func (v Views) TrafficReport(q url.Values) M {
 			}
 			users = append(users, row)
 		}
+		keys := []string{}
+		if group == "users" {
+			for _, user := range users {
+				if str(user["node_id"]) == id {
+					keys = append(keys, str(user["user_id"]))
+				}
+			}
+		} else {
+			identity := "tag"
+			if group == "local_users" {
+				identity = "name"
+			}
+			for _, raw := range array(node[group]) {
+				keys = append(keys, str(mapping(raw)[identity]))
+			}
+		}
+		for day, doc := range documents {
+			for _, key := range keys {
+				row := mapping(mapping(doc[group])[key])
+				for _, direction := range []string{"upload_bytes", "download_bytes"} {
+					daily[day][direction] = new(big.Int).Add(bytesInt(daily[day][direction]), bytesInt(row[direction])).String()
+				}
+			}
+		}
 		result = append(result, node)
 	}
-	return M{"nodes": result, "users": users, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "as_of": now()}
+	trend := []M{}
+	for day := trendStart; day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
+		key := day.Format(time.DateOnly)
+		point := M{"date": key, "upload_bytes": daily[key]["upload_bytes"], "download_bytes": daily[key]["download_bytes"], "status": "complete"}
+		known := integer(daily[key]["known"])
+		if known == 0 {
+			point["status"] = "unavailable"
+			point["upload_bytes"] = nil
+			point["download_bytes"] = nil
+		} else if known < int64(selectedNodes) || boolean(daily[key]["partial"]) {
+			point["status"] = "partial"
+		}
+		trend = append(trend, point)
+	}
+	return M{"nodes": result, "users": users, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "scope": scope, "trend": trend, "trend_from": trendStart.Format(time.DateOnly), "trend_to": trendEnd.AddDate(0, 0, -1).Format(time.DateOnly), "as_of": now()}
 }

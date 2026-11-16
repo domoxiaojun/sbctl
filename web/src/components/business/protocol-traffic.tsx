@@ -1,17 +1,21 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import type { Schema, Quality } from '@/api/types'
 import { DataFreshness } from './status'
-import { DataState } from './common'
+import { DataState, Pagination } from './common'
 import { exactBytes, formatBytes, formatTime, totalBytes } from '@/lib/format'
 import { sortTraffic, trafficTotals } from '@/lib/traffic'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 type Row = { id: string; name: string; description: string; port?: number; upload_bytes: string; download_bytes: string; started_at?: string; quality?: Quality; user_id?: string }
 function TrafficRows({ rows }: { rows: Row[] }) {
+ const [selectedPage, setPage] = useState(1)
+ const page = Math.min(selectedPage, Math.max(1, Math.ceil(rows.length / 10)))
+ const items = rows.slice((page - 1) * 10, page * 10)
  const name = (row: Row) => row.user_id ? <Link className="font-medium hover:text-primary" to="/users/$userId" params={{userId:row.user_id}}>{row.name}</Link> : <strong className="break-all">{row.name}</strong>
  const bytes = (value: string) => <span title={exactBytes(value)} className="numeric">{formatBytes(value)}</span>
- return <><div className="desktop-table"><Table><TableHeader><TableRow><TableHead>统计对象</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead><TableHead>合计</TableHead><TableHead>首次纳入采集</TableHead></TableRow></TableHeader><TableBody>{rows.map(row => <TableRow key={row.id}><TableCell>{name(row)}<p className="text-xs text-muted-foreground mt-1">{row.description}{row.port ? ` · :${row.port}` : ''}</p></TableCell><TableCell>{bytes(row.upload_bytes)}</TableCell><TableCell>{bytes(row.download_bytes)}</TableCell><TableCell>{bytes(totalBytes(row))}</TableCell><TableCell className="text-xs">{formatTime(row.started_at ?? row.quality?.started_at ?? null)}{row.quality && <DataFreshness quality={row.quality} compact/>}</TableCell></TableRow>)}</TableBody></Table></div>
- <div className="mobile-cards">{rows.map(row => <article className="mobile-record" key={row.id}><div className="flex flex-wrap justify-between gap-2">{name(row)}<strong>{bytes(totalBytes(row))}</strong></div><p className="text-xs text-muted-foreground mt-2 break-all">{row.description}{row.port ? ` · :${row.port}` : ''}</p><div className="record-metrics"><span>上传 {bytes(row.upload_bytes)}</span><span>下载 {bytes(row.download_bytes)}</span></div>{row.quality && <DataFreshness quality={row.quality} compact/>}</article>)}</div></>
+ return <><div className="desktop-table"><Table><TableHeader><TableRow><TableHead>统计对象</TableHead><TableHead>上传</TableHead><TableHead>下载</TableHead><TableHead>合计</TableHead><TableHead>首次纳入采集</TableHead></TableRow></TableHeader><TableBody>{items.map(row => <TableRow key={row.id}><TableCell>{name(row)}<p className="text-xs text-muted-foreground mt-1">{row.description}{row.port ? ` · :${row.port}` : ''}</p></TableCell><TableCell>{bytes(row.upload_bytes)}</TableCell><TableCell>{bytes(row.download_bytes)}</TableCell><TableCell>{bytes(totalBytes(row))}</TableCell><TableCell className="text-xs">{formatTime(row.started_at ?? row.quality?.started_at ?? null)}{row.quality && <DataFreshness quality={row.quality} compact/>}</TableCell></TableRow>)}</TableBody></Table></div>
+ <div className="mobile-cards">{items.map(row => <article className="mobile-record" key={row.id}><div className="flex flex-wrap justify-between gap-2">{name(row)}<strong>{bytes(totalBytes(row))}</strong></div><p className="text-xs text-muted-foreground mt-2 break-all">{row.description}{row.port ? ` · :${row.port}` : ''}</p><div className="record-metrics"><span>上传 {bytes(row.upload_bytes)}</span><span>下载 {bytes(row.download_bytes)}</span></div>{row.quality && <DataFreshness quality={row.quality} compact/>}</article>)}</div>{rows.length > 10 && <Pagination data={{page,page_size:10,total:rows.length}} onChange={next => setPage(next.page ?? 1)} />}</>
 }
 export function ProtocolTraffic({ nodes, period = false, sort }: { nodes: Schema['Node'][]; period?: boolean; sort?: string }) {
  const visible = nodes.filter(node => node.inbounds.length)

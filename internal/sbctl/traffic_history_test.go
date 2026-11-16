@@ -3,6 +3,7 @@ package sbctl
 import (
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -117,5 +118,77 @@ func TestTrafficHistoryExistingSnapshotBaseline(t *testing.T) {
 	}
 	if mapping(array(view.TrafficReport(url.Values{})["nodes"])[0])["inbound_upload_bytes"] != "1100" {
 		t.Fatal("upgrade changed cumulative traffic")
+	}
+}
+
+func TestTrafficTrendFiltersAndMissingDays(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	c.CreateUser("admin", "trend-user-000001", CreateUser{DisplayName: "同名", GroupIDs: []string{"grp_hk"}}, nil)
+	first := str(Views{c.Settings}.Users()[0]["id"])
+	c.CreateUser("admin", "trend-user-000002", CreateUser{DisplayName: "同名", GroupIDs: []string{"grp_hk"}}, nil)
+	second := ""
+	for _, user := range (Views{c.Settings}).Users() {
+		if str(user["id"]) != first {
+			second = str(user["id"])
+		}
+	}
+	for i, sampled := range []string{"2026-01-01T15:59:40Z", "2026-01-01T15:59:55Z", "2026-01-01T16:00:10Z"} {
+		snapshot := historySnapshot(int64(i+1), sampled, []string{"9007199254740993", "9007199254741093", "9007199254741393"}[i], []string{"200", "400", "800"}[i])
+		snapshot.Users = []LedgerUser{{first, snapshot.Inbounds[0].Upload, snapshot.Inbounds[0].Download}, {second, "100", "100"}}
+		snapshot.LocalUsers = append(snapshot.LocalUsers, LedgerLocalUser{Name: "local-other", Upload: "500", Download: "500", StartedAt: snapshot.StartedAt, Active: true})
+		snapshot.Seal()
+		tr.Ingest("node_hk", snapshot)
+	}
+	for _, scope := range []string{"inbounds", "local", "managed"} {
+		query := url.Values{"from": {"2026-01-01"}, "to": {"2026-01-03"}, "scope": {scope}, "user": {first}, "local_user": {"local"}}
+		report := Views{c.Settings}.TrafficReport(query)
+		points := array(report["trend"])
+		if len(points) != 3 || mapping(points[0])["upload_bytes"] != "100" || mapping(points[1])["upload_bytes"] != "300" {
+			t.Fatal(scope, "daily totals", points)
+		}
+		if mapping(points[2])["upload_bytes"] != nil || mapping(points[2])["status"] != "unavailable" {
+			t.Fatal("missing date fabricated as zero", points)
+		}
+		if len(array(report["users"])) != 1 || mapping(array(report["users"])[0])["user_id"] != first {
+			t.Fatal("exact user selection failed")
+		}
+		if len(array(mapping(array(report["nodes"])[0])["local_users"])) != 1 {
+			t.Fatal("exact local user selection failed")
+		}
+	}
+	noMatch := Views{c.Settings}.TrafficReport(url.Values{"from": {"2026-01-01"}, "to": {"2026-01-01"}, "protocol": {"shadowsocks"}})
+	if mapping(array(noMatch["trend"])[0])["upload_bytes"] != "0" {
+		t.Fatal("filtered known day must have zero usage")
+	}
+	unknown := Views{c.Settings}.TrafficReport(url.Values{"from": {"2026-01-01"}, "to": {"2026-01-01"}, "node": {"other"}})
+	if mapping(array(unknown["trend"])[0])["upload_bytes"] != nil {
+		t.Fatal("unsampled node fabricated as zero")
+	}
+	expectFault(t, "SCOPE_INVALID", func() { Views{c.Settings}.TrafficReport(url.Values{"scope": {"other"}}) })
+}
+
+func TestTrafficTrendMixedNodeCoverage(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	tr.Ingest("node_hk", historySnapshot(1, "2026-01-01T10:00:00Z", "100", "200"))
+	atomicWrite(historyPath(tr.Export, "node_hk", "2026-01-01"), canonical(M{"from": "2025-12-31T16:00:00Z", "to": "2026-01-01T16:00:00Z", "incomplete": false, "inbounds": M{"vmess": M{"upload_bytes": "100", "download_bytes": "200"}}}), 0644)
+	query := url.Values{"from": {"2026-01-01"}, "to": {"2026-01-01"}}
+	report := Views{c.Settings}.TrafficReport(query)
+	if mapping(array(report["trend"])[0])["status"] != "complete" {
+		t.Fatal("complete date not recognized")
+	}
+	c.Register(M{"id": "node_other", "name": "未采样节点", "region": "hk", "location": "香港", "connection": M{"address": "100.70.0.11"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "other.test", 443, "other.test", nil}, {"tuic", "tuic-in", "other.test", 443, "other.test", nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+	report = Views{c.Settings}.TrafficReport(query)
+	point := mapping(array(report["trend"])[0])
+	if point["status"] != "partial" || point["upload_bytes"] != "100" {
+		t.Fatal("missing node coverage hidden", point)
+	}
+	query.Set("node", "node_other")
+	point = mapping(array(Views{c.Settings}.TrafficReport(query)["trend"])[0])
+	if point["status"] != "unavailable" || point["upload_bytes"] != nil {
+		t.Fatal("missing node should be unknown")
 	}
 }

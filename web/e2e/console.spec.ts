@@ -265,7 +265,7 @@ for (const width of [375, 768, 1440]) for (const colorScheme of ['light', 'dark'
     await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' })
     await page.goto('/')
     await expect(page.getByRole('heading', { name: '全局总览', exact: true })).toBeVisible()
-    await expect(page.getByRole('img', { name: /用户已记录累计/ })).toBeVisible()
+    await expect(page.getByRole('img', { name: /每日流量趋势/ })).toBeVisible()
     const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     expect(bodyFits).toBe(true)
     await fs.mkdir('../docs/qa/f0-redesign', { recursive: true })
@@ -292,7 +292,7 @@ for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 $
   await page.route('**/api/v1/**', async route => {
     const path=new URL(route.request().url()).pathname
     if(path.endsWith('/session')) return route.fulfill({json:{admin_id:'test',display_name:'测试',csrf_token:'test'}})
-    if(path.endsWith('/traffic')) return route.fulfill({json:{nodes:[node],users:[],periods:[{node_id:node.id,history_started_at:null,status:'cumulative'}],from:'',to:'',timezone:'Asia/Singapore',as_of:new Date().toISOString()}})
+    if(path.endsWith('/traffic')) return route.fulfill({json:{scope:'inbounds',trend:[],trend_from:'',trend_to:'',nodes:[node],users:[],periods:[{node_id:node.id,history_started_at:null,status:'cumulative'}],from:'',to:'',timezone:'Asia/Singapore',as_of:new Date().toISOString()}})
     if(path.includes('/usage')) return route.fulfill({json:{items:[],total:0,page:1,page_size:8}})
     return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'test'}})
   })

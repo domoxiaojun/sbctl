@@ -20,3 +20,27 @@ describe('流量查询', () => {
   expect(trafficTotals(rows).upload_bytes).toBe('18014398509481987')
  })
 })
+
+import { trafficRankings } from '../src/lib/traffic'
+import { demoTraffic } from '../src/demo/traffic'
+import { fixtures } from '../src/demo/fixtures'
+it('跨节点用户排行按身份聚合，大整数和同名身份均保留', () => {
+ const seed = fixtures(Date.now())
+ seed.users[0].display_name = '同名'
+ seed.users[1].display_name = '同名'
+ const report = demoTraffic(seed, new URLSearchParams('scope=managed'), Date.now())
+ const ranking = trafficRankings(report, 'managed')
+ expect(ranking.identities.filter(u => u.name === '同名')).toHaveLength(2)
+ const first = ranking.identities.find(u => u.id === seed.users[0].id)!
+ expect(first.upload_bytes).toBe(seed.users[0].upload_bytes)
+ expect(first.filter.user).toBe(seed.users[0].id)
+ expect(trafficTotals(ranking.nodes)).toEqual(trafficTotals(ranking.identities))
+ const filtered = demoTraffic(seed, new URLSearchParams(`scope=managed&user=${first.id}`), Date.now())
+ expect(new Set(filtered.users.map(u => u.user_id))).toEqual(new Set([first.id]))
+})
+it('日趋势与所选时段汇总保持同一统计范围', () => {
+ const seed = fixtures(Date.now()), from=calendarDate(Date.now()-6*86400000), to=calendarDate()
+ const report = demoTraffic(seed, new URLSearchParams({scope:'managed',from,to}), Date.now())
+ expect(report.trend).toHaveLength(7)
+ expect(trafficTotals(report.trend.map(p => ({upload_bytes:p.upload_bytes!,download_bytes:p.download_bytes!})))).toEqual(trafficTotals(report.users))
+})
