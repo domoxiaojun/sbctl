@@ -20,7 +20,7 @@ func (w *Worker) Claim() M {
 	var out M
 	ts := timestamp()
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
-		r := d.One("SELECT o.* FROM outbox o WHERE o.state<>'done' AND o.next_attempt_at<=? AND o.lease_until<? AND NOT EXISTS(SELECT 1 FROM outbox busy WHERE busy.node_id=o.node_id AND busy.lease_until>=?) AND NOT EXISTS(SELECT 1 FROM node_jobs j WHERE j.node_id=o.node_id AND j.kind='configure' AND j.state='running' AND j.lease_until>=?) ORDER BY o.priority DESC,o.next_attempt_at,o.id LIMIT 1", ts, ts, ts, ts)
+		r := d.One("SELECT o.* FROM outbox o WHERE o.state<>'done' AND o.next_attempt_at<=? AND o.lease_until<? AND NOT EXISTS(SELECT 1 FROM outbox busy WHERE busy.node_id=o.node_id AND busy.lease_until>=?) AND NOT EXISTS(SELECT 1 FROM node_jobs j WHERE j.node_id=o.node_id AND j.kind IN ('configure','protocol_change','restart') AND j.state='running' AND j.lease_until>=?) ORDER BY o.priority DESC,o.next_attempt_at,o.id LIMIT 1", ts, ts, ts, ts)
 		if r == nil {
 			return
 		}

@@ -18,8 +18,8 @@ export function DataState({ error, loading, retry, title }: { error?: Error | nu
 // eslint-disable-next-line react-refresh/only-export-components
 export function useFilters() {
   const search = useSearch({ strict: false }), navigate = useNavigate()
-  const filters: Filters = { q: search.q, status: search.status, region: search.region, sort: search.sort, page: search.page ?? 1, page_size: 8 }
-  const update = (next: Partial<Filters>) => navigate({ to: '.', search: { q: filters.q, status: filters.status, region: filters.region, sort: filters.sort, page: 1, ...next } })
+  const filters: Filters = { archived: search.archived, q: search.q, status: search.status, region: search.region, sort: search.sort, page: search.page ?? 1, page_size: 8 }
+  const update = (next: Partial<Filters>) => navigate({ to: '.', search: { archived: filters.archived, q: filters.q, status: filters.status, region: filters.region, sort: filters.sort, page: 1, ...next } })
   return { filters, update }
 }
 export function FilterSelect({ label, value, onChange, options, icon }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[]; icon?: ReactNode }) {

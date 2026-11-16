@@ -8,8 +8,8 @@ import (
 )
 
 type Filters struct {
-	Q, Status, Region, Sort string
-	Page, PageSize          int
+	Q, Status, Region, Sort, Archived string
+	Page, PageSize                    int
 }
 
 func defaultsFilters() Filters { return Filters{Sort: "created", Page: 1, PageSize: 8} }
@@ -35,6 +35,11 @@ func totalOf(r M) *big.Int {
 func Paginate(rows []M, f Filters) M {
 	filtered := []M{}
 	for _, r := range rows {
+		if _, isUser := r["archived"]; isUser {
+			if f.Archived != "all" && boolean(r["archived"]) != (f.Archived == "true") {
+				continue
+			}
+		}
 		if f.Q != "" {
 			texts := []string{}
 			for _, k := range []string{"id", "name", "display_name", "subject", "title", "note"} {
@@ -242,7 +247,7 @@ func (v Views) Users() []M {
 	grants, nodes, regions := map[string][]string{}, map[string][]string{}, map[string][]string{}
 	authorized := map[string]int{}
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		users = d.Rows("SELECT u.*,s.state AS subscription_state FROM users u JOIN subscriptions s ON s.user_id=u.id ORDER BY u.created_at DESC LIMIT 10001")
+		users = d.Rows("SELECT u.*,s.state AS subscription_state,s.generation AS subscription_generation,COALESCE(m.version,0) AS metadata_version,m.archived_at FROM users u JOIN subscriptions s ON s.user_id=u.id LEFT JOIN user_management m ON m.user_id=u.id ORDER BY u.created_at DESC LIMIT 10001")
 		for _, r := range d.Rows("SELECT * FROM grants") {
 			id := str(r["user_id"])
 			grants[id] = append(grants[id], str(r["group_id"]))
@@ -258,11 +263,10 @@ func (v Views) Users() []M {
 	})
 	for _, u := range users {
 		id := str(u["id"])
+		u["archived"] = u["archived_at"] != nil
 		ns := unique(nodes[id])
 		merge(u, M{"group_ids": unique(grants[id]), "node_count": len(ns), "quality": v.Quality(ns, str(u["created_at"]), t), "_regions": unique(regions[id])})
-		if u["status"] != "disabled" {
-			u["node_count"] = authorized[id]
-		}
+		u["node_count"] = authorized[id]
 		merge(u, totals(t, ns, id))
 	}
 	return users

@@ -490,6 +490,55 @@ func TestAPIContractFlow(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	validate("/api/v1/node-jobs/{id}", "get", 200, w.Body.Bytes())
+	w = request("GET", "/api/v1/nodes/node_hk/jobs", nil, "", "", "")
+	validate("/api/v1/nodes/{id}/jobs", "get", 200, w.Body.Bytes())
+	u = Views{c.Settings}.Users()[0]
+	metadataVersion := integer(u["metadata_version"])
+	metadata := UserMetadata{&metadataVersion, "管理验收用户", "保留授权和历史"}
+	metadataPath := "/api/v1/users/" + uid + "/metadata"
+	w = request("POST", metadataPath, metadata, "https://admin.test", "wrong", "api-user-metadata")
+	if w.Code != 403 {
+		t.Fatal("metadata csrf", w.Code)
+	}
+	w = request("POST", metadataPath, metadata, "https://admin.test", csrf, "api-user-metadata")
+	if w.Code != 200 {
+		t.Fatal("metadata", w.Code, w.Body.String())
+	}
+	validate("/api/v1/users/{id}/metadata", "post", 200, w.Body.Bytes())
+	revision = integer(u["revision"])
+	generation := integer(u["subscription_generation"])
+	resetPath := "/api/v1/users/" + uid + "/subscription-reset"
+	reset := ResetSubscription{&revision, &generation, "重新交付链接"}
+	w = request("POST", resetPath, reset, "https://admin.test", "wrong", "api-subscription-reset")
+	if w.Code != 403 {
+		t.Fatal("reset csrf", w.Code)
+	}
+	w = request("POST", resetPath, reset, "https://admin.test", csrf, "api-subscription-reset")
+	if w.Code != 200 {
+		t.Fatal("subscription reset", w.Code, w.Body.String())
+	}
+	validate("/api/v1/users/{id}/subscription-reset", "post", 200, w.Body.Bytes())
+	worker.Reconcile()
+	c.DisableUser("admin", "api-management-disable", uid, DisableUser{&revision, "归档验收"})
+	for worker.Step() {
+	}
+	archive := ArchiveUsers{[]UserVersion{{uid, metadataVersion + 1, revision + 1}}, true}
+	w = request("POST", "/api/v1/users/archive", archive, "https://admin.test", "wrong", "api-user-archive")
+	if w.Code != 403 {
+		t.Fatal("archive csrf", w.Code)
+	}
+	w = request("POST", "/api/v1/users/archive", archive, "https://admin.test", csrf, "api-user-archive")
+	if w.Code != 200 {
+		t.Fatal("archive", w.Code, w.Body.String())
+	}
+	validate("/api/v1/users/archive", "post", 200, w.Body.Bytes())
+	w = request("GET", "/api/v1/users?archived=true", nil, "", "", "")
+	validate("/api/v1/users", "get", 200, w.Body.Bytes())
+	if integer(object(w.Body.Bytes())["total"]) != 1 {
+		t.Fatal("archived user not listed")
+	}
+	w = request("GET", "/api/v1/users/"+uid+"/audit", nil, "", "", "")
+	validate("/api/v1/users/{id}/audit", "get", 200, w.Body.Bytes())
 	w = request("DELETE", "/api/v1/session", nil, "https://admin.test", csrf, "")
 	if w.Code != 204 {
 		t.Fatal(w.Code)

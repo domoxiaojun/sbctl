@@ -3,7 +3,7 @@ import { fixtures } from './fixtures'
 import { demoTraffic } from './traffic'
 import { createNodeManagementDemo } from './node-management'
 
-type State = ReturnType<typeof fixtures> & { requests: Record<string, { signature: string; operation_id: string }>; signedIn: boolean; operationRevisions?: Record<string, number>; authorizedNodes?: Record<string, string[]>; linkRevisions?: Record<string, number> }
+type State = { managementRequests?: Record<string, { signature: string; result: unknown }>; userAudits?: Record<string, Schema['UserAudit']> } & ReturnType<typeof fixtures> & { requests: Record<string, { signature: string; operation_id: string }>; signedIn: boolean; operationRevisions?: Record<string, number>; authorizedNodes?: Record<string, string[]>; linkRevisions?: Record<string, number> }
 const storageKey = 'sbctl-f0-synthetic-state-v1'
 const totalBytes = (r: { upload_bytes: string; download_bytes: string }) => BigInt(r.upload_bytes) + BigInt(r.download_bytes)
 export function paginate<T extends { id?: string; user_id?: string | null; title?: string; name?: string; display_name?: string; subject?: string; status?: string; state?: string; region?: string; upload_bytes?: string; download_bytes?: string; created_at?: string }>(items: T[], f: Filters) {
@@ -22,6 +22,7 @@ export function paginate<T extends { id?: string; user_id?: string | null; title
 export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>, now = () => Date.now()) {
   let state: State = { ...fixtures(now()), requests: {}, signedIn: true }
   try { const saved = storage?.getItem(storageKey); if (saved) { const parsed = JSON.parse(saved) as State; if (parsed.marker === state.marker) state = parsed } } catch { /* Synthetic demo can reset if browser storage is unavailable. */ }
+  for (const u of state.users) {u.metadata_version??=0;u.archived??=false;u.archived_at??=null;u.subscription_generation??=1}
   const nodeManagement = createNodeManagementDemo(() => state, storage)
   const save = () => { try { storage?.setItem(storageKey, JSON.stringify(state)) } catch { /* In-memory demo still works. */ } }
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })
@@ -65,15 +66,17 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
     const key = req.headers.get('Idempotency-Key')
     if (method === 'POST' && !p.endsWith('/grants/preview') && !key) return fail('KEY_REQUIRED', '缺少请求标识。')
     const signature = JSON.stringify({ method, path: p, body })
+    if(key && state.managementRequests?.[key]){const previous=state.managementRequests[key];return previous.signature===signature ? json(previous.result) : fail('HASH_CONFLICT','请求标识对应其他内容',409)}
     if (key && state.requests[key]) return state.requests[key].signature === signature ? json({ operation_id: state.requests[key].operation_id }, 202) : fail('HASH_CONFLICT', '同一请求标识不能用于不同操作。', 409)
-    const f: Filters = { q: url.searchParams.get('q') ?? '', status: url.searchParams.get('status') ?? '', region: url.searchParams.get('region') ?? '', page: Number(url.searchParams.get('page') ?? 1), page_size: Number(url.searchParams.get('page_size') ?? 8), sort: (url.searchParams.get('sort') ?? 'name') as Filters['sort'] }
+    const f: Filters = { q: url.searchParams.get('q') ?? '', status: url.searchParams.get('status') ?? '', region: url.searchParams.get('region') ?? '', page: Number(url.searchParams.get('page') ?? 1), page_size: Number(url.searchParams.get('page_size') ?? 8), archived: (url.searchParams.get('archived') ?? 'false') as Filters['archived'], sort: (url.searchParams.get('sort') ?? 'name') as Filters['sort'] }
     const usage = (): Schema['Usage'][] => state.users.map(u => ({ user_id: u.id, display_name: u.display_name, node_count: u.node_count, upload_bytes: u.upload_bytes, download_bytes: u.download_bytes, quality: u.quality }))
     if (p === '/overview') return json({ node_count: state.nodes.length, online_count: state.nodes.filter(n => n.status === 'online').length, degraded_count: state.nodes.filter(n => n.status === 'degraded').length, offline_count: state.nodes.filter(n => n.status === 'offline').length, user_count: state.users.filter(u => u.status !== 'disabled').length, pending_count: state.operations.filter(op => op.state !== 'completed').length, upload_bytes: state.users.reduce((sum, u) => sum + BigInt(u.upload_bytes), 0n).toString(), download_bytes: state.users.reduce((sum, u) => sum + BigInt(u.download_bytes), 0n).toString(), regions: [...new Set(state.nodes.map(n => n.region))].map(id => ({ id, name: state.nodes.find(n => n.region === id)!.location, node_count: state.nodes.filter(n => n.region === id).length, online_count: state.nodes.filter(n => n.region === id && n.status === 'online').length })), operations: state.operations.slice(0, 3), alerts: state.alerts.filter(a => a.state === 'open'), top_usage: usage().sort((a, b) => totalBytes(a) > totalBytes(b) ? -1 : 1).slice(0, 5), as_of: new Date(now()).toISOString() } satisfies Schema['Overview'])
     if (p === '/traffic') { try { return json(demoTraffic(state, url.searchParams, now())) } catch { return fail('DATE_RANGE_INVALID', '日期范围无效。', 422) } }
     if (p === '/groups') return json(state.groups)
     if (method === 'GET') {
       if (p === '/nodes') return json(paginate(state.nodes, f))
-      if (p === '/users') return json(paginate(state.users, f))
+      if (p === '/users') return json(paginate(state.users.filter(u=>f.archived==='all' || u.archived===(f.archived==='true')), f))
+      if (/^\/users\/[^/]+\/audit$/.test(p)) return json(state.userAudits?.[p.split('/')[2]] ?? [])
       if (p === '/usage') return json(paginate(usage(), f))
       if (p === '/operations') return json(paginate(state.operations, { ...f, sort: 'created' }))
       if (p === '/alerts') return json(paginate(state.alerts, f))
@@ -82,6 +85,21 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
       for (const [prefix, items] of [['nodes', state.nodes], ['users', state.users], ['operations', state.operations]] as const) {
         if (p.startsWith(`/${prefix}/`)) { const item = items.find(x => x.id === p.split('/')[2]); return item ? json(item) : fail('NOT_FOUND', '记录不存在。', 404) }
       }
+    }
+    if(method==='POST' && (p==='/users/archive' || /^\/users\/[^/]+\/(metadata|subscription-reset)$/.test(p))) {
+      let result:unknown
+      const appendAudit=(id:string,action:string,summary:string)=>{state.userAudits??={};(state.userAudits[id]??=[]).unshift({action,summary,created_at:new Date(now()).toISOString()})}
+      if(p==='/users/archive'){
+        const users=body.users.map((item:Schema['UserVersion'])=>({item,user:state.users.find(u=>u.id===item.id)})) as {item:Schema['UserVersion'];user:Schema['User']|undefined}[]
+        for(const {item,user} of users){if(!user || user.metadata_version!==item.version || user.revision!==item.revision)return fail('STALE_REVISION','用户状态已变化，请刷新后重试',409);if(body.archived && (user.status!=='disabled' || user.subscription_state!=='revoked' || state.operations.some(op=>op.user_id===user.id && !['completed','superseded'].includes(op.state))))return fail('ARCHIVE_NOT_READY','先完成用户禁用和所有节点撤销后归档',409)}
+        for(const {user} of users){user!.archived=body.archived;user!.archived_at=body.archived?new Date(now()).toISOString():null;user!.metadata_version++;appendAudit(user!.id,body.archived?'archive_user':'restore_user','更新归档状态，保留身份和历史')}
+        result={saved:true,count:users.length}
+      } else {
+        const user=state.users.find(u=>u.id===p.split('/')[2]);if(!user)return fail('NOT_FOUND','用户不存在',404)
+        if(p.endsWith('/metadata')){if(user.metadata_version!==body.version)return fail('STALE_REVISION','用户资料已变化，请重新打开编辑',409);user.display_name=body.display_name.trim();user.note=body.note;user.metadata_version++;result={saved:true,version:user.metadata_version};appendAudit(user.id,'edit_user','编辑用户名称与备注')}
+        else {if(user.revision!==body.revision || user.subscription_generation!==body.generation)return fail('STALE_REVISION','订阅已变化，请刷新',409);if(user.status!=='active' || user.subscription_state!=='published')return fail('NOT_READY','订阅未发布或用户已禁用',409);user.subscription_generation++;state.linkRevisions??={};state.linkRevisions[user.id]=(state.linkRevisions[user.id]??user.revision)+1;result={saved:true,generation:user.subscription_generation};appendAudit(user.id,'reset_subscription',body.reason)}
+      }
+      state.managementRequests??={};state.managementRequests[key!]={signature,result};save();return json(result)
     }
     if (/^\/alerts\/[^/]+\/ack$/.test(p)) { const alert = state.alerts.find(a => a.id === p.split('/')[2]); if (!alert) return fail('NOT_FOUND', '告警不存在。', 404); alert.state = 'acknowledged'; save(); return json(alert) }
     if (/^\/users\/[^/]+\/subscription-link$/.test(p)) { const u = state.users.find(u => u.id === p.split('/')[2]); if (!u || u.subscription_state !== 'published') return fail('NOT_READY', '订阅尚未发布，当前不能交付。', 409); const revision = state.linkRevisions?.[u.id] ?? u.revision; return json({ url: `https://subscription.example.invalid/s/DEMO-NOT-A-SECRET-${u.id}-r${revision}/surge.conf`, mihomo_url: `https://subscription.example.invalid/s/DEMO-NOT-A-SECRET-${u.id}-r${revision}/mihomo.yaml` }) }
@@ -120,21 +138,22 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
     if (isCreate) {
       if (!body?.display_name?.trim() || !Array.isArray(body.group_ids) || !body.group_ids.length || !body.group_ids.every((id: string) => state.groups.some(g => g.id === id))) return fail('VALIDATION_ERROR', '请填写名称并选择有效节点组。')
       const targets = new Set(state.groups.filter(g => body.group_ids.includes(g.id)).flatMap(g => g.node_ids))
-      user = { ...state.users[0], id: `usr-${crypto.randomUUID()}`, display_name: body.display_name.trim(), note: body.note ?? '', status: 'provisioning', revision: 1, group_ids: body.group_ids, node_count: targets.size, upload_bytes: '0', download_bytes: '0', subscription_state: 'pending', created_at: new Date(now()).toISOString(), quality: { ...state.users[0].quality, started_at: new Date(now()).toISOString(), has_historical_gap: false, gap_count: 0 } }
+      user = { ...state.users[0], metadata_version:0,archived:false,archived_at:null,subscription_generation:1,id: `usr-${crypto.randomUUID()}`, display_name: body.display_name.trim(), note: body.note ?? '', status: 'provisioning', revision: 1, group_ids: body.group_ids, node_count: targets.size, upload_bytes: '0', download_bytes: '0', subscription_state: 'pending', created_at: new Date(now()).toISOString(), quality: { ...state.users[0].quality, started_at: new Date(now()).toISOString(), has_historical_gap: false, gap_count: 0 } }
       state.users.unshift(user)
     } else if (isDisable || isEnable) {
       user = state.users.find(u => u.id === p.split('/')[2]); if (!user) return fail('NOT_FOUND', '用户不存在。', 404)
       if (user.revision !== body?.revision) return fail('STALE_REVISION', '用户状态已变化，请刷新后重试。', 409)
       if (!body?.reason?.trim()) return fail('INVALID_REQUEST', '请填写变更原因。', 422)
+      if(isEnable && user.archived)return fail('USER_ARCHIVED','请先恢复归档用户',409)
       if (isEnable && user.status !== 'disabled') return fail('NOT_DISABLED', '只能重新启用已禁用的用户。', 409)
       if (isDisable && user.status === 'disabled') return fail('ALREADY_DISABLED', '用户已经禁用。', 409)
       user.status = isEnable ? 'provisioning' : 'disabled'; user.revision++; user.subscription_state = isEnable ? 'pending' : 'revoke_pending'
-      if (isEnable) { delete state.linkRevisions?.[user.id]; delete state.authorizedNodes?.[user.id] }
+      if (isEnable) { user.subscription_generation++;delete state.linkRevisions?.[user.id]; delete state.authorizedNodes?.[user.id] }
     }
     if (user && key) {
       const targets = new Set(state.groups.filter(g => user!.group_ids.includes(g.id)).flatMap(g => g.node_ids))
       const op: Schema['Operation'] = { id: `op-${crypto.randomUUID()}`, kind: isCreate ? 'create_user' : isEnable ? 'enable_user' : 'disable_user', subject: user.display_name, user_id: user.id, state: 'queued', created_at: new Date(now()).toISOString(), targets: state.nodes.filter(n => targets.has(n.id)).map(n => ({ node_id: n.id, name: n.name, state: 'queued', message: '已接收，等待执行' })), subscription_state: user.subscription_state }
-      if (isEnable) user.node_count = targets.size
+      user.node_count = isDisable ? 0 : targets.size
       state.operationRevisions ??= {}
       state.operationRevisions[op.id] = user.revision
       state.operations.unshift(op); state.requests[key] = { signature, operation_id: op.id }; save(); return json({ operation_id: op.id }, 202)

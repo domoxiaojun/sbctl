@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 import fs from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { fixtures } from '../src/demo/fixtures'
+const qaDirectory = fileURLToPath(new URL('../../docs/qa/management-20261116/', import.meta.url))
 
 test('全局筛选、分页、深链接和浏览器返回', async ({ page }) => {
   await page.goto('/nodes')
@@ -104,8 +106,8 @@ for (const width of [375, 1440]) test(`发现主机、只读检查、刷新恢�
   await expect(page.getByText('实际运行信息')).toBeVisible()
   await expect(page.getByRole('textbox', { name: '节点 ID', exact: true })).toHaveValue('node_new_hk')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-  await fs.mkdir('../docs/qa/console-organization-20261116', { recursive: true })
-  await page.screenshot({ path: `../docs/qa/console-organization-20261116/setup-${width}.png`, fullPage: true })
+  await fs.mkdir(qaDirectory, { recursive: true })
+  await page.screenshot({ path: `${qaDirectory}setup-${width}.png`, fullPage: true })
   await page.getByRole('checkbox', { name: '我确认接管此节点，并接受必要时的短暂重连。' }).check()
   await page.getByRole('button', { name: '确认添加节点', exact: true }).click()
   await expect(page.getByText('节点已接入')).toBeVisible()
@@ -269,8 +271,8 @@ for (const width of [375, 768, 1440]) for (const colorScheme of ['light', 'dark'
     await expect(page.getByLabel('流量筛选')).toHaveCount(0)
     const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
     expect(bodyFits).toBe(true)
-    await fs.mkdir('../docs/qa/console-organization-20261116', { recursive: true })
-    await page.screenshot({ path: `../docs/qa/console-organization-20261116/overview-${width}-${colorScheme}.png`, fullPage: true })
+    await fs.mkdir(qaDirectory, { recursive: true })
+    await page.screenshot({ path: `${qaDirectory}overview-${width}-${colorScheme}.png`, fullPage: true })
     if (width === 375) {
       await page.getByRole('button', { name: '打开导航', exact: true }).click()
       await page.getByRole('navigation', { name: '移动导航' }).getByRole('link', { name: '用户与授权' }).click()
@@ -278,7 +280,7 @@ for (const width of [375, 768, 1440]) for (const colorScheme of ['light', 'dark'
       await expect(page.getByText('共 12 条记录')).toBeVisible()
       await expect(page.getByRole('dialog')).toHaveCount(0)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await page.screenshot({ path: `../docs/qa/console-organization-20261116/users-${width}-${colorScheme}.png`, fullPage: true })
+      await page.screenshot({ path: `${qaDirectory}users-${width}-${colorScheme}.png`, fullPage: true })
     }
     expect(errors).toEqual([])
   })

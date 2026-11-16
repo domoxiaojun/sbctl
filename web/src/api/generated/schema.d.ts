@@ -467,6 +467,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/users/{id}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__user_metadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__archive_users"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/subscription-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__subscription_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/users/{id}/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__user_audit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__node_jobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -816,6 +896,10 @@ export interface components {
              */
             created_at: string;
             quality: components["schemas"]["Quality"];
+            metadata_version: number;
+            archived: boolean;
+            archived_at: string | null;
+            subscription_generation: number;
         };
         /** UserPage */
         UserPage: {
@@ -853,12 +937,13 @@ export interface components {
         };
         NodeJobInput: {
             /** @enum {string} */
-            kind: "inspect" | "configure" | "check";
+            kind: "inspect" | "configure" | "check" | "protocols" | "protocol_change" | "restart";
             draft: components["schemas"]["NodeDraft"];
             inspection_id: string;
             expected_version: number;
             desired_container?: string;
             desired_image?: string;
+            protocol_change?: components["schemas"]["ProtocolChange"];
         };
         NodeJobAccepted: {
             job_id: string;
@@ -887,6 +972,7 @@ export interface components {
             last_check: {
                 [key: string]: unknown;
             } | null;
+            protocol_catalog: components["schemas"]["ProtocolCatalog"] | null;
         };
         NodeMetadata: {
             draft: components["schemas"]["NodeDraft"];
@@ -998,6 +1084,72 @@ export interface components {
             /** @enum {string} */
             status: "complete" | "partial" | "unavailable";
         };
+        UserMetadata: {
+            version: number;
+            display_name: string;
+            note: string;
+        };
+        UserVersion: {
+            id: string;
+            version: number;
+            revision: number;
+        };
+        ArchiveUsers: {
+            users: components["schemas"]["UserVersion"][];
+            archived: boolean;
+        };
+        ArchiveResult: {
+            saved: boolean;
+            count: number;
+        };
+        ResetSubscription: {
+            revision: number;
+            generation: number;
+            reason: string;
+        };
+        SubscriptionResetResult: {
+            saved: boolean;
+            generation: number;
+        };
+        UserAudit: {
+            action: string;
+            summary: string;
+            created_at: string;
+        }[];
+        ProtocolItem: {
+            tag: string;
+            protocol: string;
+            listen: string;
+            port: number;
+            enabled: boolean;
+            managed: boolean;
+            user_count: number;
+            tls: boolean;
+            method: string;
+            target_host: string;
+            target_port: number;
+        };
+        ProtocolCatalog: {
+            node_id: string;
+            hash: string;
+            checked_at: string;
+            items: components["schemas"]["ProtocolItem"][];
+        };
+        ProtocolChange: {
+            /** @enum {string} */
+            action: "create" | "edit" | "enable" | "disable" | "delete";
+            base_hash: string;
+            tag: string;
+            source_tag?: string;
+            listen?: string;
+            port?: number;
+            target_host?: string;
+            target_port?: number;
+            username?: string;
+            password?: string;
+            uuid?: string;
+        };
+        NodeJobs: components["schemas"]["NodeJob"][];
     };
     responses: never;
     parameters: never;
@@ -1417,6 +1569,8 @@ export interface operations {
                 status?: string;
                 region?: string;
                 sort?: "name" | "bytes" | "created";
+                /** @description 默认仅未归档用户 */
+                archived?: "false" | "true" | "all";
             };
             header?: never;
             path?: never;
@@ -2975,6 +3129,272 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Error"];
                 };
+            };
+        };
+    };
+    post__user_metadata: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserMetadata"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeSaved"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__archive_users: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveUsers"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArchiveResult"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__subscription_reset: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetSubscription"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubscriptionResetResult"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__user_audit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAudit"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__node_jobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeJobs"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

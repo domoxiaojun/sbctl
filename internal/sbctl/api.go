@@ -55,6 +55,11 @@ func filters(r *http.Request) Filters {
 		switch k {
 		case "q":
 			f.Q = v[0]
+		case "archived":
+			if !contains([]string{"", "false", "true", "all"}, v[0]) {
+				fail("INVALID_REQUEST", "归档筛选无效", 422)
+			}
+			f.Archived = v[0]
 		case "status":
 			f.Status = v[0]
 		case "region":
@@ -167,6 +172,7 @@ func API(c *Control) http.Handler {
 		})
 		jsonResponse(w, 202, M{"job_id": id})
 	})
+	auth("GET /api/v1/nodes/{id}/jobs", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.NodeJobs(r.PathValue("id"))) })
 	auth("GET /api/v1/nodes/{id}/config", func(w http.ResponseWriter, r *http.Request, a M) {
 		jsonResponse(w, 200, c.NodeConfig(r.PathValue("id")))
 	})
@@ -201,6 +207,21 @@ func API(c *Control) http.Handler {
 		decode(requestBody(w, r), &input)
 		jsonResponse(w, 202, c.CreateUser(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input, nil))
 	})
+	auth("POST /api/v1/users/{id}/metadata", func(w http.ResponseWriter, r *http.Request, a M) {
+		var input UserMetadata
+		decode(requestBody(w, r), &input)
+		jsonResponse(w, 200, c.EditUser(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id"), input))
+	})
+	auth("POST /api/v1/users/archive", func(w http.ResponseWriter, r *http.Request, a M) {
+		var input ArchiveUsers
+		decode(requestBody(w, r), &input)
+		jsonResponse(w, 200, c.ArchiveUsers(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input))
+	})
+	auth("POST /api/v1/users/{id}/subscription-reset", func(w http.ResponseWriter, r *http.Request, a M) {
+		var input ResetSubscription
+		decode(requestBody(w, r), &input)
+		jsonResponse(w, 200, c.ResetSubscription(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id"), input))
+	})
 	auth("POST /api/v1/users/{id}/disable", func(w http.ResponseWriter, r *http.Request, a M) {
 		var input DisableUser
 		decode(requestBody(w, r), &input)
@@ -220,6 +241,14 @@ func API(c *Control) http.Handler {
 		var input UpdateGrants
 		decode(requestBody(w, r), &input)
 		jsonResponse(w, 202, c.UpdateGrants(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id"), input))
+	})
+	auth("GET /api/v1/users/{id}/audit", func(w http.ResponseWriter, r *http.Request, a M) {
+		rows := []M{}
+		transaction(s.ControlDB, false, func(d *DB) {
+			userManagement(d, r.PathValue("id"))
+			rows = d.Rows("SELECT action,summary,created_at FROM audit WHERE target_id=? ORDER BY id DESC LIMIT 30", r.PathValue("id"))
+		})
+		jsonResponse(w, 200, rows)
 	})
 	auth("GET /api/v1/users/{id}/subscription", func(w http.ResponseWriter, r *http.Request, a M) {
 		jsonResponse(w, 200, v.Subscription(r.PathValue("id")))

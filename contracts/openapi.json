@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.9.1",
+    "version": "0.10.0",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -574,6 +574,19 @@
               "default": "created",
               "title": "Sort"
             }
+          },
+          {
+            "in": "query",
+            "name": "archived",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "false",
+                "true",
+                "all"
+              ]
+            },
+            "description": "默认仅未归档用户"
           }
         ],
         "responses": {
@@ -2532,6 +2545,253 @@
         },
         "description": "按已确认预览提交授权变更；并发变化拒绝覆盖。撤销优先执行，保留节点沿用凭据，再次加入使用新代凭据。订阅链接不变，仅发布已验证授权；发布失败不阻塞节点撤销。"
       }
+    },
+    "/api/v1/users/{id}/metadata": {
+      "post": {
+        "operationId": "post__user_metadata",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSaved"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserMetadata"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/archive": {
+      "post": {
+        "operationId": "post__archive_users",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchiveUsers"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/subscription-reset": {
+      "post": {
+        "operationId": "post__subscription_reset",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionResetResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetSubscription"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{id}/audit": {
+      "get": {
+        "operationId": "get__user_audit",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserAudit"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{id}/jobs": {
+      "get": {
+        "operationId": "get__node_jobs",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeJobs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3509,6 +3769,25 @@
           },
           "quality": {
             "$ref": "#/components/schemas/Quality"
+          },
+          "metadata_version": {
+            "type": "integer"
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subscription_generation": {
+            "type": "integer"
           }
         },
         "additionalProperties": false,
@@ -3525,7 +3804,11 @@
           "download_bytes",
           "subscription_state",
           "created_at",
-          "quality"
+          "quality",
+          "metadata_version",
+          "archived",
+          "archived_at",
+          "subscription_generation"
         ],
         "title": "User"
       },
@@ -3663,7 +3946,10 @@
             "enum": [
               "inspect",
               "configure",
-              "check"
+              "check",
+              "protocols",
+              "protocol_change",
+              "restart"
             ]
           },
           "draft": {
@@ -3680,6 +3966,9 @@
           },
           "desired_image": {
             "type": "string"
+          },
+          "protocol_change": {
+            "$ref": "#/components/schemas/ProtocolChange"
           }
         },
         "required": [
@@ -3807,6 +4096,16 @@
                 "type": "null"
               }
             ]
+          },
+          "protocol_catalog": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProtocolCatalog"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3814,7 +4113,8 @@
           "version",
           "binding",
           "checked_at",
-          "last_check"
+          "last_check",
+          "protocol_catalog"
         ],
         "additionalProperties": false
       },
@@ -4334,6 +4634,283 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "UserMetadata": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "version",
+          "display_name",
+          "note"
+        ],
+        "additionalProperties": false
+      },
+      "UserVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveUsers": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/UserVersion"
+            }
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "users",
+          "archived"
+        ],
+        "additionalProperties": false
+      },
+      "ArchiveResult": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          },
+          "count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "saved",
+          "count"
+        ],
+        "additionalProperties": false
+      },
+      "ResetSubscription": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "required": [
+          "revision",
+          "generation",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "SubscriptionResetResult": {
+        "type": "object",
+        "properties": {
+          "saved": {
+            "type": "boolean"
+          },
+          "generation": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "saved",
+          "generation"
+        ],
+        "additionalProperties": false
+      },
+      "UserAudit": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "summary",
+            "created_at"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "ProtocolItem": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "listen": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "managed": {
+            "type": "boolean"
+          },
+          "user_count": {
+            "type": "integer"
+          },
+          "tls": {
+            "type": "boolean"
+          },
+          "method": {
+            "type": "string"
+          },
+          "target_host": {
+            "type": "string"
+          },
+          "target_port": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tag",
+          "protocol",
+          "listen",
+          "port",
+          "enabled",
+          "managed",
+          "user_count",
+          "tls",
+          "method",
+          "target_host",
+          "target_port"
+        ],
+        "additionalProperties": false
+      },
+      "ProtocolCatalog": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "checked_at": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProtocolItem"
+            }
+          }
+        },
+        "required": [
+          "node_id",
+          "hash",
+          "checked_at",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "ProtocolChange": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "edit",
+              "enable",
+              "disable",
+              "delete"
+            ]
+          },
+          "base_hash": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "source_tag": {
+            "type": "string"
+          },
+          "listen": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "target_host": {
+            "type": "string"
+          },
+          "target_port": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "base_hash",
+          "tag"
+        ],
+        "additionalProperties": false
+      },
+      "NodeJobs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/NodeJob"
+        }
       }
     }
   }

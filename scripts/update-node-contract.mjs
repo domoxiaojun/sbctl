@@ -38,3 +38,31 @@ endpoint('/api/v1/node-jobs/{id}/retry','post','post__node_job_retry','NodeJobAc
 endpoint('/api/v1/nodes/{id}/config','get','get__node_config','NodeConfiguration');
 endpoint('/api/v1/nodes/{id}/metadata','post','post__node_metadata','NodeSaved','NodeMetadata');
 fs.writeFileSync(path,JSON.stringify(doc,null,2)+'\n');
+// Management workflows use explicit metadata versions and preserve historical identity.
+Object.assign(doc.components.schemas,{
+ UserMetadata:schema({version:num,display_name:{type:'string',minLength:1,maxLength:40},note:{type:'string',maxLength:160}}),
+ UserVersion:schema({id:str,version:num,revision:num}),
+ ArchiveUsers:schema({users:{type:'array',minItems:1,maxItems:50,items:ref('UserVersion')},archived:bool}),
+ ArchiveResult:schema({saved:bool,count:num}),
+ ResetSubscription:schema({revision:num,generation:num,reason:{type:'string',minLength:1,maxLength:160}}),
+ SubscriptionResetResult:schema({saved:bool,generation:num}),
+ UserAudit:{type:'array',items:schema({action:str,summary:str,created_at:str})},
+ ProtocolItem:schema({tag:str,protocol:str,listen:str,port:num,enabled:bool,managed:bool,user_count:num,tls:bool,method:str,target_host:str,target_port:num}),
+ ProtocolCatalog:schema({node_id:str,hash:str,checked_at:str,items:{type:'array',items:ref('ProtocolItem')}}),
+ ProtocolChange:schema({action:{type:'string',enum:['create','edit','enable','disable','delete']},base_hash:str,tag:str,source_tag:str,listen:str,port:num,target_host:str,target_port:num,username:str,password:str,uuid:str},['action','base_hash','tag']),
+ NodeJobs:{type:'array',items:ref('NodeJob')},
+});
+Object.assign(doc.components.schemas.User.properties,{metadata_version:num,archived:bool,archived_at:{anyOf:[str,{type:'null'}]},subscription_generation:num});
+doc.components.schemas.User.required=[...new Set([...doc.components.schemas.User.required,'metadata_version','archived','archived_at','subscription_generation'])];
+doc.components.schemas.NodeJobInput.properties.kind.enum=['inspect','configure','check','protocols','protocol_change','restart'];
+doc.components.schemas.NodeJobInput.properties.protocol_change=ref('ProtocolChange');
+doc.components.schemas.NodeConfiguration.properties.protocol_catalog={anyOf:[ref('ProtocolCatalog'),{type:'null'}]};
+doc.components.schemas.NodeConfiguration.required.push('protocol_catalog');
+endpoint('/api/v1/users/{id}/metadata','post','post__user_metadata','NodeSaved','UserMetadata');
+endpoint('/api/v1/users/archive','post','post__archive_users','ArchiveResult','ArchiveUsers');
+endpoint('/api/v1/users/{id}/subscription-reset','post','post__subscription_reset','SubscriptionResetResult','ResetSubscription');
+endpoint('/api/v1/users/{id}/audit','get','get__user_audit','UserAudit');
+endpoint('/api/v1/nodes/{id}/jobs','get','get__node_jobs','NodeJobs');
+const userFilters=doc.paths['/api/v1/users'].get.parameters;
+if(!userFilters.some(p=>p.name==='archived'))userFilters.push({in:'query',name:'archived',schema:{type:'string',enum:['false','true','all']},description:'默认仅未归档用户'});
+fs.writeFileSync(path,JSON.stringify(doc,null,2)+'\n');

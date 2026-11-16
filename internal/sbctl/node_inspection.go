@@ -94,9 +94,18 @@ func inspectNode(container, dir, host, serverName string) M {
 	config := object(data)
 	eps := []Endpoint{}
 	managed, unmanaged := 0, 0
+	primary := map[string]bool{}
+	if exists("/opt/sbctl/config/node.toml") {
+		for _, e := range LoadNodeSettings().Endpoints {
+			primary[e.Tag] = true
+		}
+	}
 	for _, v := range array(config["inbounds"]) {
 		i := mapping(v)
 		p := str(i["type"])
+		if len(primary) > 0 && !primary[str(i["tag"])] {
+			continue
+		}
 		if p != "anytls" && p != "tuic" {
 			continue
 		}
@@ -170,9 +179,15 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	validIdentity(id)
 	validIdentity(requestID)
 	root := "/opt/sbctl/data/node"
+	if exists(filepath.Join(root, "maintenance-pending.json")) {
+		fail("NODE_BUSY", "请先恢复未完成的节点维护任务", 409)
+	}
 	check(os.MkdirAll(root, 0700))
 	unlock := fileLock(filepath.Join(root, "management.lock"), 90*time.Second)
 	defer unlock()
+	if exists(filepath.Join(root, "maintenance-pending.json")) {
+		fail("NODE_BUSY", "请先恢复未完成的节点维护任务", 409)
+	}
 	receiptPath := filepath.Join(root, "management-"+requestID+".json")
 	if exists(receiptPath) {
 		r := object(read(receiptPath))
@@ -391,6 +406,13 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	}
 	for _, v := range array(config["inbounds"]) {
 		in := mapping(v)
+		bound := false
+		for _, e := range s.Endpoints {
+			bound = bound || e.Tag == str(in["tag"])
+		}
+		if !bound {
+			continue
+		}
 		if in["type"] != "anytls" && in["type"] != "tuic" {
 			continue
 		}
@@ -421,6 +443,13 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	template := object(afterConfig)
 	for _, v := range array(template["inbounds"]) {
 		in := mapping(v)
+		bound := false
+		for _, e := range s.Endpoints {
+			bound = bound || e.Tag == str(in["tag"])
+		}
+		if !bound {
+			continue
+		}
 		if in["type"] != "anytls" && in["type"] != "tuic" {
 			continue
 		}
@@ -487,6 +516,25 @@ func diagnoseNode() M {
 }
 func NodeRPC(v M) M {
 	switch str(v["action"]) {
+	case "protocols":
+		if len(v) != 1 {
+			fail("ACTION_REJECTED", "协议读取参数无效")
+		}
+		return object(canonical(readProtocolCatalog()))
+	case "protocol_change", "restart":
+		kind := str(v["action"])
+		var change *ProtocolChange
+		if kind == "protocol_change" {
+			if len(v) != 3 {
+				fail("ACTION_REJECTED", "协议变更参数无效")
+			}
+			change = &ProtocolChange{}
+			decode(canonical(v["change"]), change)
+			change.Validate()
+		} else if len(v) != 2 {
+			fail("ACTION_REJECTED", "重启参数无效")
+		}
+		return (NodeMaintenance{LoadNodeSettings(), "/opt/sbctl/config/node.toml", func(s NodeSettings) Engine { return DockerEngine{s} }}).Apply(str(v["request_id"]), change)
 	case "inspect":
 		if len(v) != 5 {
 			fail("ACTION_REJECTED", "检查参数无效")
@@ -506,6 +554,9 @@ func NodeRPC(v M) M {
 		unlock := fileLock("/opt/sbctl/data/node/management.lock", 120*time.Second)
 		defer unlock()
 		s := LoadNodeSettings()
+		if exists(filepath.Join(s.StateDir, "maintenance-pending.json")) {
+			fail("NODE_BUSY", "节点维护恢复中，授权任务稍后重试", 409)
+		}
 		a := NewAgent(s, DockerEngine{s})
 		if len(v) == 1 && v["action"] == "status" {
 			return a.Status()

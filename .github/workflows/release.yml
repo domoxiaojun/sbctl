@@ -65,7 +65,7 @@ jobs:
         working-directory: web
         run: |
           pnpm exec playwright install --with-deps chromium
-          pnpm exec playwright test e2e/console.spec.ts e2e/user-grants.spec.ts e2e/traffic.spec.ts e2e/workspace.spec.ts --grep '重新启用|授权调整|授权预览|响应丢失后恢复原操作|流量筛选|生产页面自动|协议入口和用户|统计日趋势|板块职责|尚未同步的节点|发现主机|已有节点绑定'
+          pnpm exec playwright test e2e/console.spec.ts e2e/user-grants.spec.ts e2e/traffic.spec.ts e2e/workspace.spec.ts e2e/management.spec.ts --grep '重新启用|授权调整|授权预览|响应丢失后恢复原操作|流量筛选|生产页面自动|协议入口和用户|统计日趋势|板块职责|尚未同步的节点|发现主机|已有节点绑定|用户资料、订阅重置|协议配置增改|批量归档|生产管理页面'
       - name: Package native executables
         env:
           ARCH: ${{ matrix.arch }}
@@ -148,7 +148,7 @@ jobs:
           jq -n --arg version "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" --arg image "$IMAGE@$digest" '{version:$version,commit:$commit,image:$image,platforms:["linux/amd64","linux/arm64"]}' > release/release.json
           {
             printf '# sbctl %s\n\n' "$GITHUB_REF_NAME"
-            printf 'Go 主控、节点工具及 React 控制台。统一节点与协议管理页面，集中流量统计，并按资源、用量与运维整理导航。\n\n'
+            printf 'Go 主控、节点工具及 React 控制台。补齐用户资料、订阅重置、归档恢复和批量归档；节点重启与持久任务恢复；从现有模板新增、编辑、启停和删除协议入口，带预检及失败回退。主控与节点程序须一同升级。\n\n'
             # shellcheck disable=SC2016
             printf '镜像：`%s:%s`\n\n固定引用：`%s@%s`\n\n' "$IMAGE" "$GITHUB_REF_NAME" "$IMAGE" "$digest"
             printf '提供 Linux amd64/arm64 静态程序和 SHA-256 校验文件。保留已有数据，不运行 initialize。\n'

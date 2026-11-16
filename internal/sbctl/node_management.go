@@ -24,12 +24,13 @@ type NodeDraft struct {
 	ServerName string         `json:"server_name,omitempty"`
 }
 type NodeJobInput struct {
-	Kind             string    `json:"kind"`
-	Draft            NodeDraft `json:"draft"`
-	InspectionID     string    `json:"inspection_id"`
-	ExpectedVersion  int64     `json:"expected_version"`
-	DesiredContainer string    `json:"desired_container,omitempty"`
-	DesiredImage     string    `json:"desired_image,omitempty"`
+	Kind             string          `json:"kind"`
+	Draft            NodeDraft       `json:"draft"`
+	InspectionID     string          `json:"inspection_id"`
+	ExpectedVersion  int64           `json:"expected_version"`
+	DesiredContainer string          `json:"desired_container,omitempty"`
+	DesiredImage     string          `json:"desired_image,omitempty"`
+	Change           *ProtocolChange `json:"protocol_change,omitempty"`
 }
 
 func (d *NodeDraft) Validate() {
@@ -83,11 +84,19 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 	if (input.DesiredContainer != "" && !containerName(input.DesiredContainer)) || (input.DesiredImage != "" && !imageReference(input.DesiredImage)) {
 		fail("INVALID_REQUEST", "目标容器名或镜像名称格式无效", 422)
 	}
-	if !contains([]string{"inspect", "configure", "check"}, input.Kind) {
+	if !contains([]string{"inspect", "configure", "check", "protocols", "protocol_change", "restart"}, input.Kind) {
 		fail("INVALID_REQUEST", "未知节点操作", 422)
 	}
 	if input.Kind != "inspect" {
 		validateNodeLabels(input.Draft)
+	}
+	if input.Kind == "protocol_change" {
+		if input.Change == nil {
+			fail("INVALID_REQUEST", "缺少协议变更", 422)
+		}
+		input.Change.Validate()
+	} else if input.Change != nil {
+		fail("INVALID_REQUEST", "该操作不接受协议变更", 422)
 	}
 	var out M
 	path := "/node-jobs"
@@ -122,11 +131,23 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			if integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", input.Draft.ID)) > 0 {
 				fail("NODE_BUSY", "节点仍有授权任务，请等待处理完成", 409)
 			}
-			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE (node_id=? OR json_extract(input_json,'$.draft.connection.address')=?) AND kind='configure' AND state IN ('queued','running')", input.Draft.ID, input.Draft.Connection.Address)) > 0 {
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE (node_id=? OR json_extract(input_json,'$.draft.connection.address')=?) AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", input.Draft.ID, input.Draft.Connection.Address)) > 0 {
 				fail("NODE_BUSY", "节点配置任务正在执行", 409)
 			}
 		}
-		if input.Kind == "check" {
+		if input.Kind == "protocol_change" || input.Kind == "restart" {
+			node := d.One("SELECT COALESCE(m.version,0) AS version FROM nodes n LEFT JOIN node_management m ON n.id=m.node_id WHERE n.id=?", input.Draft.ID)
+			if node == nil {
+				fail("NOT_FOUND", "节点不存在", 404)
+			}
+			if integer(node["version"]) != input.ExpectedVersion {
+				fail("STALE_REVISION", "节点管理版本已变化，请重新读取", 409)
+			}
+			if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", input.Draft.ID)) > 0 || integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", input.Draft.ID)) > 0 {
+				fail("NODE_BUSY", "节点仍有配置或授权任务，请完成后操作", 409)
+			}
+		}
+		if contains([]string{"check", "protocols", "protocol_change", "restart"}, input.Kind) {
 			node := d.One("SELECT connection_json FROM nodes WHERE id=?", input.Draft.ID)
 			if node == nil {
 				fail("NOT_FOUND", "节点不存在", 404)
@@ -136,7 +157,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			}
 		}
 		id := identifier("njob")
-		d.Exec("INSERT INTO node_jobs(id,kind,node_id,state,input_json,created_at,updated_at) VALUES (?,?,?,'queued',?,?,?)", id, input.Kind, input.Draft.ID, string(canonical(input)), now(), now())
+		d.Exec("INSERT INTO node_jobs(id,kind,node_id,state,input_json,created_at,updated_at) VALUES (?,?,?,'queued',?,?,?)", id, input.Kind, input.Draft.ID, encodeNodeInput(c, input), now(), now())
 		out = M{"job_id": id}
 		c.remember(d, actor, key, path, input, out, 202, false)
 		audit(d, actor, "node_"+input.Kind, input.Draft.ID, "提交节点管理任务")
@@ -167,7 +188,14 @@ func (c *Control) NodeConfig(id string) M {
 	if row["check_json"] != nil {
 		last = object([]byte(str(row["check_json"])))
 	}
-	return M{"draft": draft, "version": integer(row["config_version"]), "binding": binding, "checked_at": row["checked_at"], "last_check": last}
+	var catalog any
+	transaction(c.Settings.ControlDB, false, func(d *DB) {
+		raw := d.Value("SELECT catalog_json FROM node_catalog WHERE node_id=?", id)
+		if raw != nil {
+			catalog = object([]byte(str(raw)))
+		}
+	})
+	return M{"protocol_catalog": catalog, "draft": draft, "version": integer(row["config_version"]), "binding": binding, "checked_at": row["checked_at"], "last_check": last}
 }
 func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft NodeDraft) M {
 	draft.ID = id
@@ -186,7 +214,7 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 		if integer(n["version"]) != version {
 			fail("STALE_REVISION", "节点信息已变化，请重新打开编辑", 409)
 		}
-		if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind='configure' AND state IN ('queued','running')", id)) > 0 {
+		if integer(d.Value("SELECT count(*) FROM node_jobs WHERE node_id=? AND kind IN ('configure','protocol_change','restart') AND state IN ('queued','running')", id)) > 0 {
 			fail("NODE_BUSY", "节点接管任务进行中，请稍后编辑", 409)
 		}
 		checkGroupChange(d, id, draft.GroupID)
@@ -204,7 +232,7 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 func (w *Worker) NodeStep() bool {
 	var job M
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
-		job = d.One("SELECT * FROM node_jobs WHERE state='queued' OR (state='running' AND lease_until<?) ORDER BY created_at,id LIMIT 1", timestamp())
+		job = d.One("SELECT j.* FROM node_jobs j WHERE (j.state='queued' OR (j.state='running' AND j.lease_until<?)) AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) ORDER BY j.created_at,j.id LIMIT 1", timestamp(), timestamp())
 		if job != nil {
 			d.Exec("UPDATE node_jobs SET state='running',lease_owner=?,lease_until=?,updated_at=? WHERE id=?", w.Owner, timestamp()+360, now(), job["id"])
 		}
@@ -213,12 +241,13 @@ func (w *Worker) NodeStep() bool {
 		return false
 	}
 	c := w.Control
-	var input NodeJobInput
-	decode([]byte(str(job["input_json"])), &input)
+	input := decodeNodeInput(c, str(job["input_json"]))
 	var result M
 	err := Attempt(func() {
 		draft := input.Draft
 		switch input.Kind {
+		case "protocols", "protocol_change", "restart":
+			result = w.executeNodeAction(job, input)
 		case "inspect":
 			result = w.Transport.Call(draft.Connection, M{"action": "inspect", "container": draft.Container, "config_dir": draft.ConfigDir, "public_host": draft.PublicHost, "server_name": draft.ServerName}, false)
 			stats := w.Transport.Call(draft.Connection, M{"action": "inspect"}, true)

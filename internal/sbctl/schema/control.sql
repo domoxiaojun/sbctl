@@ -86,3 +86,9 @@ CREATE TABLE IF NOT EXISTS node_jobs (
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  lease_owner TEXT, lease_until REAL NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS user_management (
+ user_id TEXT PRIMARY KEY REFERENCES users(id), version INTEGER NOT NULL DEFAULT 0, archived_at TEXT
+);
+CREATE TABLE IF NOT EXISTS node_catalog (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id), catalog_json TEXT NOT NULL, checked_at TEXT NOT NULL
+);

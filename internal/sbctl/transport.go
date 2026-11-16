@@ -83,7 +83,7 @@ func (s SSH) Call(c NodeConnection, body M, stats bool) M {
 	}
 	var out []byte
 	timeout := 20 * time.Second
-	if body["action"] == "configure" {
+	if contains([]string{"configure", "protocol_change", "restart"}, str(body["action"])) {
 		timeout = 300 * time.Second
 	}
 	if err := Attempt(func() { out = runCommand(args, input, timeout) }); err != nil {
