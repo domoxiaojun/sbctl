@@ -78,7 +78,7 @@ pnpm e2e
 - [开发方案审查记录](docs/development-plan-review.md)
 - [执行计划](plan.md)
 
-当前主控已发布并部署 **v0.7.0**，GHCR 镜像为 `ghcr.io/domoxiaojun/sbctl:v0.7.0`，支持 Linux amd64/arm64。流量筛选、日期查询与自动刷新已在 ovhus 上线，见 [0.7.0 线上验收](docs/qa/traffic-query-20261116/report.md)。yxvmhk 保留兼容的 0.6.1 节点程序，代理未因本次升级重启。此前真实单节点检查、绑定、新增、禁用、重新启用、订阅和流量闭环通过，见 [0.6.1 发布验收](docs/qa/release-v0.6.1-20261116/report.md)。直接节点授权、组成员变更自动传播、普通凭据轮换、多节点推广和生产恢复矩阵仍属于后续里程碑。
+当前主控已发布并部署 **v0.8.0**，GHCR 镜像为 `ghcr.io/domoxiaojun/sbctl:v0.8.0`，支持 Linux amd64/arm64。紧凑日期选择、日趋势、分类排行和明细联动已在 ovhus 上线，见 [0.8.0 线上验收](docs/qa/traffic-dashboard-20261116/report.md)。yxvmhk 保留兼容的 0.6.1 节点程序，代理未因本次升级重启。此前真实单节点检查、绑定、新增、禁用、重新启用、订阅和流量闭环通过，见 [0.6.1 发布验收](docs/qa/release-v0.6.1-20261116/report.md)。直接节点授权、组成员变更自动传播、普通凭据轮换、多节点推广和生产恢复矩阵仍属于后续里程碑。
 
 ## 重新启用用户（0.6.1 已部署并通过单节点验收）
 

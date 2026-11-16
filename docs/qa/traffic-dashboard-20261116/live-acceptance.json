@@ -1,0 +1,52 @@
+{
+  "checked_at": "2026-11-16T06:36:25.233Z",
+  "version": "0.8.0",
+  "history_started_at": "2026-11-16T05:55:46.371429Z",
+  "quality": {
+    "freshness": "current",
+    "gap_count": 12,
+    "has_historical_gap": true,
+    "integrity_state": "ok",
+    "sampled_at": "2026-11-16T06:35:57.262421Z",
+    "started_at": "2026-11-14T17:11:57.957976Z",
+    "synced_at": "2026-11-16T06:36:02.115643Z"
+  },
+  "scope_results": [
+    {
+      "scope": "inbounds",
+      "days": 7,
+      "missing_days": 6,
+      "partial_days": 1,
+      "totals_match": true
+    },
+    {
+      "scope": "managed",
+      "days": 7,
+      "missing_days": 6,
+      "partial_days": 1,
+      "totals_match": true
+    },
+    {
+      "scope": "local",
+      "days": 7,
+      "missing_days": 6,
+      "partial_days": 1,
+      "totals_match": true
+    }
+  ],
+  "vmess_daily": {
+    "upload_bytes": "218190",
+    "download_bytes": "578327"
+  },
+  "cumulative_preserved": true,
+  "history_baseline_preserved": true,
+  "desktop_mobile_drilldowns_passed": true,
+  "browser_errors": [],
+  "controller_backup": "/opt/sbctl/backups/release-v0.8.0-control-20261116T063538Z",
+  "node_runtime": {
+    "version": "0.6.1",
+    "services": "active",
+    "proxy_container_unchanged": true,
+    "proxy_started_at": "2026-11-16T04:08:31.580368836Z"
+  }
+}
