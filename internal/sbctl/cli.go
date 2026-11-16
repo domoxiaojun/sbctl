@@ -81,7 +81,7 @@ func ControllerMain(args []string) int {
 			emit(M{"version": Version, "go": runtime.Version()})
 			return
 		case "help", "--help", "-h":
-			fmt.Println("sbctl serve [--listen :8080] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker | sync | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
+			fmt.Println("sbctl serve [--listen :8080] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker [--parallel N] | sync [--parallel N] | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
 			return
 		case "export-openapi":
 			if len(rest) != 1 {
@@ -130,27 +130,19 @@ func ControllerMain(args []string) int {
 			}
 			fmt.Println("管理员与控制库已初始化")
 		case "sync":
+			f := argsFor(cmd, rest)
+			parallel := f.Int("parallel", 4, "")
+			parsed(f, rest, 0)
+			if *parallel < 1 || *parallel > 32 {
+				fail("CLI_USAGE", "并行数必须在 1 到 32 之间")
+			}
 			t := Traffic{s.TrafficDB, s.TrafficSnapshot}
 			t.Initialize()
 			ssh := SSH{s.SSHDir}
 			for {
 				var nodes []any
 				_ = Attempt(func() { nodes = array(object(read(s.InventoryFile))["nodes"]) })
-				for _, raw := range nodes {
-					n := mapping(raw)
-					err := Attempt(func() {
-						v := ssh.Call(parseConnection(n["connection"]), nil, true)
-						var snap Snapshot
-						decode(canonical(v), &snap)
-						t.Ingest(str(n["id"]), snap)
-					})
-					if err != nil {
-						_ = Attempt(func() { t.Failed(str(n["id"]), PublicFault(err).Code) })
-					}
-					if ctx.Err() != nil {
-						return
-					}
-				}
+				SyncNodes(ctx, t, ssh, nodes, *parallel)
 				if stopped(ctx, time.Duration(s.SyncSeconds)*time.Second) {
 					return
 				}
@@ -214,33 +206,15 @@ func ControllerMain(args []string) int {
 					emit(c.UpdateGrants("maintenance", rest[5], rest[0], UpdateGrants{selection, rest[3], rest[4]}))
 				}
 			case "worker":
+				f := argsFor(cmd, rest)
+				parallel := f.Int("parallel", 4, "")
+				parsed(f, rest, 0)
+				if *parallel < 1 || *parallel > 32 {
+					fail("CLI_USAGE", "并行数必须在 1 到 32 之间")
+				}
 				w := NewWorker(c, nil)
 				w.ExportInventory()
-				last := time.Time{}
-				for {
-					worked := false
-					err := Attempt(func() {
-						worked = w.Step()
-						if !worked {
-							worked = w.NodeStep()
-						}
-						if !worked && time.Since(last) > 5*time.Second {
-							w.Reconcile()
-							last = time.Now()
-						}
-					})
-					delay := 250 * time.Millisecond
-					if worked {
-						delay = 50 * time.Millisecond
-					}
-					if err != nil {
-						fmt.Fprintln(os.Stderr, "control_worker:", PublicFault(err).Code)
-						delay = time.Second
-					}
-					if stopped(ctx, delay) {
-						return
-					}
-				}
+				w.Run(ctx, *parallel)
 			default:
 				fail("CLI_USAGE", "未知命令，请运行 help")
 			}

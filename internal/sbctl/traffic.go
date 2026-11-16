@@ -1,8 +1,51 @@
 package sbctl
 
-import "time"
+import (
+	"context"
+	"sync"
+	"time"
+)
 
 type Traffic struct{ Path, Export string }
+
+// SyncNodes pulls every node's ledger export once. Fetching runs in parallel so
+// an unreachable node costs only its own timeout; ingestion stays serialized
+// because every ingest rewrites the shared telemetry export.
+func SyncNodes(ctx context.Context, t Traffic, transport Transport, nodes []any, parallel int) {
+	if parallel < 1 {
+		parallel = 1
+	}
+	var ingest sync.Mutex
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, parallel)
+	for _, raw := range nodes {
+		if ctx.Err() != nil {
+			break
+		}
+		n := mapping(raw)
+		slots <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			defer func() { <-slots }()
+			id := str(n["id"])
+			err := Attempt(func() {
+				v := transport.Call(parseConnection(n["connection"]), nil, true)
+				var snap Snapshot
+				decode(canonical(v), &snap)
+				ingest.Lock()
+				defer ingest.Unlock()
+				t.Ingest(id, snap)
+			})
+			if err != nil {
+				ingest.Lock()
+				defer ingest.Unlock()
+				_ = Attempt(func() { t.Failed(id, PublicFault(err).Code) })
+			}
+		}()
+	}
+	wg.Wait()
+}
 
 func (t Traffic) Initialize() { initialize(t.Path, "traffic") }
 func (t Traffic) Ingest(node string, s Snapshot) bool {

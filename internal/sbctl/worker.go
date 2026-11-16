@@ -1,7 +1,11 @@
 package sbctl
 
 import (
+	"context"
+	"fmt"
+	"os"
 	"strings"
+	"time"
 )
 
 type Worker struct {
@@ -71,11 +75,19 @@ func (w *Worker) Request(task M) (NodeRequest, NodeConnection) {
 	})
 	return req, link
 }
+
+// Step claims and delivers a single outbox task. Run does the same for several
+// nodes at once.
 func (w *Worker) Step() bool {
 	task := w.Claim()
 	if task == nil {
 		return false
 	}
+	w.Deliver(task)
+	w.Reconcile()
+	return true
+}
+func (w *Worker) Deliver(task M) {
 	state, message, done, delay := "queued", "节点已持久接收，等待执行", false, 0.5
 	err := Attempt(func() {
 		req, link := w.Request(task)
@@ -151,8 +163,104 @@ func (w *Worker) Step() bool {
 			d.Exec("UPDATE operation_targets SET state=?,message=? WHERE operation_id=? AND node_id=?", state, message, task["operation_id"], task["node_id"])
 		}
 	})
-	w.Reconcile()
-	return true
+}
+
+// Run drives the outbox and the node job queue until ctx ends, keeping up to
+// parallel tasks in flight. The claim queries never hand out two authorization
+// tasks or two node jobs for one node, nor an authorization task next to a job
+// that changes that node, so a slow or unreachable node no longer delays
+// authorization and revocation elsewhere.
+func (w *Worker) Run(ctx context.Context, parallel int) {
+	if parallel < 1 {
+		parallel = 1
+	}
+	// Node jobs can run for minutes. Keep one slot they cannot take, so a
+	// revocation never waits behind a full set of maintenance tasks.
+	jobLimit := max(1, parallel-1)
+	finished := make(chan bool, parallel)
+	running, jobs, settled := 0, 0, false
+	settle := func(job bool) {
+		running--
+		if job {
+			jobs--
+		}
+		settled = true
+	}
+	start := func(job bool, fn func()) {
+		running++
+		if job {
+			jobs++
+		}
+		go func() {
+			defer func() { finished <- job }()
+			if err := Attempt(fn); err != nil {
+				fmt.Fprintln(os.Stderr, "control_worker:", PublicFault(err).Code)
+			}
+		}()
+	}
+	last := time.Time{}
+	for {
+		claimed := false
+		err := Attempt(func() {
+			for running < parallel {
+				task := w.Claim()
+				if task == nil {
+					break
+				}
+				claimed = true
+				start(false, func() { w.Deliver(task) })
+			}
+			for running < parallel && jobs < jobLimit {
+				job := w.ClaimNodeJob()
+				if job == nil {
+					break
+				}
+				claimed = true
+				start(true, func() { w.RunNodeJob(job) })
+			}
+			if settled || time.Since(last) > 5*time.Second {
+				w.Reconcile()
+				settled, last = false, time.Now()
+			}
+		})
+		delay := 250 * time.Millisecond
+		if claimed {
+			delay = 50 * time.Millisecond
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "control_worker:", PublicFault(err).Code)
+			delay = time.Second
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			// Give short calls a moment to finish. A lease that is still held when
+			// the process exits simply expires and the task is claimed again.
+			grace := time.After(8 * time.Second)
+			for running > 0 {
+				select {
+				case job := <-finished:
+					settle(job)
+				case <-grace:
+					return
+				}
+			}
+			return
+		case job := <-finished:
+			timer.Stop()
+			settle(job)
+		case <-timer.C:
+		}
+		for more := true; more; {
+			select {
+			case job := <-finished:
+				settle(job)
+			default:
+				more = false
+			}
+		}
+	}
 }
 func (w *Worker) Reconcile() {
 	c := w.Control

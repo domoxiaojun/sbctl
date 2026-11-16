@@ -229,7 +229,7 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 	})
 	return out
 }
-func (w *Worker) NodeStep() bool {
+func (w *Worker) ClaimNodeJob() M {
 	var job M
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
 		job = d.One("SELECT j.* FROM node_jobs j WHERE (j.state='queued' OR (j.state='running' AND j.lease_until<?)) AND NOT EXISTS(SELECT 1 FROM node_jobs other WHERE other.id<>j.id AND other.node_id=j.node_id AND j.node_id<>'' AND other.state='running' AND other.lease_until>=?) ORDER BY j.created_at,j.id LIMIT 1", timestamp(), timestamp())
@@ -237,9 +237,19 @@ func (w *Worker) NodeStep() bool {
 			d.Exec("UPDATE node_jobs SET state='running',lease_owner=?,lease_until=?,updated_at=? WHERE id=?", w.Owner, timestamp()+360, now(), job["id"])
 		}
 	})
+	return job
+}
+
+// NodeStep claims and runs a single node job.
+func (w *Worker) NodeStep() bool {
+	job := w.ClaimNodeJob()
 	if job == nil {
 		return false
 	}
+	w.RunNodeJob(job)
+	return true
+}
+func (w *Worker) RunNodeJob(job M) {
 	c := w.Control
 	input := decodeNodeInput(c, str(job["input_json"]))
 	var result M
@@ -355,7 +365,6 @@ func (w *Worker) NodeStep() bool {
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		d.Exec("UPDATE node_jobs SET state=?,result_json=?,error_code=?,message=?,updated_at=?,lease_until=0 WHERE id=? AND lease_owner=?", state, output, code, message, now(), job["id"], w.Owner)
 	})
-	return true
 }
 func DiscoveryExport(path string) {
 	raw := object(runCommand([]string{"/usr/bin/tailscale", "status", "--json"}, nil, 10*time.Second))
