@@ -6,7 +6,7 @@ test('批量归档仅选择已撤销用户', async ({ page }) => {
   const data = fixtures(Date.now())
   data.users = data.users.slice(0, 3); data.operations = []
   data.users.forEach((u, i) => { u.status = i < 2 ? 'disabled' : 'active'; u.subscription_state = i < 2 ? 'revoked' : 'published'; u.archived = false })
-  await page.addInitScript(data => sessionStorage.setItem('sbctl-f0-synthetic-state-v1', JSON.stringify({ ...data, requests: {}, signedIn: true })), data)
+  await page.addInitScript(data => { if (!sessionStorage.getItem('sbctl-f0-synthetic-state-v1')) sessionStorage.setItem('sbctl-f0-synthetic-state-v1', JSON.stringify({ ...data, requests: {}, signedIn: true })) }, data)
   await page.goto('/users')
   await page.getByRole('button', { name: '选择本页可归档用户', exact: true }).click()
   await page.getByRole('button', { name: '归档所选 2 位', exact: true }).click()
@@ -16,6 +16,19 @@ test('批量归档仅选择已撤销用户', async ({ page }) => {
   await page.getByRole('combobox', { name: '用户归档范围' }).click()
   await page.getByRole('option', { name: '已归档用户', exact: true }).click()
   await expect(page.getByText('共 2 条记录')).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: '用户归档范围' })).toContainText('已归档用户')
+  await page.getByRole('button', { name: '选择本页可归档用户', exact: true }).click()
+  await page.getByRole('button', { name: '恢复归档', exact: true }).filter({ visible: true }).first().click()
+  await expect(page.getByRole('dialog')).toContainText(data.users[0].id)
+  await expect(page.getByRole('dialog')).toContainText(data.users[1].id)
+  await page.getByRole('button', { name: '确认恢复', exact: true }).click()
+  await expect(page.getByText('共 0 条记录')).toBeVisible()
+  await page.getByRole('combobox', { name: '用户归档范围' }).click()
+  await page.getByRole('option', { name: '未归档用户', exact: true }).click()
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: '用户归档范围' })).toContainText('未归档用户')
+  await expect(page.getByText('共 3 条记录')).toBeVisible()
 })
 
 test('生产管理页面显示版本冲突并重试原节点任务', async ({ page }) => {
