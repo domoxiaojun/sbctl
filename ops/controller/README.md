@@ -13,7 +13,7 @@
 | sync | sbctl sync | 拉取并持久保存节点统计快照 |
 | subscriptions | sbctl subscriptions | 只读订阅文件，不持有控制库和主密钥 |
 
-当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.6.1`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[0.6.1 验收记录](../../docs/qa/release-v0.6.1-20261116/report.md)。
+当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.7.0`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[0.7.0 流量查询验收](../../docs/qa/traffic-query-20261116/report.md)。yxvmhk 继续运行兼容的 0.6.1 节点程序，本次未重启代理。
 
 | 请求 | 后端地址 |
 | --- | --- |
@@ -69,6 +69,8 @@ yxvmhk 的 `/opt/sbctl/bin/sbctl-node` 提供固定 RPC、发布、恢复、运�
 入口与用户是两个统计角度，不能相加。新增统计项从首次采样建立基线，历史未采集流量不回填。已记录累计在重启、禁用和移除后保留；采样缺口继续显示，不能把它当成零流量。新字段通过原节点账本的增量表保存，升级不清空已有用户历史。
 
 `GET /api/v1/traffic` 使用管理员会话，返回入口/本地用户累计、起点、新鲜度与质量。采集器经固定 root helper 获取不含凭据的统计清单，统计账号无须读取 sing-box 配置。回归测试同时覆盖 gRPC 对零值省略 `value` 的格式。
+
+0.7.0 增加节点、协议、关键词和记录状态筛选，以及 UTC+8 日期区间查询。主控在流量库内保存日期增量，并导出到 `/opt/sbctl/data/telemetry/history/` 供 API 只读查询；首次基线为 2026-11-16 13:55:46（UTC+8）。旧累计继续保留，升级前日期无明细，不能反推或按零判断。网页每 15 秒读取最新统计，也支持手动刷新。
 
 ```sh
 # 以下在 yxvmhk 执行

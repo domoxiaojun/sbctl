@@ -1,0 +1,56 @@
+{
+  "checked_at": "2026-11-16T05:56:17.429Z",
+  "version": "0.7.0",
+  "node": "yxvmhk",
+  "inbound_count": 19,
+  "prior_sampled_at": "2026-11-16T05:55:35.787155Z",
+  "sampled_at": "2026-11-16T05:55:46.371429Z",
+  "freshness": "current",
+  "integrity": "ok",
+  "gap_count": 12,
+  "history_started_at": "2026-11-16T05:55:46.371429Z",
+  "vmess": {
+    "active": true,
+    "download_bytes": "1204319579",
+    "port": 23323,
+    "protocol": "vmess",
+    "started_at": "2026-11-14T19:49:10.709887Z",
+    "tag": "vmess",
+    "upload_bytes": "397883486"
+  },
+  "daily": {
+    "date": "2026-11-16",
+    "status": "partial",
+    "inbounds": [
+      {
+        "active": true,
+        "download_bytes": "0",
+        "port": 23323,
+        "protocol": "vmess",
+        "started_at": "2026-11-14T19:49:10.709887Z",
+        "tag": "vmess",
+        "upload_bytes": "0"
+      }
+    ]
+  },
+  "preserved_cumulative": true,
+  "invalid_date_status": 422,
+  "prior_date_status": "unavailable",
+  "desktop_mobile_passed": true,
+  "followup_daily": {
+    "from": "2026-11-16T05:55:46.371429Z",
+    "to": "2026-11-16T05:56:44.541438Z",
+    "vmess": {
+      "upload_bytes": "4343",
+      "download_bytes": "11075"
+    },
+    "positive_increment_observed": true
+  },
+  "node_runtime": {
+    "version": "0.6.1",
+    "services": "active",
+    "proxy_container_unchanged": true,
+    "proxy_started_at": "2026-11-16T04:08:31.580368836Z"
+  },
+  "controller_backup": "/opt/sbctl/backups/release-v0.7.0-control-20261116T055544Z"
+}
