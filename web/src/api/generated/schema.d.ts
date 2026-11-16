@@ -934,6 +934,11 @@ export interface components {
         };
         TrafficReport: {
             nodes: components["schemas"]["Node"][];
+            users: components["schemas"]["TrafficUser"][];
+            periods: components["schemas"]["TrafficPeriod"][];
+            from: string;
+            to: string;
+            timezone: string;
             as_of: string;
         };
         /** EnableUser */
@@ -965,6 +970,21 @@ export interface components {
             removed: components["schemas"]["GrantNode"][];
             changed: boolean;
             preview_hash: string;
+        };
+        TrafficPeriod: {
+            node_id: string;
+            history_started_at: string | null;
+            /** @enum {string} */
+            status: "cumulative" | "complete" | "partial" | "unavailable";
+        };
+        TrafficUser: {
+            user_id: string;
+            display_name: string;
+            node_id: string;
+            node_name: string;
+            upload_bytes: string;
+            download_bytes: string;
+            quality: components["schemas"]["Quality"];
         };
     };
     responses: never;
@@ -2637,7 +2657,20 @@ export interface operations {
     };
     get__traffic: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description 统计筛选 */
+                node?: string;
+                /** @description 统计筛选 */
+                protocol?: string;
+                /** @description 统计筛选 */
+                activity?: string;
+                /** @description 统计筛选 */
+                q?: string;
+                /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
+                from?: string;
+                /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

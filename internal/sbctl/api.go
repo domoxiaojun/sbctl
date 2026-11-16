@@ -143,7 +143,7 @@ func API(c *Control) http.Handler {
 	})
 	auth("GET /api/v1/overview", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, v.Overview()) })
 	auth("GET /api/v1/traffic", func(w http.ResponseWriter, r *http.Request, a M) {
-		jsonResponse(w, 200, M{"nodes": v.Nodes(), "as_of": now()})
+		jsonResponse(w, 200, v.TrafficReport(r.URL.Query()))
 	})
 	auth("GET /api/v1/node-discovery", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Discovery()) })
 	auth("GET /api/v1/node-onboarding", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Onboarding()) })

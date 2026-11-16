@@ -283,7 +283,7 @@ for (const width of [375, 768, 1440]) for (const colorScheme of ['light', 'dark'
   })
 }
 
-for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 ${width}px`, async ({ page }) => {
+for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({width,height:1000})
   const f=fixtures(Date.now()), node=f.nodes[0]
   node.inbounds=[{tag:'vmess-local',protocol:'vmess',port:23323,upload_bytes:'1024',download_bytes:'4096',started_at:new Date().toISOString(),active:true}]
@@ -292,19 +292,18 @@ for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 $
   await page.route('**/api/v1/**', async route => {
     const path=new URL(route.request().url()).pathname
     if(path.endsWith('/session')) return route.fulfill({json:{admin_id:'test',display_name:'测试',csrf_token:'test'}})
-    if(path.endsWith('/traffic')) return route.fulfill({json:{nodes:[node],as_of:new Date().toISOString()}})
+    if(path.endsWith('/traffic')) return route.fulfill({json:{nodes:[node],users:[],periods:[{node_id:node.id,history_started_at:null,status:'cumulative'}],from:'',to:'',timezone:'Asia/Singapore',as_of:new Date().toISOString()}})
     if(path.includes('/usage')) return route.fulfill({json:{items:[],total:0,page:1,page_size:8}})
     return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'test'}})
   })
   await page.goto('http://127.0.0.1:14186/usage')
-  await expect(page.getByText('vmess-local', {exact:true})).toBeVisible()
+  await expect(page.getByText('vmess-local', {exact:true}).filter({visible:true})).toBeVisible()
   await expect(page.getByText('5.00 KiB', {exact:true}).first()).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
-  await fs.mkdir('../docs/qa/full-traffic-20261115',{recursive:true})
-  await page.screenshot({path:`../docs/qa/full-traffic-20261115/inbounds-${width}.png`,fullPage:true})
+  await page.screenshot({path:testInfo.outputPath(`inbounds-${width}.png`),fullPage:true})
   await page.getByRole('button',{name:'节点本地用户',exact:true}).click()
-  await expect(page.getByText('本地用户',{exact:true})).toBeVisible()
-  await expect(page.getByText('2.00 KiB',{exact:true})).toBeVisible()
+  await expect(page.getByText('本地用户',{exact:true}).filter({visible:true})).toBeVisible()
+  await expect(page.getByText('2.00 KiB',{exact:true}).first()).toBeVisible()
   await page.getByRole('button',{name:'sbctl 用户',exact:true}).click()
-  await expect(page.getByRole('heading', { name: '没有匹配的记录' }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: '没有匹配的 sbctl 用户用量' })).toBeVisible()
 })

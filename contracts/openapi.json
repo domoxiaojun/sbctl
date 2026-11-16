@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.6.1",
+    "version": "0.7.0",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -2134,7 +2134,57 @@
           "422": {
             "description": "Invalid request"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "node",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "protocol",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "activity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "统计筛选"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天"
+          }
+        ]
       }
     },
     "/api/v1/users/{user_id}/enable": {
@@ -3944,12 +3994,38 @@
               "$ref": "#/components/schemas/Node"
             }
           },
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficUser"
+            }
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficPeriod"
+            }
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
           "as_of": {
             "type": "string"
           }
         },
         "required": [
           "nodes",
+          "users",
+          "periods",
+          "from",
+          "to",
+          "timezone",
           "as_of"
         ],
         "additionalProperties": false
@@ -4096,6 +4172,75 @@
           "removed",
           "changed",
           "preview_hash"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficPeriod": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "history_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "cumulative",
+              "complete",
+              "partial",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "node_id",
+          "history_started_at",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficUser": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "node_name": {
+            "type": "string"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "node_id",
+          "node_name",
+          "upload_bytes",
+          "download_bytes",
+          "quality"
         ],
         "additionalProperties": false
       }

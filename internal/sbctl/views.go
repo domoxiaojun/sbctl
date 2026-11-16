@@ -182,7 +182,9 @@ func totals(t M, nodes []string, user string) M {
 	return out
 }
 func (v Views) Nodes() []M {
-	t := v.Telemetry()
+	return v.nodesFrom(v.Telemetry())
+}
+func (v Views) nodesFrom(t M) []M {
 	var rows []M
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
 		rows = d.Rows("SELECT n.*,(SELECT count(DISTINCT user_id) FROM credentials WHERE node_id=n.id AND revoked=0) AS users_count FROM nodes n ORDER BY n.id LIMIT 1001")

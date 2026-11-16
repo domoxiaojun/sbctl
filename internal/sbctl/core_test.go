@@ -381,6 +381,26 @@ func TestAPIContractFlow(t *testing.T) {
 	}
 	u := Views{c.Settings}.Users()[0]
 	uid, revision := str(u["id"]), integer(u["revision"])
+	traffic := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	traffic.Initialize()
+	for i, sample := range []string{"2026-01-01T10:00:00Z", "2026-01-01T10:00:15Z"} {
+		snapshot := historySnapshot(int64(i+1), sample, fmt.Sprint(100+i*100), fmt.Sprint(200+i*200))
+		snapshot.Users[0].UserID = uid
+		snapshot.Seal()
+		traffic.Ingest("node_hk", snapshot)
+	}
+	w = request("GET", "/api/v1/traffic?from=2026-01-01&to=2026-01-01&node=node_hk&protocol=vmess", nil, "", "", "")
+	if w.Code != 200 {
+		t.Fatal("traffic date query", w.Code, w.Body.String())
+	}
+	validate("/api/v1/traffic", "get", 200, w.Body.Bytes())
+	report := object(w.Body.Bytes())
+	if mapping(array(report["nodes"])[0])["inbound_upload_bytes"] != "100" || mapping(array(report["users"])[0])["download_bytes"] != "200" {
+		t.Fatal("traffic HTTP response must contain date deltas for inbounds and managed users")
+	}
+	if w = request("GET", "/api/v1/traffic?from=2026-02-30&to=2026-03-01", nil, "", "", ""); w.Code != 422 {
+		t.Fatal("invalid traffic date accepted", w.Code)
+	}
 	c.DisableUser("admin", "api-disable-request", uid, DisableUser{&revision, "停用"})
 	revision++
 	enablePath := "/api/v1/users/" + uid + "/enable"

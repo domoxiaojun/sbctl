@@ -1,4 +1,5 @@
 import type { Filters, Schema } from './types'
+import type { TrafficFilters } from '@/lib/traffic'
 
 export class ApiError extends Error {
   constructor(public code: string, message: string, public status = 0) { super(message) }
@@ -68,7 +69,7 @@ export const api = {
   users: (f?: Filters, signal?: AbortSignal) => request<Schema['UserPage']>(`/users${query(f)}`, 'GET', undefined, undefined, signal),
   user: (id: string, signal?: AbortSignal) => request<Schema['User']>(`/users/${encodeURIComponent(id)}`, 'GET', undefined, undefined, signal),
   groups: (signal?: AbortSignal) => request<Schema['Group'][]>('/groups', 'GET', undefined, undefined, signal),
-  traffic: (signal?: AbortSignal) => request<Schema['TrafficReport']>('/traffic', 'GET', undefined, undefined, signal),
+  traffic: (f: TrafficFilters = {}, signal?: AbortSignal) => request<Schema['TrafficReport']>(`/traffic${query(f)}`, 'GET', undefined, undefined, signal),
   usage: (f?: Filters, signal?: AbortSignal) => request<Schema['UsagePage']>(`/usage${query(f)}`, 'GET', undefined, undefined, signal),
   operations: (f?: Filters, signal?: AbortSignal) => request<Schema['OperationPage']>(`/operations${query(f)}`, 'GET', undefined, undefined, signal),
   operation: (id: string, signal?: AbortSignal) => request<Schema['Operation']>(`/operations/${encodeURIComponent(id)}`, 'GET', undefined, undefined, signal),

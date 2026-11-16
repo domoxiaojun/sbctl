@@ -84,6 +84,7 @@ func (t Traffic) Ingest(node string, s Snapshot) bool {
 				fail("SNAPSHOT_OLD", "节点采样时间退回")
 			}
 		}
+		recordTrafficDay(d, node, prev, s)
 		if prev == nil || s.Seq > integer(prev["seq"]) {
 			d.Exec("INSERT INTO snapshots VALUES (?,?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET seq=excluded.seq,checksum=excluded.checksum,document=excluded.document,synced_at=excluded.synced_at", node, s.LedgerID, s.Seq, s.Checksum, string(canonical(s)), now())
 			changed = true
@@ -100,6 +101,7 @@ func (t Traffic) Failed(node, code string) {
 	t.WriteExport()
 }
 func (t Traffic) WriteExport() {
+	t.writeHistoryExport()
 	nodes := M{}
 	transaction(t.Path, false, func(d *DB) {
 		for _, r := range d.Rows("SELECT * FROM snapshots") {
@@ -111,6 +113,9 @@ func (t Traffic) WriteExport() {
 			entry["error_code"] = r["error_code"]
 			entry["checked_at"] = r["checked_at"]
 			nodes[id] = entry
+		}
+		for _, r := range d.Rows("SELECT * FROM history_nodes") {
+			mapping(nodes[str(r["node_id"])])["history_started_at"] = r["started_at"]
 		}
 	})
 	atomicWrite(t.Export, canonical(M{"schema_version": 1, "nodes": nodes}), 0644)
