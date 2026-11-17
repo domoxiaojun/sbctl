@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// The release workflow compares the tag with the binary only. Keep the other
-// two places that carry the version in step with it.
+// Release metadata follows the binary version. Deployment defaults to latest,
+// while SBCTL_IMAGE can still select a specific release or digest.
 func TestVersionIsConsistentAcrossReleaseFiles(t *testing.T) {
 	if got := str(mapping(object(contracts.OpenAPI)["info"])["version"]); got != Version {
 		t.Errorf("contracts/openapi.json info.version is %s, binary is %s", got, Version)
 	}
 	compose := string(read("../../ops/controller/compose.yaml"))
-	if want := "ghcr.io/domoxiaojun/sbctl:v" + Version + "}"; !strings.Contains(compose, want) {
-		t.Errorf("ops/controller/compose.yaml default image tag does not match v%s", Version)
+	if !strings.Contains(compose, "${SBCTL_IMAGE:-ghcr.io/domoxiaojun/sbctl:latest}") {
+		t.Error("ops/controller/compose.yaml must default to latest and preserve SBCTL_IMAGE overrides")
 	}
 }

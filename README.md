@@ -101,7 +101,7 @@ pnpm e2e
 - [开发方案审查记录](docs/development-plan-review.md)
 - [执行计划](plan.md)
 
-当前发行版本为 **v0.10.6**，GHCR 镜像为 `ghcr.io/domoxiaojun/sbctl:v0.10.6`，支持 Linux amd64/arm64。本版本收窄配置启动守卫，增加重启后的双向配置同步、加密配置快照和节点同步状态，并移除受管用户流量统计分类；保留用户授权、订阅与入口/节点本地用户统计。升级须先替换节点 guard，再启用新版节点 worker，详见[发布及升级流程](ops/controller/release.md)和[发行回执](docs/qa/release-v0.10.6-20261117/report.md)。v0.10.6 已完成 CI 与发行物验证，真实服务器升级与双节点验收尚未执行；旧版本单节点验收材料继续保留。
+当前发行版本为 **v0.10.6**，默认 GHCR 镜像为 `ghcr.io/domoxiaojun/sbctl:latest`（同时保留 `v0.10.6` 标签），支持 Linux amd64/arm64。本版本收窄配置启动守卫，增加重启后的双向配置同步、加密配置快照和节点同步状态，并移除受管用户流量统计分类；保留用户授权、订阅与入口/节点本地用户统计。升级须先替换节点 guard，再启用新版节点 worker，详见[发布及升级流程](ops/controller/release.md)和[发行回执](docs/qa/release-v0.10.6-20261117/report.md)。v0.10.6 已完成 CI 与发行物验证，真实服务器升级与双节点验收尚未执行；旧版本单节点验收材料继续保留。
 
 ## 重新启用用户（0.6.1 已部署并通过单节点验收）
 

@@ -1,5 +1,7 @@
 # yxvmhk 容器试点运行记录
 
+仓库中的 Compose 模板现默认使用 `ghcr.io/domoxiaojun/sing-box:latest`，可用 `SING_BOX_IMAGE` 覆盖；latest 由独立 CI 验证后发布。此修改尚未应用到服务器。下方固定 digest、版本校验脚本和验收结果仍是原始试点记录，后续内核升级需重新检查并确认 sbctl 节点绑定。
+
 本页下文是 2026-11-14 的原始试点记录。2026-11-15 已部署 Go 0.5.0 持久账本与主控 API，现用容器名为 `sing-box`，镜像仍为 `ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-2`，19 个入口及可识别用户均已纳入统计。当前运维路径和统计范围以[主控说明](../../controller/README.md)为准。
 
 2026-11-14 已完成切换。服务器使用 `/etc/sing-box/compose.yaml`，网络为 `host`，直接由 Docker Compose 管理。原生 sing-box 1.12.9 软件包和 systemd 单元已卸载，PATH 中没有宿主 sing-box 命令；dpkg 只保留配置文件记录。

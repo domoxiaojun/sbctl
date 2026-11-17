@@ -74,7 +74,7 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 - **变更型 API** 都要求会话 Cookie + `Origin` 白名单 + `X-CSRF-Token` + `Idempotency-Key`（16–128 位）。`Control.replay`/`remember` 在同一事务里实现幂等；并发保护靠 `revision`/`version`，冲突返回 409 `STALE_REVISION`。
 - **机密**。代理凭据、订阅 token、节点请求体经 `Vault`（AES-GCM，主密钥文件）加密入库，token 只存哈希；响应里的字节计数是十进制字符串。
 - JSON 输入统一走 `decode`（拒绝重复键、未知字段、超过 2 MiB），输出走 `canonical`；落盘一律 `atomicWrite`，跨进程互斥用 `fileLock`。
-- **版本号**。`common.go` 的 `Version`、`contracts/openapi.json` 的 `info.version`、`compose.yaml` 的默认镜像标签必须一起改，且与发布 tag 相同（CI 会比对 `sbctl version`）。
+- **版本号**。`common.go` 的 `Version`、`contracts/openapi.json` 的 `info.version` 必须一起改，且与发布 tag 相同（CI 会比对 `sbctl version`）。Compose 默认使用 `ghcr.io/domoxiaojun/sbctl:latest`，发行时同时更新版本标签和 latest；`SBCTL_IMAGE` 仍可覆盖为指定版本或 digest。sing-box 的 Compose 默认同样使用 latest，由独立镜像 CI 发布。
 - 源码风格紧凑（Go 与 TS 都有很长的行、单文件多组件）。保持现状，不要顺手格式化或重排无关代码。
 
 ### API 契约

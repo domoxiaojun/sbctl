@@ -581,3 +581,13 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 停止条件：v0.10.6 Release 与 linux/amd64、linux/arm64 GHCR 镜像发布成功，发行回执核对通过；不执行生产升级。
 
 完成记录：源码提交 `9a7a637` 与标签 `v0.10.6` 已推送；主分支 CI 和双架构发行流水线成功，24 项前端单测与 45 项浏览器测试通过。GHCR 的 `v0.10.6`、`latest` 已发布，固定 digest 为 `sha256:88ce5e55dba37fbc2450957d993d02201a9be65fb65a147ba0ce6c5e08fa8282`。两份程序包校验和及包内 guard、发行清单的平台/源码提交/digest 已核对。完整回执见 [v0.10.6 发行记录](docs/qa/release-v0.10.6-20261117/report.md)。全部构建在 GitHub Actions 完成；没有生产部署。
+
+## 2026-11-17 默认使用 latest 镜像
+
+范围：按用户要求将 sbctl 与 sing-box 的 Compose 默认镜像设为 latest；为尚不存在的 sing-box latest 增加 CI 发布，保留 with_v2ray_api 和原内核源码。用户明确只改仓库并提交，不更新服务器；本机不执行编译或 Docker。
+
+- [x] ✅ 1. 修改 Compose、版本一致性检查和升级说明，核对覆盖环境变量的行为。
+- [ ] 2. 修改 sing-box 镜像发布工作流，验证并发布双架构 latest。
+- [ ] 3. 提交推送并等待必要 CI，核对远端标签及记录结果。
+
+停止条件：两种镜像的 latest 可拉取，仓库默认配置和文档一致，必要检查通过；服务器变更按用户确认的范围执行。
