@@ -15,7 +15,7 @@
 
 worker 与 sync 默认各以 4 路并行处理不同节点，可用 `--parallel N`（1–32）调整。同一节点的授权任务仍然逐个执行，改动节点的维护任务与该节点的授权任务互斥；worker 始终留一路给授权与撤销，节点任务最多占用 N-1 路，因此一台节点的长时间维护或失联不再拖住其它节点的撤销。sync 并行拉取、串行入库。需要恢复逐台串行时在 Compose 的 `command` 中加 `--parallel 1`。
 
-当前镜像为 `ghcr.io/domoxiaojun/sbctl:v0.10.4`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；本次由 CI 从发行 digest 导出镜像，经摘要验证后在 ovhus 导入，未在服务器保存 GitHub 登录凭据。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。yxvmhk 节点工具升级至兼容的 0.10.1，保留代理内核 1.12.9；程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。0.10.2 修正归档网址刷新后的筛选与批量恢复判断；0.10.3 增加已归档用户删除，仅更新主控，原节点工具和代理实例保持不变，见 [删除验收](../../docs/qa/user-delete-20261116/report.md)。
+当前发行目标为 `ghcr.io/domoxiaojun/sbctl:v0.10.5`，包含静态 Go 程序及 React 生产包。源码仓库和 GHCR 包保持私有；发布时由 CI 生成双架构程序、固定镜像 digest 和校验文件，再在 ovhus 导入。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。本版本要求 yxvmhk 与 oraclesg 节点工具同步升级，保留代理内核和现有账本；程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。多节点真实验收材料将在本次发布后补充。
 
 | 请求 | 后端地址 |
 | --- | --- |

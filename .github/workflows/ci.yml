@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOFLAGS: -mod=readonly
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .node-version
+      - name: Verify Go
+        run: make check
+      - name: Verify frontend
+        run: |
+          npm install --global pnpm@12.18.0
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web api:check
+          pnpm --dir web test
+          pnpm --dir web lint
+          pnpm --dir web build
+      - name: Verify workflow syntax
+        run: |
+          ACTIONLINT=/tmp/actionlint
+          if command -v actionlint >/dev/null; then ACTIONLINT=$(command -v actionlint); else
+            curl --fail --silent --show-error --location \
+              https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_x86_64.tar.gz \
+              | tar -xz --strip-components=1 -C /tmp actionlint_1.7.7_linux_x86_64/actionlint
+          fi
+          "$ACTIONLINT" .github/workflows/*.yml
