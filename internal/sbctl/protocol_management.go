@@ -287,8 +287,12 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 			}
 		}
 	}
-	configureStatistics(config)
-	configureStatistics(template)
+	managedUsers := []string{}
+	if exists(filepath.Join(s.SafetyDir, "runtime.json")) {
+		managedUsers = stringsOf(object(read(filepath.Join(s.SafetyDir, "runtime.json")))["users"])
+	}
+	configureStatistics(config, managedUsers)
+	configureStatistics(template, managedUsers)
 	return s, config, template, disabled
 }
 

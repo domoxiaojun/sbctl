@@ -8,9 +8,9 @@ import (
 
 func TestStatisticsConfigPreservesCredentials(t *testing.T) {
 	config := object([]byte(`{"inbounds":[{"type":"vless","listen_port":9443,"users":[{"uuid":"unchanged"}]},{"type":"direct","tag":"relay","listen_port":443},{"type":"anytls","tag":"any","users":[{"name":"usr_alice","password":"secret"},{"name":"sys_probe","password":"probe"}]}],"experimental":{"clash_api":{"secret":"preserved"}}}`))
-	configureStatistics(config)
+	configureStatistics(config, []string{"usr_alice"})
 	once := digest(config)
-	configureStatistics(config)
+	configureStatistics(config, []string{"usr_alice"})
 	if digest(config) != once {
 		t.Fatal("configuration not stable")
 	}
@@ -26,21 +26,25 @@ func TestStatisticsConfigPreservesCredentials(t *testing.T) {
 	if contains(stringsOf(mapping(mapping(mapping(config["experimental"])["v2ray_api"])["stats"])["users"]), "sys_probe") {
 		t.Fatal("probe counted as user")
 	}
+	if contains(stringsOf(mapping(mapping(mapping(config["experimental"])["v2ray_api"])["stats"])["users"]), "usr_alice") {
+		t.Fatal("managed user counted as local traffic")
+	}
 }
 func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 	root := t.TempDir()
 	l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
-	l.Ingest(rt, rt, counters("10", "20"), false)
-	// Preserve the exact checksum of a legacy snapshot without optional fields.
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, TotalInbounds: 1}
+	l.Ingest(rt, rt, []M{}, false)
+	// Preserve the exact checksum of a snapshot without optional series.
 	old := l.Snapshot()
-	var legacy Snapshot
-	decode(canonical(old), &legacy)
-	legacy.Verify()
+	var decoded Snapshot
+	decode(canonical(old), &decoded)
+	decoded.Verify()
 	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"ss-in", "shadowsocks", 443}, {"idle", "direct", 444}}, LocalUsers: []string{"本地用户"}, TotalInbounds: 2}
 	raw := func(up, down string) []M {
-		return append(counters("10", "20"), M{"name": "inbound>>>ss-in>>>traffic>>>uplink", "value": up}, M{"name": "inbound>>>ss-in>>>traffic>>>downlink", "value": down}, M{"name": "user>>>本地用户>>>traffic>>>uplink", "value": up}, M{"name": "user>>>本地用户>>>traffic>>>downlink", "value": down})
+		return []M{{"name": "inbound>>>ss-in>>>traffic>>>uplink", "value": up}, {"name": "inbound>>>ss-in>>>traffic>>>downlink", "value": down}, {"name": "user>>>本地用户>>>traffic>>>uplink", "value": up}, {"name": "user>>>本地用户>>>traffic>>>downlink", "value": down}, {"name": "inbound>>>idle>>>traffic>>>uplink", "value": up}, {"name": "inbound>>>idle>>>traffic>>>downlink", "value": down}}
 	}
 	l.Ingest(rt, rt, raw("1000", "2000"), false)
 	s := l.Snapshot()
@@ -54,7 +58,7 @@ func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 		t.Fatal("series delta", s)
 	}
 	l.Ingest(rt, rt, raw("1100", "2200"), false)
-	expectFault(t, "COUNTER_REGRESSION", func() { l.Ingest(rt, rt, counters("10", "20"), false) })
+	expectFault(t, "COUNTER_REGRESSION", func() { l.Ingest(rt, rt, raw("1000", "2000"), false) })
 	if l.Snapshot().Inbounds[1].Upload != "100" {
 		t.Fatal("regression changed total")
 	}
@@ -75,7 +79,7 @@ func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 	bad.Seal()
 	expectFault(t, "TOTAL_REGRESSION", func() { traffic.Ingest("node_hk", bad) })
 	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{}, LocalUsers: []string{}, TotalInbounds: 0}
-	l.Ingest(rt, rt, counters("10", "20"), false)
+	l.Ingest(rt, rt, []M{}, false)
 	s = l.Snapshot()
 	if s.Inbounds[1].Active || s.Inbounds[1].Upload != "150" || s.LocalUsers[0].Active {
 		t.Fatal("removed series history")
@@ -101,12 +105,12 @@ func TestStatisticsSeriesPortChangeKeepsAccumulating(t *testing.T) {
 		t.Fatalf("port change was not recorded while preserving deltas: %+v", s.Inbounds)
 	}
 }
-func TestSnapshotLegacyChecksum(t *testing.T) {
-	s := Snapshot{SchemaVersion: 1, NodeID: "node_hk", LedgerID: "ledger_1", Seq: 1, StartedAt: now(), Users: []LedgerUser{}, Quality: DataQuality{"ok", false, 0}}
+func TestSnapshotChecksumWithoutOptionalSeries(t *testing.T) {
+	s := Snapshot{SchemaVersion: 1, NodeID: "node_hk", LedgerID: "ledger_1", Seq: 1, StartedAt: now(), Quality: DataQuality{"ok", false, 0}}
 	s.Seal()
 	raw := string(canonical(s))
 	if strings.Contains(raw, "inbounds") || strings.Contains(raw, "local_users") {
-		t.Fatal("legacy checksum changed")
+		t.Fatal("snapshot checksum changed")
 	}
 	var decoded Snapshot
 	decode([]byte(raw), &decoded)
@@ -119,7 +123,7 @@ func TestStatisticsProtoZeroValues(t *testing.T) {
 	l.Create()
 	rt := testRuntime()
 	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, LocalUsers: []string{"local"}, TotalInbounds: 1}
-	raw := counters("0", "0")
+	raw := []M{}
 	raw = append(raw, M{"name": "inbound>>>relay>>>traffic>>>uplink"}, M{"name": "inbound>>>relay>>>traffic>>>downlink"}, M{"name": "user>>>local>>>traffic>>>uplink"}, M{"name": "user>>>local>>>traffic>>>downlink"})
 	for _, row := range raw {
 		delete(row, "value")
@@ -133,7 +137,7 @@ func TestStatisticsProtoZeroValues(t *testing.T) {
 	}
 	l.Ingest(rt, rt, raw, false)
 	s := l.Snapshot()
-	if s.Users[0].Upload != "12" || s.Inbounds[0].Upload != "12" || s.LocalUsers[0].Upload != "12" || s.Inbounds[0].Download != "0" {
+	if s.Inbounds[0].Upload != "12" || s.LocalUsers[0].Upload != "12" || s.Inbounds[0].Download != "0" {
 		t.Fatal("proto zero or single-direction counter not recorded", s)
 	}
 	// A formerly positive counter reverting to implicit zero is still a regression.

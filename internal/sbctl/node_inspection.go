@@ -167,7 +167,7 @@ func inspectNode(container, dir, host, serverName string) M {
 	}
 	out := M{"container": container, "config_dir": dir, "image": str(service["image"]), "engine_build_id": strings.TrimPrefix(imageID, "sha256:"), "config_hash": hash(data), "compose_hash": hash(composeBytes), "container_id": o["Id"], "running": ready, "endpoints": eps, "uid": uid, "gid": gid, "existing_node_id": nodeID, "managed_credentials": managed, "preserved_users": unmanaged, "guard_current": guardMounted && strings.Join(stringsOf(cfg["Entrypoint"]), " ") == "/bin/sh /run/sbctl/guard.sh", "can_adopt": ready, "version": version, "checked_at": now(), "impact": "保存节点绑定并安装启动守卫；需要时重新创建当前容器，连接会短暂重连。镜像名称与容器名称保持检查结果。"}
 	out["server_name"] = serverName
-	out["impact"] = "启用全部 sing-box 入口与命名用户统计，缺少标签或用户名称时补充统计标识；保留凭据、端口与路由。必要时重建容器，连接短暂重连；默认保留当前镜像和容器名。"
+	out["impact"] = "启用全部 sing-box 入口与节点本地命名用户统计，缺少标签或用户名称时补充统计标识；保留凭据、端口与路由。必要时重建容器，连接短暂重连；默认保留当前镜像和容器名。"
 	out["observation_hash"] = digest(without(out, "checked_at"))
 	return out
 }
@@ -435,7 +435,7 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	for u := range known {
 		users = append(users, u)
 	}
-	configureStatistics(config)
+	configureStatistics(config, users)
 	afterConfig := append(canonical(config), '\n')
 	template := object(afterConfig)
 	for _, v := range array(template["inbounds"]) {

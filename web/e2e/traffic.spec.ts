@@ -17,7 +17,7 @@ for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地
   }
   return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'test'}})
  })
- await page.goto(`http://127.0.0.1:14186/usage?scope=managed&user=usr-old&node=${node.id}&from=${today}&to=${today}`)
+ await page.goto(`http://127.0.0.1:14186/usage?node=${node.id}&from=${today}&to=${today}`)
  const scopes=page.getByRole('group',{name:'统计范围'})
  await expect(scopes.getByRole('button')).toHaveCount(2)
  await expect(scopes.getByRole('button',{name:'sbctl 用户',exact:true})).toHaveCount(0)
@@ -35,7 +35,7 @@ for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地
  await page.getByRole('button',{name:'刷新统计',exact:true}).click()
  await expect(page.getByRole('button',{name:'刷新统计',exact:true})).toBeEnabled()
  expect(requests.length).toBeGreaterThan(1)
- expect(requests.every(u=>u.searchParams.get('scope')!=='managed'&&!u.searchParams.has('user'))).toBe(true)
+ expect(requests.every(u=>!u.searchParams.has('user'))).toBe(true)
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
  await page.screenshot({path:testInfo.outputPath(`categories-${width}.png`),fullPage:true})
 })
@@ -106,7 +106,7 @@ test('生产页面自动更新快照，缺少历史明细时不显示零流量',
   if (url.pathname.endsWith('/traffic')) {
    const period = url.searchParams.has('from')
    const current = { ...node, inbound_download_bytes: downloaded, inbounds: [{ ...node.inbounds[0], download_bytes: downloaded }] }
-   return route.fulfill({ json: { scope:'inbounds',trend:[{date:calendarDate(),upload_bytes:null,download_bytes:null,status:'unavailable'}],trend_from:calendarDate(),trend_to:calendarDate(), nodes: [current], users: [], periods: [{ node_id: node.id, history_started_at: null, status: period ? 'unavailable' : 'cumulative' }], from: url.searchParams.get('from') ?? '', to: url.searchParams.get('to') ?? '', timezone: 'Asia/Singapore', as_of: new Date().toISOString() } })
+   return route.fulfill({ json: { scope:'inbounds',trend:[{date:calendarDate(),upload_bytes:null,download_bytes:null,status:'unavailable'}],trend_from:calendarDate(),trend_to:calendarDate(), nodes: [current], periods: [{ node_id: node.id, history_started_at: null, status: period ? 'unavailable' : 'cumulative' }], from: url.searchParams.get('from') ?? '', to: url.searchParams.get('to') ?? '', timezone: 'Asia/Singapore', as_of: new Date().toISOString() } })
   }
   return route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'test' } })
  })

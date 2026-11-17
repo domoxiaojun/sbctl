@@ -7,17 +7,26 @@ import (
 	"time"
 )
 
-func TestAcceptanceRequiresActualUserTraffic(t *testing.T) {
-	user := M{"quality": M{"freshness": "current"}, "upload_bytes": "0", "download_bytes": "0"}
-	if acceptanceUsageReady(user) {
-		t.Fatal("fresh node snapshot alone cannot verify a new user's traffic")
+func TestAcceptanceRequiresActualInboundTraffic(t *testing.T) {
+	baseline := M{"nodes": []M{{"id": "node_hk", "quality": M{"freshness": "current", "sampled_at": "2026-01-01T00:00:00Z"}, "inbounds": []M{{"tag": "anytls-in", "protocol": "anytls", "active": true, "upload_bytes": "100", "download_bytes": "200"}}}}}
+	targets := []any{M{"node_id": "node_hk"}}
+	if acceptanceTrafficReady(baseline, baseline, targets) {
+		t.Fatal("old cumulative traffic cannot pass a new acceptance")
 	}
-	user["upload_bytes"], user["download_bytes"] = "854", "3713"
-	if !acceptanceUsageReady(user) {
-		t.Fatal("fresh, nonzero traffic should pass")
+	report := object(canonical(baseline))
+	node := mapping(array(report["nodes"])[0])
+	quality := mapping(node["quality"])
+	quality["sampled_at"] = "2026-01-01T00:00:15Z"
+	inbound := mapping(array(node["inbounds"])[0])
+	inbound["upload_bytes"], inbound["download_bytes"] = "854", "3713"
+	if !acceptanceTrafficReady(report, baseline, targets) {
+		t.Fatal("fresh, bidirectional increments should pass")
 	}
-	user["quality"] = M{"freshness": "stale"}
-	if acceptanceUsageReady(user) {
+	if acceptanceTrafficReady(report, baseline, append(targets, M{"node_id": "node_missing"})) {
+		t.Fatal("every authorized node must provide traffic evidence")
+	}
+	quality["freshness"] = "stale"
+	if acceptanceTrafficReady(report, baseline, targets) {
 		t.Fatal("stale history is not live traffic evidence")
 	}
 }
@@ -27,15 +36,7 @@ type acceptanceTransport struct{ control *Control }
 func (f acceptanceTransport) Call(n NodeConnection, body M, stats bool) M {
 	r := parseRequest(body["request"])
 	if len(r.Users) > 0 {
-		users := []M{}
-		seen := map[string]bool{}
-		for _, c := range r.Users {
-			if !seen[c.UserID] {
-				seen[c.UserID] = true
-				users = append(users, M{"user_id": c.UserID, "upload_bytes": "1024", "download_bytes": "4096"})
-			}
-		}
-		snap := M{"started_at": now(), "sampled_at": now(), "users": users, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
+		snap := M{"started_at": now(), "sampled_at": now(), "inbounds": []M{M{"tag": "anytls-in", "protocol": "anytls", "upload_bytes": "1024", "download_bytes": "4096", "started_at": now(), "active": true}}, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
 		atomicWrite(f.control.Settings.TrafficSnapshot, canonical(M{"nodes": M{r.NodeID: M{"snapshot": snap, "synced_at": now()}}}), 0644)
 	}
 	return (&fakeTransport{}).Call(n, body, stats)

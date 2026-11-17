@@ -211,30 +211,31 @@ func testRuntime() Runtime {
 	return Runtime{ContainerID: "container", StartedAt: "epoch-1", Running: true, ConfigHash: strings.Repeat("a", 64), NodeRevision: 1, Users: []string{"usr_alice"}, ImageDigest: "sha256:" + strings.Repeat("b", 64)}
 }
 func counters(up, down string) []M {
-	return []M{{"name": "user>>>usr_alice>>>traffic>>>uplink", "value": up}, {"name": "user>>>usr_alice>>>traffic>>>downlink", "value": down}}
+	return []M{{"name": "inbound>>>relay>>>traffic>>>uplink", "value": up}, {"name": "inbound>>>relay>>>traffic>>>downlink", "value": down}}
 }
 func TestLedgerAndTrafficMonotonicity(t *testing.T) {
 	dir := t.TempDir()
 	l := Ledger{filepath.Join(dir, "ledger.db"), filepath.Join(dir, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, TotalInbounds: 1}
 	l.Ingest(rt, rt, counters("100", "200"), false)
 	s := l.Snapshot()
-	if s.Users[0].Upload != "0" {
+	if s.Inbounds[0].Upload != "0" {
 		t.Fatal("first observation should baseline")
 	}
 	l.Ingest(rt, rt, counters("140", "260"), false)
 	s = l.Snapshot()
-	if s.Users[0].Upload != "40" || s.Users[0].Download != "60" {
+	if s.Inbounds[0].Upload != "40" || s.Inbounds[0].Download != "60" {
 		t.Fatal("delta")
 	}
 	l.Ingest(rt, rt, counters("140", "260"), false)
-	if l.Snapshot().Users[0].Upload != "40" {
+	if l.Snapshot().Inbounds[0].Upload != "40" {
 		t.Fatal("double count")
 	}
 	expectFault(t, "COUNTER_REGRESSION", func() { l.Ingest(rt, rt, counters("130", "260"), false) })
 	s = l.Snapshot()
-	if s.Users[0].Upload != "40" || s.Quality.Integrity != "counter_error" {
+	if s.Inbounds[0].Upload != "40" || s.Quality.Integrity != "counter_error" {
 		t.Fatal("regression not frozen")
 	}
 	expectFault(t, "COUNTER_REGRESSION", func() { l.Ingest(rt, rt, []M{}, false) })
@@ -242,7 +243,7 @@ func TestLedgerAndTrafficMonotonicity(t *testing.T) {
 	rt.StartedAt = "epoch-2"
 	l.Ingest(rt, rt, counters("10", "20"), false)
 	s = l.Snapshot()
-	if s.Users[0].Upload != "60" || s.Quality.Gaps != 1 {
+	if s.Inbounds[0].Upload != "60" || s.Quality.Gaps != 1 {
 		t.Fatal("restart totals")
 	}
 	other := rt
@@ -265,7 +266,7 @@ func TestLedgerAndTrafficMonotonicity(t *testing.T) {
 	expectFault(t, "LEDGER_CHANGED", func() { traffic.Ingest("node_hk", bad) })
 	bad = s
 	bad.Seq++
-	bad.Users = []LedgerUser{}
+	bad.Inbounds = nil
 	bad.Seal()
 	expectFault(t, "TOTAL_REGRESSION", func() { traffic.Ingest("node_hk", bad) })
 	traffic.Failed("node_hk", "LEDGER_CHANGED")
@@ -357,7 +358,7 @@ func TestAPIContractFlow(t *testing.T) {
 	validate("/api/v1/users", "post", 202, w.Body.Bytes())
 	worker := NewWorker(c, &fakeTransport{})
 	worker.Step()
-	for _, path := range []string{"/session", "/overview", "/nodes", "/users", "/usage", "/operations", "/alerts", "/groups"} {
+	for _, path := range []string{"/session", "/overview", "/nodes", "/users", "/operations", "/alerts", "/groups"} {
 		w = request("GET", "/api/v1"+path, nil, "", "", "")
 		if w.Code != 200 {
 			t.Fatal(path, w.Code, w.Body.String())
@@ -385,7 +386,6 @@ func TestAPIContractFlow(t *testing.T) {
 	traffic.Initialize()
 	for i, sample := range []string{"2026-01-01T10:00:00Z", "2026-01-01T10:00:15Z"} {
 		snapshot := historySnapshot(int64(i+1), sample, fmt.Sprint(100+i*100), fmt.Sprint(200+i*200))
-		snapshot.Users[0].UserID = uid
 		snapshot.Seal()
 		traffic.Ingest("node_hk", snapshot)
 	}
@@ -395,8 +395,8 @@ func TestAPIContractFlow(t *testing.T) {
 	}
 	validate("/api/v1/traffic", "get", 200, w.Body.Bytes())
 	report := object(w.Body.Bytes())
-	if mapping(array(report["nodes"])[0])["inbound_upload_bytes"] != "100" || mapping(array(report["users"])[0])["download_bytes"] != "200" {
-		t.Fatal("traffic HTTP response must contain date deltas for inbounds and managed users")
+	if mapping(array(report["nodes"])[0])["inbound_upload_bytes"] != "100" {
+		t.Fatal("traffic HTTP response must contain date deltas for inbounds")
 	}
 	if w = request("GET", "/api/v1/traffic?from=2026-02-30&to=2026-03-01", nil, "", "", ""); w.Code != 422 {
 		t.Fatal("invalid traffic date accepted", w.Code)
@@ -585,14 +585,14 @@ func TestPublicationTamperAndTraversal(t *testing.T) {
 }
 func TestFreshnessAndLargeTotals(t *testing.T) {
 	c := testControl(t)
-	snapshot := M{"started_at": now(), "sampled_at": now(), "users": []M{{"user_id": "usr_a", "upload_bytes": "9223372036854775807", "download_bytes": "9223372036854775807"}}, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
+	snapshot := M{"started_at": now(), "sampled_at": now(), "inbounds": []M{{"tag": "relay", "protocol": "direct", "upload_bytes": "9223372036854775807", "download_bytes": "9223372036854775807", "started_at": now(), "active": true}}, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
 	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": snapshot, "synced_at": now()}}}), 0644)
 	v := Views{c.Settings}
 	if v.Nodes()[0]["status"] != "online" {
 		t.Fatal("fresh")
 	}
-	r := v.Overview()
-	if str(r["upload_bytes"]) != "9223372036854775807" {
+	r := v.Nodes()[0]
+	if str(r["inbound_upload_bytes"]) != "9223372036854775807" {
 		t.Fatal("integer precision")
 	}
 	snapshot["sampled_at"] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)

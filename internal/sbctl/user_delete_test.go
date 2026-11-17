@@ -1,9 +1,6 @@
 package sbctl
 
-import (
-	"net/url"
-	"testing"
-)
+import "testing"
 
 func TestDeleteArchivedUsersAndHistory(t *testing.T) {
 	c := testControl(t)
@@ -43,7 +40,6 @@ func TestDeleteArchivedUsersAndHistory(t *testing.T) {
 	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
 	tr.Initialize()
 	sample := historySnapshot(1, "2026-11-16T00:00:00Z", "123", "456")
-	sample.Users[0].UserID = id
 	sample.Seal()
 	tr.Ingest("node_hk", sample)
 	before := read(c.Settings.TrafficSnapshot)
@@ -82,10 +78,6 @@ func TestDeleteArchivedUsersAndHistory(t *testing.T) {
 			t.Fatal("dangling foreign keys")
 		}
 	})
-	rows := array((Views{c.Settings}).TrafficReport(url.Values{"scope": {"managed"}, "user": {id}})["users"])
-	if len(rows) != 1 || mapping(rows[0])["display_name"] != "已删除用户" || mapping(rows[0])["upload_bytes"] != "123" {
-		t.Fatal("deleted user history hidden", rows)
-	}
 	expectFault(t, "NOT_FOUND", func() { c.EnableUser("admin", "delete-enable-user1", id, EnableUser{&revision, "重放"}) })
 	expectFault(t, "NOT_FOUND", func() { c.ArchiveUsers("admin", "delete-restore-user", ArchiveUsers{req.Users, false}) })
 	expectFault(t, "NOT_FOUND", func() { c.SubscriptionLink("admin", "delete-link-user001", id) })

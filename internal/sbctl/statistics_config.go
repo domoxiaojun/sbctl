@@ -31,7 +31,7 @@ func validStatName(s string) bool {
 }
 
 // Only metadata is added; credentials, listeners, routing and TLS remain intact.
-func configureStatistics(config M) {
+func configureStatistics(config M, excludedUsers []string) {
 	used := map[string]bool{}
 	for _, raw := range array(config["inbounds"]) {
 		tag := str(mapping(raw)["tag"])
@@ -70,7 +70,7 @@ func configureStatistics(config M) {
 		tags = append(tags, str(in["tag"]))
 		for _, rawUser := range array(in["users"]) {
 			name := str(mapping(rawUser)["name"])
-			if name != "" && name != "sys_probe" {
+			if name != "" && name != "sys_probe" && !contains(excludedUsers, name) {
 				if !validStatName(name) {
 					fail("STATS_USER", "用户统计名称无效")
 				}
@@ -85,18 +85,13 @@ func configureStatistics(config M) {
 	api["listen"], api["stats"] = "127.0.0.1:10085", stats
 	experimental["v2ray_api"], config["experimental"] = api, experimental
 }
-func statisticsManifest(config M, managed []string) *StatisticsManifest {
+func statisticsManifest(config M, excludedUsers []string) *StatisticsManifest {
 	api := mapping(mapping(config["experimental"])["v2ray_api"])
 	stats := mapping(api["stats"])
 	if api["listen"] != "127.0.0.1:10085" || !boolean(stats["enabled"]) {
 		fail("STATS_CONFIG", "统计服务未按登记配置启用")
 	}
 	tags, names := stringsOf(stats["inbounds"]), stringsOf(stats["users"])
-	for _, name := range managed {
-		if !contains(names, name) {
-			fail("STATS_CONFIG", "受管用户缺少统计配置")
-		}
-	}
 	out := &StatisticsManifest{Inbounds: []InboundIdentity{}, LocalUsers: []string{}, TotalInbounds: len(array(config["inbounds"]))}
 	for _, raw := range array(config["inbounds"]) {
 		in := mapping(raw)
@@ -106,7 +101,7 @@ func statisticsManifest(config M, managed []string) *StatisticsManifest {
 		}
 		for _, rawUser := range array(in["users"]) {
 			name := str(mapping(rawUser)["name"])
-			if name != "" && name != "sys_probe" && !contains(managed, name) && contains(names, name) {
+			if name != "" && name != "sys_probe" && !contains(excludedUsers, name) && contains(names, name) {
 				out.LocalUsers = append(out.LocalUsers, name)
 			}
 		}

@@ -1162,148 +1162,6 @@
         }
       }
     },
-    "/api/v1/usage": {
-      "get": {
-        "summary": "Usage",
-        "operationId": "get__usage",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 100,
-              "default": "",
-              "title": "Q"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100000,
-              "minimum": 1,
-              "default": 1,
-              "title": "Page"
-            }
-          },
-          {
-            "name": "page_size",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 50,
-              "minimum": 1,
-              "default": 8,
-              "title": "Page Size"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 32,
-              "default": "",
-              "title": "Status"
-            }
-          },
-          {
-            "name": "region",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "maxLength": 80,
-              "default": "",
-              "title": "Region"
-            }
-          },
-          {
-            "name": "sort",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "enum": [
-                "name",
-                "bytes",
-                "created"
-              ],
-              "type": "string",
-              "default": "created",
-              "title": "Sort"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UsagePage"
-                }
-              }
-            }
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            },
-            "description": "Service Unavailable"
-          }
-        }
-      }
-    },
     "/api/v1/operations": {
       "get": {
         "summary": "Operations",
@@ -2175,14 +2033,6 @@
           },
           {
             "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "统计筛选"
-          },
-          {
-            "name": "user",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3156,16 +3006,6 @@
             "minimum": 0,
             "title": "Users Count"
           },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Upload Bytes"
-          },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Download Bytes"
-          },
           "quality": {
             "$ref": "#/components/schemas/Quality"
           },
@@ -3207,8 +3047,6 @@
           "version",
           "revision",
           "users_count",
-          "upload_bytes",
-          "download_bytes",
           "quality",
           "inbounds",
           "inbound_upload_bytes",
@@ -3442,16 +3280,6 @@
             "minimum": 0,
             "title": "Pending Count"
           },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Upload Bytes"
-          },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Download Bytes"
-          },
           "regions": {
             "items": {
               "$ref": "#/components/schemas/Region"
@@ -3473,13 +3301,6 @@
             "type": "array",
             "title": "Alerts"
           },
-          "top_usage": {
-            "items": {
-              "$ref": "#/components/schemas/Usage"
-            },
-            "type": "array",
-            "title": "Top Usage"
-          },
           "as_of": {
             "type": "string",
             "format": "date-time",
@@ -3495,12 +3316,9 @@
           "offline_count",
           "user_count",
           "pending_count",
-          "upload_bytes",
-          "download_bytes",
           "regions",
           "operations",
           "alerts",
-          "top_usage",
           "as_of"
         ],
         "title": "Overview"
@@ -3689,83 +3507,6 @@
         ],
         "title": "SubscriptionLink"
       },
-      "Usage": {
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "title": "User Id"
-          },
-          "display_name": {
-            "type": "string",
-            "title": "Display Name"
-          },
-          "node_count": {
-            "type": "integer",
-            "minimum": 0,
-            "title": "Node Count"
-          },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Upload Bytes"
-          },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Download Bytes"
-          },
-          "quality": {
-            "$ref": "#/components/schemas/Quality"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "user_id",
-          "display_name",
-          "node_count",
-          "upload_bytes",
-          "download_bytes",
-          "quality"
-        ],
-        "title": "Usage"
-      },
-      "UsagePage": {
-        "properties": {
-          "total": {
-            "type": "integer",
-            "minimum": 0,
-            "title": "Total"
-          },
-          "page": {
-            "type": "integer",
-            "minimum": 1,
-            "title": "Page"
-          },
-          "page_size": {
-            "type": "integer",
-            "maximum": 50,
-            "minimum": 1,
-            "title": "Page Size"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/Usage"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "total",
-          "page",
-          "page_size",
-          "items"
-        ],
-        "title": "UsagePage"
-      },
       "User": {
         "properties": {
           "id": {
@@ -3805,16 +3546,6 @@
             "type": "integer",
             "minimum": 0,
             "title": "Node Count"
-          },
-          "upload_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Upload Bytes"
-          },
-          "download_bytes": {
-            "type": "string",
-            "pattern": "^(0|[1-9][0-9]*)$",
-            "title": "Download Bytes"
           },
           "subscription_state": {
             "type": "string",
@@ -3864,8 +3595,6 @@
           "revision",
           "group_ids",
           "node_count",
-          "upload_bytes",
-          "download_bytes",
           "subscription_state",
           "created_at",
           "quality",
@@ -4385,8 +4114,7 @@
             "type": "string",
             "enum": [
               "inbounds",
-              "local",
-              "managed"
+              "local"
             ]
           },
           "granularity": {
@@ -4415,12 +4143,6 @@
               "$ref": "#/components/schemas/Node"
             }
           },
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TrafficUser"
-            }
-          },
           "periods": {
             "type": "array",
             "items": {
@@ -4447,7 +4169,6 @@
           "trend_from",
           "trend_to",
           "nodes",
-          "users",
           "periods",
           "from",
           "to",
@@ -4631,45 +4352,6 @@
           "node_id",
           "history_started_at",
           "status"
-        ],
-        "additionalProperties": false
-      },
-      "TrafficUser": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string"
-          },
-          "display_name": {
-            "type": "string"
-          },
-          "node_id": {
-            "type": "string"
-          },
-          "node_name": {
-            "type": "string"
-          },
-          "upload_bytes": {
-            "type": "string"
-          },
-          "download_bytes": {
-            "type": "string"
-          },
-          "quality": {
-            "$ref": "#/components/schemas/Quality"
-          },
-          "deleted": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "user_id",
-          "display_name",
-          "node_id",
-          "node_name",
-          "upload_bytes",
-          "download_bytes",
-          "quality"
         ],
         "additionalProperties": false
       },

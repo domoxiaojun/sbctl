@@ -30,7 +30,7 @@ func TestEnablePreservesIdentityAndRotatesAllSecrets(t *testing.T) {
 	v := Views{c.Settings}
 	original := v.Users()[0]
 	id := str(original["id"])
-	snapshot := M{"started_at": now(), "sampled_at": now(), "users": []M{{"user_id": id, "upload_bytes": "9007199254740993", "download_bytes": "456"}}, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
+	snapshot := M{"started_at": now(), "sampled_at": now(), "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
 	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": snapshot, "synced_at": now()}}}), 0644)
 	history := read(c.Settings.TrafficSnapshot)
 	oldCredentials := f.Requests[0].Users
@@ -58,8 +58,8 @@ func TestEnablePreservesIdentityAndRotatesAllSecrets(t *testing.T) {
 	if u["status"] != "active" || u["id"] != id || u["created_at"] != original["created_at"] || u["note"] != original["note"] || integer(u["revision"]) != 3 {
 		t.Fatal("identity metadata changed or enable incomplete")
 	}
-	if u["upload_bytes"] != "9007199254740993" || u["download_bytes"] != "456" || !bytes.Equal(history, read(c.Settings.TrafficSnapshot)) {
-		t.Fatal("historical usage changed")
+	if !bytes.Equal(history, read(c.Settings.TrafficSnapshot)) {
+		t.Fatal("historical telemetry changed")
 	}
 	last := f.Requests[len(f.Requests)-1]
 	if len(last.Users) != 2 || len(last.Revoked) != 2 {
@@ -251,7 +251,7 @@ func TestEnableUsesCurrentGroupsAndRetainsHistoricalUsage(t *testing.T) {
 	w := NewWorker(c, &fakeTransport{})
 	id, _ := disabledUser(t, c, w)
 	w.Step()
-	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": M{"started_at": now(), "sampled_at": now(), "users": []M{{"user_id": id, "upload_bytes": "123", "download_bytes": "456"}}}, "synced_at": now()}}}), 0644)
+	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": M{"started_at": now(), "sampled_at": now()}, "synced_at": now()}}}), 0644)
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		d.Exec("INSERT INTO nodes SELECT 'node_new',name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,0,0,created_at,enabled FROM nodes WHERE id='node_hk'")
 		d.Exec("DELETE FROM group_nodes WHERE group_id='grp_hk'")
@@ -265,9 +265,6 @@ func TestEnableUsesCurrentGroupsAndRetainsHistoricalUsage(t *testing.T) {
 	ts := array(op["targets"])
 	if len(ts) != 1 || mapping(ts[0])["node_id"] != "node_new" || integer(u["node_count"]) != 1 || integer(sub["total_nodes"]) != 1 {
 		t.Fatal("authorization still counts removed historical nodes")
-	}
-	if u["upload_bytes"] != "123" || u["download_bytes"] != "456" {
-		t.Fatal("removed node history lost")
 	}
 	transaction(c.Settings.ControlDB, false, func(d *DB) {
 		if integer(d.Value("SELECT count(*) FROM credentials WHERE node_id='node_hk' AND revoked=0")) != 0 {

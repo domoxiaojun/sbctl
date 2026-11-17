@@ -12,7 +12,7 @@ import (
 )
 
 // PrepareNode is a maintenance command, unavailable through the SSH RPC surface.
-// Existing managed users are exported only when capture_existing is explicit.
+// Existing authorized users are exported only when capture_existing is explicit.
 func PrepareNode(input M) {
 	if os.Geteuid() != 0 {
 		fail("ROOT_REQUIRED", "节点准备需要 root")

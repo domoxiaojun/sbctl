@@ -83,16 +83,6 @@ func (t Traffic) Ingest(node string, s Snapshot) bool {
 			}
 			var old Snapshot
 			decode([]byte(str(prev["document"])), &old)
-			current := map[string]LedgerUser{}
-			for _, u := range s.Users {
-				current[u.UserID] = u
-			}
-			for _, u := range old.Users {
-				v, ok := current[u.UserID]
-				if !ok || counter(v.Upload) < counter(u.Upload) || counter(v.Download) < counter(u.Download) {
-					fail("TOTAL_REGRESSION", "节点累计下降或历史用户缺失，保留历史累计")
-				}
-			}
 			oldInbounds := map[string]LedgerInbound{}
 			for _, in := range old.Inbounds {
 				oldInbounds[in.Tag] = in

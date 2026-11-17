@@ -1,7 +1,7 @@
 import type { Schema } from '../api/types'
 import { calendarDate, dateError, hourlyAllowed, trafficTotals } from '../lib/traffic'
 
-type State = { nodes: Schema['Node'][]; users: Schema['User'][]; groups: Schema['Group'][]; authorizedNodes?: Record<string, string[]> }
+type State = { nodes: Schema['Node'][] }
 export function demoTraffic(state: State, params: URLSearchParams, now: number): Schema['TrafficReport'] {
  const from = params.get('from') || '', to = params.get('to') || ''
  const scope = (params.get('scope') || 'inbounds') as Schema['TrafficReport']['scope']
@@ -18,20 +18,12 @@ export function demoTraffic(state: State, params: URLSearchParams, now: number):
   const sum = trafficTotals(inbounds)
   return { ...n, inbounds, local_users, inbound_upload_bytes: sum.upload_bytes, inbound_download_bytes: sum.download_bytes }
  })
- const users: Schema['TrafficUser'][] = state.users.flatMap(u => {
-  if (params.get('user') && u.id !== params.get('user')) return []
-  const ids = state.authorizedNodes?.[u.id] ?? [...new Set(state.groups.filter(g => u.group_ids.includes(g.id)).flatMap(g => g.node_ids))]
-  return nodes.filter(n => ids.includes(n.id) && (!q || `${u.display_name} ${u.id} ${n.name}`.toLowerCase().includes(q))).map(n => {
-   const divide = (value: string) => (BigInt(value) / BigInt(ids.length) + (ids[0] === n.id ? BigInt(value) % BigInt(ids.length) : 0n)).toString()
-   return { user_id: u.id, display_name: u.display_name, node_id: n.id, node_name: n.name, quality: n.quality, ...bytes({ upload_bytes: divide(u.upload_bytes), download_bytes: divide(u.download_bytes) }) }
-  })
- })
  const yearAgo = new Date(now + 8 * 3600_000); yearAgo.setUTCDate(1); yearAgo.setUTCMonth(yearAgo.getUTCMonth() - 11)
  const trendFrom = from || (granularity === 'month' ? yearAgo.toISOString().slice(0, 10) : calendarDate(now - (granularity === 'hour' ? 1 : 6) * 86400000)), trendTo = to || calendarDate(now)
  const days: string[] = []
  for (let ms = Date.parse(trendFrom); ms <= Date.parse(trendTo); ms += 86400000) days.push(new Date(ms).toISOString().slice(0, 10))
  const historyStart = calendarDate(now - 14 * 86400000), available = days.filter(day => day >= historyStart)
- const rows = scope === 'managed' ? users : scope === 'local' ? nodes.flatMap(n => n.local_users) : nodes.flatMap(n => n.inbounds)
+ const rows = scope === 'local' ? nodes.flatMap(n => n.local_users) : nodes.flatMap(n => n.inbounds)
  const total = trafficTotals(rows)
  const trend: Schema['TrafficDay'][] = days.map(day => {
   if (!nodes.length || !available.includes(day)) return { date: day, upload_bytes: null, download_bytes: null, status: 'unavailable' }
@@ -61,5 +53,5 @@ export function demoTraffic(state: State, params: URLSearchParams, now: number):
   month.upload_bytes = (BigInt(month.upload_bytes ?? '0') + BigInt(day.upload_bytes)).toString()
   month.download_bytes = (BigInt(month.download_bytes ?? '0') + BigInt(day.download_bytes)).toString()
  }
- return { nodes, users, periods: nodes.map(n => ({ node_id: n.id, history_started_at: n.quality.started_at, status: !from ? 'cumulative' : available.length ? 'partial' : 'unavailable' })), from, to, scope, granularity, trend: granularity === 'hour' ? hours : granularity === 'month' ? months : trend, trend_from: trendFrom, trend_to: trendTo, timezone: 'Asia/Singapore', as_of: new Date(now).toISOString() }
+ return { nodes, periods: nodes.map(n => ({ node_id: n.id, history_started_at: n.quality.started_at, status: !from ? 'cumulative' : available.length ? 'partial' : 'unavailable' })), from, to, scope, granularity, trend: granularity === 'hour' ? hours : granularity === 'month' ? months : trend, trend_from: trendFrom, trend_to: trendTo, timezone: 'Asia/Singapore', as_of: new Date(now).toISOString() }
 }

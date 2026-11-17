@@ -71,7 +71,7 @@ export function TrafficExplorer() {
    {filters.local_user && <Button variant="outline" className="min-h-11" onClick={() => update({ local_user: '' })}>已定位用户：{filters.local_user}<X size={14} /><span className="sr-only">清除用户筛选</span></Button>}
    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </section>
-  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{refreshMessage || (sampled ? `最近采样 ${formatTime(sampled, true)}` : '等待统计快照')}</p><span>每 15 秒更新 · 入口与用户用量分别统计</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{refreshMessage || (sampled ? `最近采样 ${formatTime(sampled, true)}` : '等待统计快照')}</p><span>每 15 秒更新 · 入口与节点本地用户用量分别统计</span></div>
   {error ? null : query.isPending || query.error ? <DataState loading={query.isPending} error={query.error} retry={() => query.refetch()} /> : report && <>
    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3" aria-label="筛选结果汇总">{[['合计', totalBytes(sum)], ['上传', sum.upload_bytes], ['下载', sum.download_bytes]].map(([label, value]) => <div className="panel p-5" key={label}><p className="text-sm text-muted-foreground">{period ? '区间' : '累计'}{label}</p><strong className="text-2xl numeric block mt-2" title={nodes.length ? exactBytes(value) : undefined}>{nodes.length ? formatBytes(value) : '—'}</strong><p className="text-xs text-muted-foreground mt-2">当前筛选 · {rows.length} 条记录</p></div>)}</div>
    <Suspense fallback={<DataState loading />}><TrafficTrend report={report} onSelect={selectRange} onGranularity={value => update({ granularity: value === 'day' ? undefined : value })} hourlyDisabled={hourlyDisabled} /></Suspense>

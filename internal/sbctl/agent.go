@@ -109,7 +109,11 @@ func (a *Agent) Render(r NodeRequest) []byte {
 	if len(found) != len(tags) {
 		fail("TEMPLATE_INVALID", "模板缺少受管入口")
 	}
-	configureStatistics(t)
+	excludedUsers := []string{}
+	for _, c := range r.Users {
+		excludedUsers = append(excludedUsers, c.UserID)
+	}
+	configureStatistics(t, unique(excludedUsers))
 	return append(canonical(t), '\n')
 }
 func receipt(r M) M {

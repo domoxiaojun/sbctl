@@ -46,13 +46,6 @@ it('日趋势与所选时段汇总保持同一统计范围', () => {
  expect(report.trend).toHaveLength(7)
  expect(trafficTotals(report.trend.map(p => ({upload_bytes:p.upload_bytes!,download_bytes:p.download_bytes!})))).toEqual(trafficTotals(report.nodes.flatMap(n => n.local_users)))
 })
-it('旧用户分类网址不再启用该分类或用户筛选', () => {
- const search = trafficSearch({scope:'managed',user:'usr_old',node:'node_hk',from:'2026-01-01',to:'2026-01-02'})
- expect(search.scope).toBeUndefined()
- expect(search).not.toHaveProperty('user')
- expect(search.node).toBe('node_hk')
- expect(search.from).toBe('2026-01-01')
-})
 
 import { hourlyAllowed, trafficCsv } from '../src/lib/traffic'
 it('按小时趋势限制在 7 天内并与按日合计一致', () => {

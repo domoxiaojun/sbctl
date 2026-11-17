@@ -76,7 +76,7 @@ export function createNodeManagementDemo(state: () => NodeState, storage?: Pick<
         configurations.set(d.id,{protocol_catalog:null,version:submission.expected_version+1,draft:d,binding:result,checked_at:stamp,last_check:result})
         const existing = state().nodes.find(n => n.id === d.id)
         if (existing) Object.assign(existing,{name:d.name,region:d.region,location:d.location,management_address:d.connection.address,public_host:d.public_host})
-        else state().nodes.unshift({...state().nodes[0],id:d.id,name:d.name,region:d.region,location:d.location,management_address:d.connection.address,public_host:d.public_host,users_count:0,upload_bytes:'0',download_bytes:'0',status:'online'})
+        else state().nodes.unshift({...state().nodes[0],id:d.id,name:d.name,region:d.region,location:d.location,management_address:d.connection.address,public_host:d.public_host,users_count:0,status:'online'})
       }
       if (submission.kind === 'check') { const saved = config(d.id);if (saved) configurations.set(d.id,{...saved,checked_at:stamp,last_check:result}) }
       if (submission.kind === 'configure') d.container = String(result.container)

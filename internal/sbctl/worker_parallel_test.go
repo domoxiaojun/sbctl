@@ -239,7 +239,7 @@ func (s *statsTransport) Call(n NodeConnection, body M, stats bool) M {
 	seq := s.seq[id]
 	s.mu.Unlock()
 	sampled := now()
-	snapshot := Snapshot{SchemaVersion: 1, NodeID: id, LedgerID: "ledger_" + id, Seq: seq, StartedAt: s.started, SampledAt: &sampled, Users: []LedgerUser{}, Quality: DataQuality{Integrity: "ok"}}
+	snapshot := Snapshot{SchemaVersion: 1, NodeID: id, LedgerID: "ledger_" + id, Seq: seq, StartedAt: s.started, SampledAt: &sampled, Quality: DataQuality{Integrity: "ok"}}
 	snapshot.Seal()
 	return object(canonical(snapshot))
 }

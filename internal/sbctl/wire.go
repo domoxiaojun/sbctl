@@ -127,11 +127,6 @@ func (r Runtime) Stable(s Runtime) bool {
 	return reflect.DeepEqual(r, s) && r.Running && !r.Paused && !r.Restarting && r.ContainerID != "" && r.StartedAt != ""
 }
 
-type LedgerUser struct {
-	UserID   string `json:"user_id"`
-	Upload   string `json:"upload_bytes"`
-	Download string `json:"download_bytes"`
-}
 type LedgerInbound struct {
 	Tag       string `json:"tag"`
 	Protocol  string `json:"protocol"`
@@ -162,7 +157,6 @@ type Snapshot struct {
 	SampledAt     *string           `json:"sampled_at"`
 	SourceEpoch   *string           `json:"source_epoch"`
 	ConfigHash    *string           `json:"config_hash"`
-	Users         []LedgerUser      `json:"users"`
 	Inbounds      []LedgerInbound   `json:"inbounds,omitempty"`
 	LocalUsers    []LedgerLocalUser `json:"local_users,omitempty"`
 	TotalInbounds int               `json:"total_inbounds,omitempty"`
@@ -172,28 +166,15 @@ type Snapshot struct {
 
 func (s Snapshot) ComputedHash() string { return digest(without(object(canonical(s)), "checksum")) }
 func (s *Snapshot) Seal()               { s.Checksum = s.ComputedHash() }
+
 func (s Snapshot) Verify() {
 	validIdentity(s.NodeID)
 	validIdentity(s.LedgerID)
-	if s.SchemaVersion != 1 || s.Seq < 1 || len(s.Users) > 10000 || len(s.Inbounds) > 4096 || len(s.LocalUsers) > 10000 || s.TotalInbounds < 0 || s.TotalInbounds > 4096 || s.Users == nil || !contains([]string{"ok", "counter_error", "state_lost"}, s.Quality.Integrity) || s.Quality.Gaps < 0 {
+	if s.SchemaVersion != 1 || s.Seq < 1 || len(s.Inbounds) > 4096 || len(s.LocalUsers) > 10000 || s.TotalInbounds < 0 || s.TotalInbounds > 4096 || !contains([]string{"ok", "counter_error", "state_lost"}, s.Quality.Integrity) || s.Quality.Gaps < 0 {
 		fail("SNAPSHOT_INVALID", "快照字段无效")
 	}
 	if s.Checksum != s.ComputedHash() {
 		fail("SNAPSHOT_HASH", "统计快照摘要不匹配")
-	}
-	seen := map[string]bool{}
-	for _, u := range s.Users {
-		validIdentity(u.UserID)
-		if seen[u.UserID] {
-			fail("DUPLICATE_COUNTER", "统计快照包含重复用户")
-		}
-		seen[u.UserID] = true
-		for _, v := range []string{u.Upload, u.Download} {
-			counter(v)
-			if len(v) > 1 && strings.HasPrefix(v, "0") {
-				fail("COUNTER_INVALID", "流量计数格式无效")
-			}
-		}
 	}
 	seenInbound := map[string]bool{}
 	for _, in := range s.Inbounds {

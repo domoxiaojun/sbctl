@@ -89,15 +89,12 @@ func historyDocument(path string) M {
 	return document
 }
 func snapshotSeries(s Snapshot) M {
-	groups := M{"inbounds": M{}, "local_users": M{}, "users": M{}}
+	groups := M{"inbounds": M{}, "local_users": M{}}
 	for _, r := range s.Inbounds {
 		mapping(groups["inbounds"])[r.Tag] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
 	}
 	for _, r := range s.LocalUsers {
 		mapping(groups["local_users"])[r.Name] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
-	}
-	for _, r := range s.Users {
-		mapping(groups["users"])[r.UserID] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
 	}
 	return groups
 }
@@ -133,16 +130,16 @@ func recordTrafficDay(d *DB, node string, prev M, s Snapshot) {
 		{"history_hours", "hour", local.Format(hourKey)},
 	} {
 		row := d.One("SELECT document FROM "+bucket.table+" WHERE node_id=? AND "+bucket.column+"=?", node, bucket.key)
-		doc := M{"from": from.Format(time.RFC3339Nano), "to": *s.SampledAt, "incomplete": false, "inbounds": M{}, "local_users": M{}, "users": M{}}
+		doc := M{"from": from.Format(time.RFC3339Nano), "to": *s.SampledAt, "incomplete": false, "inbounds": M{}, "local_users": M{}}
 		if row != nil {
-			doc = object([]byte(str(row["document"])))
+			doc = pick(object([]byte(str(row["document"]))), "from", "to", "incomplete", "inbounds", "local_users")
 			doc["to"] = *s.SampledAt
 		} else if bucket.table == "history_hours" {
 			d.Exec("DELETE FROM history_hours WHERE node_id=? AND hour<?", node, local.AddDate(0, 0, -hourlyRetentionDays).Format(hourKey))
 		}
 		doc["incomplete"] = boolean(doc["incomplete"]) || gap
 		if measured {
-			for _, group := range []string{"inbounds", "local_users", "users"} {
+			for _, group := range []string{"inbounds", "local_users"} {
 				for key, raw := range mapping(after[group]) {
 					current, prior := mapping(raw), mapping(mapping(before[group])[key])
 					// A newly observed identity already contains a cumulative value. Baseline it.
@@ -244,7 +241,7 @@ func (v Views) TrafficReport(q url.Values) M {
 	if scope == "" {
 		scope = "inbounds"
 	}
-	group := map[string]string{"inbounds": "inbounds", "local": "local_users", "managed": "users"}[scope]
+	group := map[string]string{"inbounds": "inbounds", "local": "local_users"}[scope]
 	if group == "" {
 		fail("SCOPE_INVALID", "统计范围无效", 422)
 	}
@@ -281,19 +278,6 @@ func (v Views) TrafficReport(q url.Values) M {
 	nodes := v.nodesFrom(telemetry)
 	result := []M{}
 	periods := []M{}
-	// User names come from the control database, totals from the selected nodes.
-	names := map[string]string{}
-	deleted := map[string]bool{}
-	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		for _, u := range d.Rows("SELECT id,display_name FROM users") {
-			names[str(u["id"])] = str(u["display_name"])
-		}
-		for _, u := range d.Rows("SELECT target_id FROM audit WHERE action='delete_user'") {
-			names[str(u["target_id"])] = "已删除用户"
-			deleted[str(u["target_id"])] = true
-		}
-	})
-	users := []M{}
 	for _, node := range nodes {
 		id := str(node["id"])
 		if q.Get("node") != "" && id != q.Get("node") {
@@ -301,9 +285,8 @@ func (v Views) TrafficReport(q url.Values) M {
 		}
 		selectedNodes++
 		entry := mapping(telemetry[id])
-		snap := mapping(entry["snapshot"])
 		period := M{"node_id": id, "history_started_at": entry["history_started_at"], "status": "cumulative"}
-		aggregates := M{"inbounds": M{}, "local_users": M{}, "users": M{}}
+		aggregates := M{"inbounds": M{}, "local_users": M{}}
 		documents := map[string]M{}
 		seen, incomplete := false, false
 		for day := trendStart; day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
@@ -324,7 +307,7 @@ func (v Views) TrafficReport(q url.Values) M {
 			daily[key]["known"] = integer(daily[key]["known"]) + 1
 			daily[key]["partial"] = boolean(daily[key]["partial"]) || partial
 			if !start.IsZero() {
-				for _, category := range []string{"inbounds", "local_users", "users"} {
+				for _, category := range []string{"inbounds", "local_users"} {
 					for key, raw := range mapping(doc[category]) {
 						agg := mapping(mapping(aggregates[category])[key])
 						for _, direction := range []string{"upload_bytes", "download_bytes"} {
@@ -382,41 +365,13 @@ func (v Views) TrafficReport(q url.Values) M {
 			}
 			node["inbound_"+direction] = sum.String()
 		}
-		for _, raw := range array(snap["users"]) {
-			u := mapping(raw)
-			uid := str(u["user_id"])
-			if names[uid] == "" || (q.Get("user") != "" && uid != q.Get("user")) {
-				continue
-			}
-			if query := strings.ToLower(q.Get("q")); query != "" && !strings.Contains(strings.ToLower(names[uid]+" "+uid+" "+str(node["name"])), query) {
-				continue
-			}
-			row := M{"user_id": uid, "display_name": names[uid], "node_id": id, "node_name": node["name"], "quality": node["quality"], "upload_bytes": u["upload_bytes"], "download_bytes": u["download_bytes"]}
-			if deleted[uid] {
-				row["deleted"] = true
-			}
-			if !start.IsZero() {
-				agg := mapping(mapping(aggregates["users"])[uid])
-				row["upload_bytes"] = bytesInt(agg["upload_bytes"]).String()
-				row["download_bytes"] = bytesInt(agg["download_bytes"]).String()
-			}
-			users = append(users, row)
-		}
 		keys := []string{}
-		if group == "users" {
-			for _, user := range users {
-				if str(user["node_id"]) == id {
-					keys = append(keys, str(user["user_id"]))
-				}
-			}
-		} else {
-			identity := "tag"
-			if group == "local_users" {
-				identity = "name"
-			}
-			for _, raw := range array(node[group]) {
-				keys = append(keys, str(mapping(raw)[identity]))
-			}
+		identity := "tag"
+		if group == "local_users" {
+			identity = "name"
+		}
+		for _, raw := range array(node[group]) {
+			keys = append(keys, str(mapping(raw)[identity]))
 		}
 		for day, doc := range documents {
 			for _, key := range keys {
@@ -450,7 +405,7 @@ func (v Views) TrafficReport(q url.Values) M {
 	if granularity == "month" {
 		trend = monthlyTrend(trend)
 	}
-	return M{"nodes": result, "users": users, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "scope": scope, "granularity": granularity, "trend": trend, "trend_from": trendStart.Format(time.DateOnly), "trend_to": trendEnd.AddDate(0, 0, -1).Format(time.DateOnly), "as_of": now()}
+	return M{"nodes": result, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "scope": scope, "granularity": granularity, "trend": trend, "trend_from": trendStart.Format(time.DateOnly), "trend_to": trendEnd.AddDate(0, 0, -1).Format(time.DateOnly), "as_of": now()}
 }
 
 // monthlyTrend folds daily points into calendar months. A month is complete

@@ -52,7 +52,7 @@ func (c *Control) DeleteUsers(actor, key string, req DeleteUsers) M {
 		}
 		for _, item := range req.Users {
 			c.Public.Revoke(str(d.Value("SELECT token_hash FROM subscriptions WHERE user_id=?", item.ID)))
-			// Keep independent traffic, audit, completed operations and revocations.
+			// Keep audit, completed operations and revocations.
 			// Detach the nullable FK so historical operations never link to a missing user.
 			d.Exec("UPDATE operations SET user_id=NULL WHERE user_id=?", item.ID)
 			d.Exec("DELETE FROM grants WHERE user_id=?", item.ID)
@@ -61,7 +61,7 @@ func (c *Control) DeleteUsers(actor, key string, req DeleteUsers) M {
 			d.Exec("DELETE FROM user_management WHERE user_id=?", item.ID)
 			d.Exec("DELETE FROM meta WHERE key=?", "publication:"+item.ID)
 			d.Exec("DELETE FROM users WHERE id=?", item.ID)
-			audit(d, actor, "delete_user", item.ID, "删除已归档用户，保留流量、操作历史与撤销记录")
+			audit(d, actor, "delete_user", item.ID, "删除已归档用户，保留操作历史与撤销记录")
 		}
 		out = M{"saved": true, "count": len(req.Users)}
 		c.remember(d, actor, key, path, req, out, 200, false)

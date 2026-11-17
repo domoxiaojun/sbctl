@@ -64,7 +64,8 @@ func Acceptance(args []string) {
 	csrf = str(login["csrf_token"])
 	defer func() { _ = Attempt(func() { call("DELETE", "/session", nil, "") }) }()
 	call("GET", "/session", nil, "")
-	_, created := call("POST", "/users", CreateUser{DisplayName: "Go 功能验收", Note: "验证真实用户流量后禁用", GroupIDs: []string{*group}}, token(24))
+	_, baseline := call("GET", "/traffic?scope=inbounds", nil, "")
+	_, created := call("POST", "/users", CreateUser{DisplayName: "Go 功能验收", Note: "验证节点流量后禁用", GroupIDs: []string{*group}}, token(24))
 	wait := func(id string) M {
 		deadline := time.Now().Add(150 * time.Second)
 		for {
@@ -110,15 +111,15 @@ func Acceptance(args []string) {
 		}
 	}
 	telemetryDeadline := time.Now().Add(60 * time.Second)
-	var verifiedUsage M
+	var verifiedTraffic M
 	for {
-		_, observed := call("GET", "/users/"+userID, nil, "")
-		if acceptanceUsageReady(observed) {
-			verifiedUsage = pick(observed, "id", "upload_bytes", "download_bytes", "quality")
+		_, observed := call("GET", "/traffic?scope=inbounds", nil, "")
+		if acceptanceTrafficReady(observed, baseline, array(op["targets"])) {
+			verifiedTraffic = observed
 			break
 		}
 		if time.Now().After(telemetryDeadline) {
-			fail("ACCEPTANCE_TELEMETRY", "测试用户真实代理流量尚未在主控形成非零累计", 503)
+			fail("ACCEPTANCE_TELEMETRY", "授权节点的协议入口尚未形成新的双向流量增量", 503)
 		}
 		time.Sleep(time.Second)
 	}
@@ -146,8 +147,8 @@ func Acceptance(args []string) {
 		}
 		enabled := wait(str(accepted["operation_id"]))
 		_, active := call("GET", "/users/"+userID, nil, "")
-		if active["id"] != userID || active["created_at"] != beforeEnable["created_at"] || active["status"] != "active" || counter(active["upload_bytes"]) < counter(beforeEnable["upload_bytes"]) || counter(active["download_bytes"]) < counter(beforeEnable["download_bytes"]) {
-			fail("ACCEPTANCE_IDENTITY", "重新启用未保留身份或历史累计")
+		if active["id"] != userID || active["created_at"] != beforeEnable["created_at"] || active["status"] != "active" {
+			fail("ACCEPTANCE_IDENTITY", "重新启用未保留身份")
 		}
 		_, newLinks := call("POST", "/users/"+userID+"/subscription-link", nil, token(24))
 		for _, name := range []string{"url", "mihomo_url"} {
@@ -171,12 +172,48 @@ func Acceptance(args []string) {
 		lifecycleResult = M{"tested": true, "enable_operation": enabled["id"], "enable_state": enabled["state"], "final_disable_operation": final["id"], "final_disable_state": final["state"], "identity_and_history_preserved": true, "idempotent_recovery": true, "old_subscriptions": "404", "new_subscriptions": "200_then_404", "grant_preview": preview, "cross_node_grant_changes_tested": false}
 	}
 	_, nodes := call("GET", "/nodes", nil, "")
-	result := M{"checked_at": now(), "language": "go", "version": Version, "login": "passed", "create_operation": op["state"], "disable_operation": revoke["state"], "subscriptions": "downloaded_then_404", "node_targets": revoke["targets"], "nodes": nodes["items"], "test_user": userID, "verified_usage": verifiedUsage, "lifecycle": lifecycleResult}
+	result := M{"checked_at": now(), "language": "go", "version": Version, "login": "passed", "create_operation": op["state"], "disable_operation": revoke["state"], "subscriptions": "downloaded_then_404", "node_targets": revoke["targets"], "nodes": nodes["items"], "test_user": userID, "verified_traffic": verifiedTraffic, "lifecycle": lifecycleResult}
 	check(os.MkdirAll(filepath.Dir(*report), 0700))
 	atomicWrite(*report, canonical(result), 0600)
 	emit(result)
 }
 
-func acceptanceUsageReady(user M) bool {
-	return mapping(user["quality"])["freshness"] == "current" && counter(user["upload_bytes"]) > 0 && counter(user["download_bytes"]) > 0
+func acceptanceTrafficReady(report, baseline M, targets []any) bool {
+	if len(targets) == 0 {
+		return false
+	}
+	findNode := func(doc M, id string) M {
+		for _, raw := range array(doc["nodes"]) {
+			if node := mapping(raw); str(node["id"]) == id {
+				return node
+			}
+		}
+		return M{}
+	}
+	for _, raw := range targets {
+		id := str(mapping(raw)["node_id"])
+		node, old := findNode(report, id), findNode(baseline, id)
+		quality := mapping(node["quality"])
+		if quality["freshness"] != "current" || quality["sampled_at"] == nil || str(quality["sampled_at"]) <= str(mapping(old["quality"])["sampled_at"]) {
+			return false
+		}
+		ready := false
+		for _, value := range array(node["inbounds"]) {
+			inbound := mapping(value)
+			if !boolean(inbound["active"]) || !contains([]string{"anytls", "tuic"}, str(inbound["protocol"])) {
+				continue
+			}
+			prior := M{}
+			for _, previous := range array(old["inbounds"]) {
+				if mapping(previous)["tag"] == inbound["tag"] {
+					prior = mapping(previous)
+				}
+			}
+			ready = ready || bytesInt(inbound["upload_bytes"]).Cmp(bytesInt(prior["upload_bytes"])) > 0 && bytesInt(inbound["download_bytes"]).Cmp(bytesInt(prior["download_bytes"])) > 0
+		}
+		if !ready {
+			return false
+		}
+	}
+	return true
 }

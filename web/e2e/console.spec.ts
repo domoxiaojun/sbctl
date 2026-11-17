@@ -286,7 +286,7 @@ for (const width of [375, 768, 1440]) for (const colorScheme of ['light', 'dark'
   })
 }
 
-for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 ${width}px`, async ({ page }, testInfo) => {
+for (const width of [375, 1440]) test(`协议入口和节点本地用户用量分开显示 ${width}px`, async ({ page }, testInfo) => {
   await page.setViewportSize({width,height:1000})
   const f=fixtures(Date.now()), node=f.nodes[0]
   node.inbounds=[{tag:'vmess-local',protocol:'vmess',port:23323,upload_bytes:'1024',download_bytes:'4096',started_at:new Date().toISOString(),active:true}]
@@ -295,8 +295,7 @@ for (const width of [375, 1440]) test(`协议入口和用户用量分开显示 $
   await page.route('**/api/v1/**', async route => {
     const path=new URL(route.request().url()).pathname
     if(path.endsWith('/session')) return route.fulfill({json:{admin_id:'test',display_name:'测试',csrf_token:'test'}})
-    if(path.endsWith('/traffic')) return route.fulfill({json:{scope:'inbounds',trend:[],trend_from:'',trend_to:'',nodes:[node],users:[],periods:[{node_id:node.id,history_started_at:null,status:'cumulative'}],from:'',to:'',timezone:'Asia/Singapore',as_of:new Date().toISOString()}})
-    if(path.includes('/usage')) return route.fulfill({json:{items:[],total:0,page:1,page_size:8}})
+    if(path.endsWith('/traffic')) return route.fulfill({json:{scope:'inbounds',trend:[],trend_from:'',trend_to:'',nodes:[node],periods:[{node_id:node.id,history_started_at:null,status:'cumulative'}],from:'',to:'',timezone:'Asia/Singapore',as_of:new Date().toISOString()}})
     return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'test'}})
   })
   await page.goto('http://127.0.0.1:14186/usage')

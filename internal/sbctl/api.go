@@ -216,7 +216,7 @@ func API(c *Control) http.Handler {
 	for _, route := range []struct {
 		path string
 		get  func() []M
-	}{{"nodes", v.Nodes}, {"users", v.Users}, {"usage", v.Usage}, {"operations", v.Operations}, {"alerts", v.Alerts}} {
+	}{{"nodes", v.Nodes}, {"users", v.Users}, {"operations", v.Operations}, {"alerts", v.Alerts}} {
 		auth("GET /api/v1/"+route.path, func(w http.ResponseWriter, r *http.Request, a M) {
 			f := filters(r)
 			jsonResponse(w, 200, Paginate(route.get(), f))

@@ -76,7 +76,6 @@ export const api = {
   userAudit: (id: string, signal?: AbortSignal) => request<Schema['UserAudit']>(`/users/${encodeURIComponent(id)}/audit`, 'GET', undefined, undefined, signal),
   groups: (signal?: AbortSignal) => request<Schema['Group'][]>('/groups', 'GET', undefined, undefined, signal),
   traffic: (f: TrafficFilters = {}, signal?: AbortSignal) => request<Schema['TrafficReport']>(`/traffic${query(f)}`, 'GET', undefined, undefined, signal),
-  usage: (f?: Filters, signal?: AbortSignal) => request<Schema['UsagePage']>(`/usage${query(f)}`, 'GET', undefined, undefined, signal),
   operations: (f?: Filters, signal?: AbortSignal) => request<Schema['OperationPage']>(`/operations${query(f)}`, 'GET', undefined, undefined, signal),
   operation: (id: string, signal?: AbortSignal) => request<Schema['Operation']>(`/operations/${encodeURIComponent(id)}`, 'GET', undefined, undefined, signal),
   createUser: (body: Schema['CreateUser'], key: string) => request<Schema['Accepted']>('/users', 'POST', body, key),

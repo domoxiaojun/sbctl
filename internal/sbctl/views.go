@@ -167,25 +167,6 @@ func (v Views) Quality(nodes []string, started string, t M) M {
 	}
 	return q
 }
-func totals(t M, nodes []string, user string) M {
-	out := M{}
-	for _, k := range []string{"upload_bytes", "download_bytes"} {
-		n := new(big.Int)
-		for _, node := range nodes {
-			for _, u := range array(mapping(mapping(t[node])["snapshot"])["users"]) {
-				r := mapping(u)
-				if user == "" || str(r["user_id"]) == user {
-					value, ok := new(big.Int).SetString(str(r[k]), 10)
-					if ok {
-						n.Add(n, value)
-					}
-				}
-			}
-		}
-		out[k] = n.String()
-	}
-	return out
-}
 func (v Views) Nodes() []M {
 	return v.nodesFrom(v.Telemetry())
 }
@@ -236,7 +217,6 @@ func (v Views) nodesFrom(t M) []M {
 			localUsers = append(localUsers, mapping(raw))
 		}
 		merge(row, M{"protocols": protocols, "status": status, "version": object([]byte(str(r["connection_json"])))["version"], "quality": q, "inbounds": inbounds, "local_users": localUsers, "total_inbounds": integer(mapping(snapshot)["total_inbounds"]), "inbound_upload_bytes": inboundUpload.String(), "inbound_download_bytes": inboundDownload.String()})
-		merge(row, totals(t, []string{id}, ""))
 		result = append(result, row)
 	}
 	return result
@@ -267,7 +247,6 @@ func (v Views) Users() []M {
 		ns := unique(nodes[id])
 		merge(u, M{"group_ids": unique(grants[id]), "node_count": len(ns), "quality": v.Quality(ns, str(u["created_at"]), t), "_regions": unique(regions[id])})
 		u["node_count"] = authorized[id]
-		merge(u, totals(t, ns, id))
 	}
 	return users
 }
@@ -318,13 +297,6 @@ func (v Views) Alerts() []M {
 	})
 	return rows
 }
-func (v Views) Usage() []M {
-	out := []M{}
-	for _, u := range v.Users() {
-		out = append(out, merge(pick(u, "display_name", "node_count", "upload_bytes", "download_bytes", "quality", "_regions"), M{"user_id": u["id"]}))
-	}
-	return out
-}
 func one(rows []M, id string) M {
 	for _, r := range rows {
 		if str(r["id"]) == id {
@@ -354,7 +326,6 @@ func (v Views) Overview() M {
 	nodes, users, ops, alerts := v.Nodes(), v.Users(), v.Operations(), v.Alerts()
 	r := M{"node_count": len(nodes), "online_count": 0, "offline_count": 0, "degraded_count": 0, "user_count": 0, "pending_count": 0, "as_of": now()}
 	regions := map[string]M{}
-	up, down := new(big.Int), new(big.Int)
 	for _, n := range nodes {
 		status := str(n["status"])
 		r[status+"_count"] = integer(r[status+"_count"]) + 1
@@ -367,10 +338,6 @@ func (v Views) Overview() M {
 		if status == "online" {
 			rr["online_count"] = integer(rr["online_count"]) + 1
 		}
-		a, _ := new(big.Int).SetString(str(n["upload_bytes"]), 10)
-		b, _ := new(big.Int).SetString(str(n["download_bytes"]), 10)
-		up.Add(up, a)
-		down.Add(down, b)
 	}
 	for _, u := range users {
 		if u["status"] == "active" {
@@ -394,13 +361,7 @@ func (v Views) Overview() M {
 		}
 	}
 	r["regions"] = rs
-	r["upload_bytes"] = up.String()
-	r["download_bytes"] = down.String()
 	r["operations"] = ops[:min(5, len(ops))]
 	r["alerts"] = as
-	f := defaultsFilters()
-	f.Sort = "bytes"
-	f.PageSize = 5
-	r["top_usage"] = Paginate(v.Usage(), f)["items"]
 	return r
 }

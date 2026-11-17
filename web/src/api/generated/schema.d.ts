@@ -177,23 +177,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/usage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Usage */
-        get: operations["get__usage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/operations": {
         parameters: {
             query?: never;
@@ -678,10 +661,6 @@ export interface components {
             revision: number;
             /** Users Count */
             users_count: number;
-            /** Upload Bytes */
-            upload_bytes: string;
-            /** Download Bytes */
-            download_bytes: string;
             quality: components["schemas"]["Quality"];
             inbounds: components["schemas"]["NodeInbound"][];
             inbound_upload_bytes: string;
@@ -770,18 +749,12 @@ export interface components {
             user_count: number;
             /** Pending Count */
             pending_count: number;
-            /** Upload Bytes */
-            upload_bytes: string;
-            /** Download Bytes */
-            download_bytes: string;
             /** Regions */
             regions: components["schemas"]["Region"][];
             /** Operations */
             operations: components["schemas"]["Operation"][];
             /** Alerts */
             alerts: components["schemas"]["Alert"][];
-            /** Top Usage */
-            top_usage: components["schemas"]["Usage"][];
             /**
              * As Of
              * Format: date-time
@@ -853,31 +826,6 @@ export interface components {
             /** Mihomo Url */
             mihomo_url?: string | null;
         };
-        /** Usage */
-        Usage: {
-            /** User Id */
-            user_id: string;
-            /** Display Name */
-            display_name: string;
-            /** Node Count */
-            node_count: number;
-            /** Upload Bytes */
-            upload_bytes: string;
-            /** Download Bytes */
-            download_bytes: string;
-            quality: components["schemas"]["Quality"];
-        };
-        /** UsagePage */
-        UsagePage: {
-            /** Total */
-            total: number;
-            /** Page */
-            page: number;
-            /** Page Size */
-            page_size: number;
-            /** Items */
-            items: components["schemas"]["Usage"][];
-        };
         /** User */
         User: {
             /** Id */
@@ -897,10 +845,6 @@ export interface components {
             group_ids: string[];
             /** Node Count */
             node_count: number;
-            /** Upload Bytes */
-            upload_bytes: string;
-            /** Download Bytes */
-            download_bytes: string;
             /**
              * Subscription State
              * @enum {string}
@@ -1037,14 +981,13 @@ export interface components {
         };
         TrafficReport: {
             /** @enum {string} */
-            scope: "inbounds" | "local" | "managed";
+            scope: "inbounds" | "local";
             /** @enum {string} */
             granularity: "hour" | "day" | "month";
             trend: components["schemas"]["TrafficDay"][];
             trend_from: string;
             trend_to: string;
             nodes: components["schemas"]["Node"][];
-            users: components["schemas"]["TrafficUser"][];
             periods: components["schemas"]["TrafficPeriod"][];
             from: string;
             to: string;
@@ -1086,16 +1029,6 @@ export interface components {
             history_started_at: string | null;
             /** @enum {string} */
             status: "cumulative" | "complete" | "partial" | "unavailable";
-        };
-        TrafficUser: {
-            user_id: string;
-            display_name: string;
-            node_id: string;
-            node_name: string;
-            upload_bytes: string;
-            download_bytes: string;
-            quality: components["schemas"]["Quality"];
-            deleted?: boolean;
         };
         TrafficDay: {
             /** @description 按日为 YYYY-MM-DD，按小时为 YYYY-MM-DDTHH:00，按月为 YYYY-MM，均为 UTC+8 */
@@ -2104,78 +2037,6 @@ export interface operations {
             };
         };
     };
-    get__usage: {
-        parameters: {
-            query?: {
-                q?: string;
-                page?: number;
-                page_size?: number;
-                status?: string;
-                region?: string;
-                sort?: "name" | "bytes" | "created";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["UsagePage"];
-                };
-            };
-            /** @description Unauthorized */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Forbidden */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
     get__operations: {
         parameters: {
             query?: {
@@ -2890,8 +2751,6 @@ export interface operations {
                 activity?: string;
                 /** @description 统计筛选 */
                 q?: string;
-                /** @description 统计筛选 */
-                user?: string;
                 /** @description 统计筛选 */
                 local_user?: string;
                 /** @description 统计筛选 */

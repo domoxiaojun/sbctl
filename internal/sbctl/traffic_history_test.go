@@ -9,7 +9,7 @@ import (
 )
 
 func historySnapshot(seq int64, sampled string, upload, download string) Snapshot {
-	s := Snapshot{SchemaVersion: 1, NodeID: "node_hk", LedgerID: "ledger_history", Seq: seq, StartedAt: "2026-01-01T00:00:00Z", SampledAt: &sampled, Users: []LedgerUser{{"usr_test", upload, download}}, Inbounds: []LedgerInbound{{Tag: "vmess", Protocol: "vmess", Port: 23323, Upload: upload, Download: download, StartedAt: "2026-01-01T00:00:00Z", Active: true}}, LocalUsers: []LedgerLocalUser{{Name: "local", Upload: upload, Download: download, StartedAt: "2026-01-01T00:00:00Z", Active: true}}, TotalInbounds: 1, Quality: DataQuality{Integrity: "ok"}}
+	s := Snapshot{SchemaVersion: 1, NodeID: "node_hk", LedgerID: "ledger_history", Seq: seq, StartedAt: "2026-01-01T00:00:00Z", SampledAt: &sampled, Inbounds: []LedgerInbound{{Tag: "vmess", Protocol: "vmess", Port: 23323, Upload: upload, Download: download, StartedAt: "2026-01-01T00:00:00Z", Active: true}}, LocalUsers: []LedgerLocalUser{{Name: "local", Upload: upload, Download: download, StartedAt: "2026-01-01T00:00:00Z", Active: true}}, TotalInbounds: 1, Quality: DataQuality{Integrity: "ok"}}
 	s.Seal()
 	return s
 }
@@ -146,24 +146,14 @@ func TestTrafficTrendFiltersAndMissingDays(t *testing.T) {
 	c := testControl(t)
 	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
 	tr.Initialize()
-	c.CreateUser("admin", "trend-user-000001", CreateUser{DisplayName: "同名", GroupIDs: []string{"grp_hk"}}, nil)
-	first := str(Views{c.Settings}.Users()[0]["id"])
-	c.CreateUser("admin", "trend-user-000002", CreateUser{DisplayName: "同名", GroupIDs: []string{"grp_hk"}}, nil)
-	second := ""
-	for _, user := range (Views{c.Settings}).Users() {
-		if str(user["id"]) != first {
-			second = str(user["id"])
-		}
-	}
 	for i, sampled := range []string{"2026-01-01T15:59:40Z", "2026-01-01T15:59:55Z", "2026-01-01T16:00:10Z"} {
 		snapshot := historySnapshot(int64(i+1), sampled, []string{"9007199254740993", "9007199254741093", "9007199254741393"}[i], []string{"200", "400", "800"}[i])
-		snapshot.Users = []LedgerUser{{first, snapshot.Inbounds[0].Upload, snapshot.Inbounds[0].Download}, {second, "100", "100"}}
 		snapshot.LocalUsers = append(snapshot.LocalUsers, LedgerLocalUser{Name: "local-other", Upload: "500", Download: "500", StartedAt: snapshot.StartedAt, Active: true})
 		snapshot.Seal()
 		tr.Ingest("node_hk", snapshot)
 	}
-	for _, scope := range []string{"inbounds", "local", "managed"} {
-		query := url.Values{"from": {"2026-01-01"}, "to": {"2026-01-03"}, "scope": {scope}, "user": {first}, "local_user": {"local"}}
+	for _, scope := range []string{"inbounds", "local"} {
+		query := url.Values{"from": {"2026-01-01"}, "to": {"2026-01-03"}, "scope": {scope}, "local_user": {"local"}}
 		report := Views{c.Settings}.TrafficReport(query)
 		points := array(report["trend"])
 		if len(points) != 3 || mapping(points[0])["upload_bytes"] != "100" || mapping(points[1])["upload_bytes"] != "300" {
@@ -171,9 +161,6 @@ func TestTrafficTrendFiltersAndMissingDays(t *testing.T) {
 		}
 		if mapping(points[2])["upload_bytes"] != nil || mapping(points[2])["status"] != "unavailable" {
 			t.Fatal("missing date fabricated as zero", points)
-		}
-		if len(array(report["users"])) != 1 || mapping(array(report["users"])[0])["user_id"] != first {
-			t.Fatal("exact user selection failed")
 		}
 		if len(array(mapping(array(report["nodes"])[0])["local_users"])) != 1 {
 			t.Fatal("exact local user selection failed")
