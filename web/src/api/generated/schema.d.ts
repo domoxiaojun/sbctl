@@ -667,6 +667,13 @@ export interface components {
             inbound_download_bytes: string;
             local_users: components["schemas"]["NodeLocalUser"][];
             total_inbounds: number;
+            config_event_seq: number;
+            config_semantic_hash: string;
+            /** @enum {string} */
+            config_sync_state: "unknown" | "synced" | "pending_restart" | "pending_sync" | "conflict";
+            config_sync_at: string | null;
+            config_sync_error: string | null;
+            config_external_drift: boolean;
         };
         /** NodePage */
         NodePage: {

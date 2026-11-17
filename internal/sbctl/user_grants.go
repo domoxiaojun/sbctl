@@ -163,6 +163,7 @@ func (c *Control) publishUser(d *DB, u M) {
 		if c.Public.Current()[str(u["token_hash"])] != nil {
 			c.Public.Revoke(str(u["token_hash"]))
 		}
+		d.Exec("UPDATE subscriptions SET state='revoked' WHERE user_id=?", u["id"])
 		return
 	}
 	files := renderSubscriptions(eps)

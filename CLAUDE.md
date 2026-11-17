@@ -55,7 +55,7 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 
 ### 主控到节点：只有受限 SSH 固定命令
 
-`transport.go` 的 `SSH.Call` 通过 `/usr/bin/ssh` 以 stdin/stdout 传 JSON。节点上两个账号被 `authorized_keys` 的 `from=,restrict,command=` 固定到入口脚本（`ops/controller/node/*-entry.sh`）：发布账号进入 `sbctl-node rpc`，统计账号进入 `sbctl-node stats-rpc`。管理地址必须是 Tailscale 地址。节点侧唯一的动作表是 `node_inspection.go` 的 `NodeRPC`（`status`/`submit`、`inspect`、`configure`、`diagnose`、`protocols`、`protocol_change`、`config`、`config_change`、`restart`、`maintenance_receipt`）；不存在任意远程命令，新增能力意味着新增一个受校验的动作，并且主控与节点工具要一起升级。
+`transport.go` 的 `SSH.Call` 通过 `/usr/bin/ssh` 以 stdin/stdout 传 JSON。节点上两个账号被 `authorized_keys` 的 `from=,restrict,command=` 固定到入口脚本（`ops/controller/node/*-entry.sh`）：发布账号进入 `sbctl-node rpc`，统计账号进入 `sbctl-node stats-rpc`。管理地址必须是 Tailscale 地址。节点侧唯一的动作表是 `node_inspection.go` 的 `NodeRPC`（`status`/`submit`、`inspect`、`configure`、`diagnose`、`protocols`、`protocol_change`、`config`、`config_change`、`restart`、`maintenance_receipt`、`config_snapshot`、`adopt_config`）；不存在任意远程命令，新增能力意味着新增一个受校验的动作，并且主控与节点工具要一起升级。
 
 ### 三条链路
 
@@ -63,7 +63,7 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 2. **节点维护**（接管、协议入口增改启停删、配置片段修改、受控重启）。`POST /api/v1/node-jobs` 写入 `node_jobs`，worker 的 `RunNodeJob` 执行；节点侧 `NodeMaintenance.apply`（`protocol_management.go`，配置片段见 `config_management.go`）先落盘包含全部受影响文件前后内容的计划，再写入、重启、探针验证，失败自动回滚并保留回执。它与同一节点的授权链路互斥：提交时有待处理授权返回 `NODE_BUSY`，执行时遇到则保持排队；靠 `node_management.version`、`management_job_id` 和节点的 `maintenance_receipt` 做丢回执与中断后的恢复。新增一种会改动节点的任务类型时，SQL 里的 `kind IN ('configure','protocol_change','config_change','restart')` 列表、`mutatingNodeJob` 和 `transport.go` 的超时列表都要同步。
 3. **流量统计**。节点 `sbctl-node collect` 每 5 秒用 grpcurl 读取 sing-box V2Ray API 计数（`reset:false`），`Ledger.Ingest` 按容器运行周期（epoch）把增量累加进 ledger.db 并导出 `export.json`。主控 `sync` 用统计账号拉取，`Traffic.Ingest` 校验序号、累计不回退、统计身份不变后写入 traffic.db，并按 UTC+8 记录日增量和小时增量（小时保留约 62 天，按月趋势由日增量折叠）。API 侧 `Views`（`views.go`、`traffic_history.go`）只读这些导出文件。统计有三个互不相加的角度：受管用户（`usr_*`）、入口（inbound tag）、节点本地命名用户。
 
-在这个系统里，**配置生效等于重建 sing-box 容器**：没有热重载，任何授权或协议变更都会让该节点的现有连接短暂中断。容器入口是 `guard.sh`，只有 `safety/manifest` 为 `allowed` 且 `config.json` 的 SHA-256 与清单一致才启动，用来保证撤销过的配置不会在重启后复活。
+在这个系统里，**配置生效等于重建 sing-box 容器**：没有热重载，任何授权或协议变更都会让该节点的现有连接短暂中断。容器入口是 `guard.sh`，只检查受控安全状态和版本格式；配置语义摘要由节点 helper 在启动后观察并按事件序号同步，避免格式化或手工修改非受管字段阻止 sing-box 启动。
 
 每个节点受管的入口固定为两个（一个 AnyTLS、一个 TUIC），用户授权、订阅和探针都绑定在这两个入口上；其余入口只做维护与统计。
 

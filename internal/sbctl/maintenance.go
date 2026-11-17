@@ -79,7 +79,7 @@ func PrepareNode(input M) {
 			u := uuid.NewString()
 			id = &u
 		}
-		probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), id})
+		probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), id, 0})
 	}
 	atomicWrite(s.TemplateFile, template, 0600)
 	atomicWrite(s.ProbeFile, canonical(probes), 0600)

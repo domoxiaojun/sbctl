@@ -67,7 +67,7 @@ func targets(d *DB, groups []string) []M {
 	if len(d.Rows("SELECT id FROM groups WHERE id IN ("+q+")", args...)) != len(groups) {
 		fail("GROUP_UNKNOWN", "节点组不存在")
 	}
-	nodes := d.Rows("SELECT DISTINCT n.* FROM nodes n JOIN group_nodes g ON g.node_id=n.id WHERE g.group_id IN ("+q+") AND n.enabled=1 ORDER BY n.id", args...)
+	nodes := d.Rows("SELECT DISTINCT n.* FROM nodes n JOIN group_nodes g ON g.node_id=n.id WHERE g.group_id IN ("+q+") AND n.enabled=1 AND NOT EXISTS(SELECT 1 FROM node_config_snapshots s WHERE s.node_id=n.id AND s.state IN ('conflict','pending_sync','pending_restart')) ORDER BY n.id", args...)
 	if len(nodes) == 0 {
 		fail("GRANT_EMPTY", "所选节点组没有可管理节点")
 	}
@@ -85,7 +85,7 @@ func (c *Control) credential(d *DB, user string, node M, protocol string, existi
 		u = nullable(str(existing["uuid"]))
 	}
 	generation := integer(d.Value("SELECT COALESCE(MAX(generation),0)+1 FROM credentials WHERE user_id=? AND node_id=? AND protocol=?", user, node["id"], protocol))
-	cred := Credential{user, protocol, identifier("cred"), generation, password, u}
+	cred := Credential{user, protocol, identifier("cred"), generation, password, u, 0}
 	cred.Validate()
 	d.Exec("INSERT INTO credentials(id,user_id,node_id,protocol,generation,secret_ciphertext,fingerprint) VALUES (?,?,?,?,?,?,?)", cred.CredentialID, user, node["id"], protocol, generation, c.Vault.Encrypt(M{"password": cred.Password, "uuid": cred.UUID}), cred.Fingerprint())
 }

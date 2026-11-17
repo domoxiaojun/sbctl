@@ -196,7 +196,7 @@ func TestJSONAndWireValidation(t *testing.T) {
 		expectFault(t, "INVALID_JSON", func() { object([]byte(raw)) })
 	}
 	expectFault(t, "INVALID_REQUEST", func() { var c CreateUser; decode([]byte(`{"display_name":"x","unexpected":true}`), &c) })
-	r := NodeRequest{SchemaVersion: 1, NodeID: "node_hk", RequestID: "req_1", NodeRevision: 1, TemplateHash: strings.Repeat("a", 64), EngineBuildID: strings.Repeat("b", 64), Users: []Credential{{"usr_alice", "anytls", "cred_alice", 1, "password", nil}}, Revoked: []string{}}
+	r := NodeRequest{SchemaVersion: 1, NodeID: "node_hk", RequestID: "req_1", NodeRevision: 1, TemplateHash: strings.Repeat("a", 64), EngineBuildID: strings.Repeat("b", 64), Users: []Credential{{"usr_alice", "anytls", "cred_alice", 1, "password", nil, 0}}, Revoked: []string{}}
 	r.Seal()
 	r.Verify()
 	r.Users[0].Password = "changed"

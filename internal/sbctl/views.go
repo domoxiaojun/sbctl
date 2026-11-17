@@ -173,7 +173,7 @@ func (v Views) Nodes() []M {
 func (v Views) nodesFrom(t M) []M {
 	var rows []M
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		rows = d.Rows("SELECT n.*,(SELECT count(DISTINCT user_id) FROM credentials WHERE node_id=n.id AND revoked=0) AS users_count FROM nodes n ORDER BY n.id LIMIT 1001")
+		rows = d.Rows("SELECT n.*,(SELECT count(DISTINCT user_id) FROM credentials WHERE node_id=n.id AND revoked=0) AS users_count,COALESCE(cs.event_seq,0) AS config_event_seq,COALESCE(cs.semantic_hash,'') AS config_semantic_hash,COALESCE(cs.state,'unknown') AS config_sync_state,cs.updated_at AS config_sync_at,NULLIF(cs.error_code,'') AS config_sync_error FROM nodes n LEFT JOIN node_config_snapshots cs ON cs.node_id=n.id ORDER BY n.id LIMIT 1001")
 	})
 	result := []M{}
 	for _, r := range rows {
@@ -182,7 +182,7 @@ func (v Views) nodesFrom(t M) []M {
 		status := "offline"
 		if q["freshness"] == "current" {
 			status = "online"
-			if q["integrity_state"] != "ok" || integer(r["revision"]) != integer(r["applied_revision"]) {
+			if q["integrity_state"] != "ok" || integer(r["revision"]) != integer(r["applied_revision"]) || str(r["config_sync_error"]) != "" || (str(r["config_sync_state"]) != "" && str(r["config_sync_state"]) != "synced" && str(r["config_sync_state"]) != "unknown") {
 				status = "degraded"
 			}
 		}
@@ -196,7 +196,8 @@ func (v Views) nodesFrom(t M) []M {
 			}
 			protocols = append(protocols, p)
 		}
-		row := pick(r, "id", "name", "region", "location", "management_address", "public_host", "revision", "users_count")
+		row := pick(r, "id", "name", "region", "location", "management_address", "public_host", "revision", "users_count", "config_event_seq", "config_semantic_hash", "config_sync_state", "config_sync_at", "config_sync_error")
+		row["config_external_drift"] = str(r["config_sync_state"]) != "unknown" && str(r["config_sync_state"]) != "synced"
 		// The snapshot stores entrance counters under its inbounds field.
 		inbounds := []M{}
 		inboundUpload, inboundDownload := new(big.Int), new(big.Int)

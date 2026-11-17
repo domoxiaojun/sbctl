@@ -22,6 +22,7 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
   let state: State = { ...fixtures(now()), requests: {}, signedIn: true }
   try { const saved = storage?.getItem(storageKey); if (saved) { const parsed = JSON.parse(saved) as State; if (parsed.marker === state.marker) state = parsed } } catch { /* Synthetic demo can reset if browser storage is unavailable. */ }
   for (const u of state.users) {u.metadata_version??=0;u.archived??=false;u.archived_at??=null;u.subscription_generation??=1}
+  for (const n of state.nodes) {n.config_event_seq??=0;n.config_semantic_hash??='';n.config_sync_state??='unknown';n.config_sync_at??=null;n.config_sync_error??=null;n.config_external_drift??=false}
   const nodeManagement = createNodeManagementDemo(() => state, storage)
   const save = () => { try { storage?.setItem(storageKey, JSON.stringify(state)) } catch { /* In-memory demo still works. */ } }
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } })

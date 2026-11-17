@@ -265,6 +265,10 @@ func (w *Worker) RunNodeJob(job M) {
 	var result M
 	err := Attempt(func() {
 		draft := input.Draft
+		if mutatingNodeJob(input.Kind) {
+			unlock := w.nodeLock(draft.ID)
+			defer unlock()
+		}
 		switch input.Kind {
 		case "protocols", "protocol_change", "config_change", "restart":
 			result = w.executeNodeAction(job, input)
@@ -375,7 +379,7 @@ func (w *Worker) RunNodeJob(job M) {
 		state = "failed"
 		f := PublicFault(err)
 		code, message = f.Code, f.Message
-		if code == "AUTHORIZATION_PENDING" {
+		if code == "AUTHORIZATION_PENDING" || code == "LOCK_BUSY" || code == "CONFIG_SYNC_PENDING" {
 			state, code, nextAttempt = "queued", "", timestamp()+1
 		}
 	} else {

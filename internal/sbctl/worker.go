@@ -45,10 +45,13 @@ func (w *Worker) Request(task M) (NodeRequest, NodeConnection) {
 		if n == nil {
 			fail("NODE_UNKNOWN", "节点不存在")
 		}
+		if state := str(d.Value("SELECT state FROM node_config_snapshots WHERE node_id=?", n["id"])); state == "conflict" || state == "pending_restart" || state == "pending_sync" {
+			fail("CONFIG_SYNC_PENDING", "等待节点配置同步或处理配置冲突后继续授权", 409)
+		}
 		users := []Credential{}
 		for _, r := range d.Rows("SELECT c.* FROM credentials c JOIN users u ON u.id=c.user_id WHERE c.node_id=? AND c.revoked=0 AND u.status<>'disabled' ORDER BY c.id", n["id"]) {
 			secret := mapping(w.Control.Vault.Decrypt(str(r["secret_ciphertext"])))
-			users = append(users, Credential{str(r["user_id"]), str(r["protocol"]), str(r["id"]), integer(r["generation"]), str(secret["password"]), nullable(str(secret["uuid"]))})
+			users = append(users, Credential{str(r["user_id"]), str(r["protocol"]), str(r["id"]), integer(r["generation"]), str(secret["password"]), nullable(str(secret["uuid"])), integer(secret["external_sync_seq"])})
 		}
 		revoked := []string{}
 		for _, r := range d.Rows("SELECT fingerprint FROM revocations WHERE node_id=? ORDER BY fingerprint", n["id"]) {
@@ -90,6 +93,8 @@ func (w *Worker) Step() bool {
 func (w *Worker) Deliver(task M) {
 	state, message, done, delay := "queued", "节点已持久接收，等待执行", false, 0.5
 	err := Attempt(func() {
+		unlock := w.nodeLock(str(task["node_id"]))
+		defer unlock()
 		req, link := w.Request(task)
 		value := w.Transport.Call(link, M{"action": "submit", "request": req}, false)
 		if str(value["node_id"]) != req.NodeID {
@@ -152,6 +157,11 @@ func (w *Worker) Deliver(task M) {
 		if f.Code != "NODE_UNREACHABLE" {
 			message = f.Message
 		}
+		if f.Code == "CONFIG_SYNC_PENDING" {
+			// The next idle dispatcher pass observes the external node edit
+			// before this task is sealed and delivered again.
+			delay = 1
+		}
 	}
 	transaction(w.Control.Settings.ControlDB, true, func(d *DB) {
 		outState := "queued"
@@ -199,6 +209,7 @@ func (w *Worker) Run(ctx context.Context, parallel int) {
 		}()
 	}
 	last := time.Time{}
+	lastConfigSync := time.Time{}
 	for {
 		claimed := false
 		err := Attempt(func() {
@@ -221,6 +232,10 @@ func (w *Worker) Run(ctx context.Context, parallel int) {
 			if settled || time.Since(last) > 5*time.Second {
 				w.Reconcile()
 				settled, last = false, time.Now()
+			}
+			if running < parallel && jobs < jobLimit && time.Since(lastConfigSync) > 5*time.Second {
+				start(true, w.SyncConfigSnapshots)
+				lastConfigSync = time.Now()
 			}
 		})
 		delay := 250 * time.Millisecond

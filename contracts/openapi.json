@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.10.5",
+    "version": "0.10.6",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -3031,6 +3031,45 @@
           },
           "total_inbounds": {
             "type": "integer"
+          },
+          "config_event_seq": {
+            "type": "integer"
+          },
+          "config_semantic_hash": {
+            "type": "string"
+          },
+          "config_sync_state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "synced",
+              "pending_restart",
+              "pending_sync",
+              "conflict"
+            ]
+          },
+          "config_sync_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config_sync_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "config_external_drift": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -3052,7 +3091,13 @@
           "inbound_upload_bytes",
           "inbound_download_bytes",
           "local_users",
-          "total_inbounds"
+          "total_inbounds",
+          "config_event_seq",
+          "config_semantic_hash",
+          "config_sync_state",
+          "config_sync_at",
+          "config_sync_error",
+          "config_external_drift"
         ],
         "title": "Node"
       },

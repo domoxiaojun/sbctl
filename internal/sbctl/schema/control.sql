@@ -92,3 +92,9 @@ CREATE TABLE IF NOT EXISTS user_management (
 CREATE TABLE IF NOT EXISTS node_catalog (
  node_id TEXT PRIMARY KEY REFERENCES nodes(id), catalog_json TEXT NOT NULL, checked_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS node_config_snapshots (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id), event_seq INTEGER NOT NULL,
+ semantic_hash TEXT NOT NULL, runtime_epoch TEXT NOT NULL,
+ config_ciphertext TEXT NOT NULL, projection_ciphertext TEXT NOT NULL,
+ state TEXT NOT NULL, error_code TEXT, checked_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);

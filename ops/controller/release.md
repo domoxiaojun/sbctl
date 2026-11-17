@@ -7,7 +7,7 @@
 1. 同步 `internal/sbctl/common.go`、OpenAPI 的版本及 Compose 默认标签。
 2. 更新执行计划，按修改类型运行必要检查。推送同版本 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`。
 3. CI 执行 Go 竞争检测、前端契约/测试/构建、amd64 浏览器流程、两种架构镜像启动检查，再推送各架构镜像。
-4. 两种架构都通过后发布版本标签和 `latest`，GitHub Release 提供静态程序包、SHA-256 校验文件及记录镜像 digest/源码提交的 `release.json`。
+4. 两种架构都通过后发布版本标签和 `latest`，GitHub Release 提供静态程序及 `guard.sh` 包、SHA-256 校验文件及记录镜像 digest/源码提交的 `release.json`。
 
 工作流只在 `domoxiaojun/sbctl` 的版本标签运行；所有 Actions 固定提交，发布权限限制在相应 job。构建上下文仅包含指定程序和 `web/dist`，不包含配置、密钥、数据库、运维快照或源码。不要移动已发布版本标签；失败需修改代码时使用新的补丁版本。
 
@@ -17,7 +17,7 @@
 
 先核对发行回执及 SHA-256，拉取精确 digest。停止相关写入服务后备份 Compose、现有程序、配置和数据。保留原镜像；无需重新初始化管理员或数据库。将 `/opt/sbctl/.env` 中的 `SBCTL_IMAGE` 设为经过验证的 `ghcr.io/domoxiaojun/sbctl@sha256:…`，Compose 使用该覆盖值启动四个服务。
 
-升级节点时只替换 `/opt/sbctl/bin/sbctl-node` 并重启 sbctl 的发布/采集服务。保留代理 Compose、模板、探针凭据、节点安全版本和累计账本；单独通过节点管理检查/确认验证绑定。程序升级不直接重建 sing-box。
+从 v0.10.5 升至 v0.10.6 时，先停止 sbctl 节点 worker 并备份节点状态和守卫，再用发行包中的 `guard.sh` 替换节点原 guard，最后替换 `/opt/sbctl/bin/sbctl-node` 并启用新版发布/采集服务。新版 helper 会把旧三行 manifest 迁移为格式 2；旧 guard 无法读取新清单，必须遵守先 guard、后 worker 的顺序。主控也须配套升级，才能读取新配置快照 RPC。保留代理 Compose、模板、探针凭据、节点安全版本、配置观察序号、接管日志和累计账本；单独通过节点管理检查/确认验证绑定。程序升级不直接重建 sing-box。本版本发行不代表已完成真实服务器升级和配置同步验收。
 
 程序故障可以恢复旧程序和旧镜像。若已经执行了授权或撤销，不能用旧数据库/节点安全状态覆盖新记录；安全状态、撤销意图与配置须保持一致后再恢复。
 

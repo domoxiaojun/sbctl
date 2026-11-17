@@ -53,33 +53,45 @@ func (e DockerEngine) Runtime() Runtime {
 	}
 	o := objs[0]
 	state, config := mapping(o["State"]), mapping(o["Config"])
-	r := Runtime{ContainerID: str(o["Id"]), StartedAt: str(state["StartedAt"]), Running: boolean(state["Running"]), Paused: boolean(state["Paused"]), Restarting: boolean(state["Restarting"]), ImageDigest: "sha256:" + e.Settings.EngineBuildID, Users: []string{}}
-	err := Attempt(func() {
+	r := Runtime{ContainerID: str(o["Id"]), StartedAt: str(state["StartedAt"]), Running: boolean(state["Running"]), Paused: boolean(state["Paused"]), Restarting: boolean(state["Restarting"]), ImageDigest: str(o["Image"]), Users: []string{}}
+	// Physical liveness is independent of a later edit to a bind-mounted file
+	// or a preparing/blocked manifest installed for the next restart.
+	_ = Attempt(func() {
 		binding := object(read(filepath.Join(e.Settings.SafetyDir, "runtime.json")))
-		r.ConfigHash = str(binding["config_hash"])
 		r.NodeRevision = integer(binding["node_revision"])
 		r.Users = stringsOf(binding["users"])
-		manifest := strings.Split(string(read(filepath.Join(e.Settings.SafetyDir, "manifest"))), "\n")
-		configBytes := read(filepath.Join(e.Settings.ConfigDir, "config.json"))
-		ch := hash(configBytes)
-		r.Statistics = statisticsManifest(object(configBytes), r.Users)
-		actual := []string{}
-		if r.Running {
-			actual = strings.Split(string(e.docker(5*time.Second, "exec", e.Settings.Container, "cat", "/var/lib/sing-box/sbctl-started")), "\n")
-		}
-		r.Running = r.Running && len(manifest) >= 2 && manifest[0] == "allowed" && manifest[1] == ch && len(actual) >= 2 && actual[0] == ch && actual[1] == fmt.Sprint(r.NodeRevision) && r.ConfigHash == ch && str(o["Image"]) == "sha256:"+e.Settings.EngineBuildID && strings.Join(stringsOf(config["Entrypoint"]), " ") == "/bin/sh /run/sbctl/guard.sh"
-		guardMount, configMount := false, false
-		r.Running = r.Running && config["Image"] == e.Settings.Image
-		for _, value := range array(o["Mounts"]) {
-			m := mapping(value)
-			guardMount = guardMount || (m["Source"] == e.Settings.SafetyDir && m["Destination"] == "/run/sbctl" && !boolean(m["RW"]))
-			configMount = configMount || (m["Source"] == e.Settings.ConfigDir && m["Destination"] == "/etc/sing-box" && !boolean(m["RW"]))
-		}
-		r.Running = r.Running && guardMount && configMount
 	})
-	if err != nil {
-		r.Running = false
+	if r.Running {
+		_ = Attempt(func() {
+			started := strings.Split(strings.TrimSpace(string(e.docker(5*time.Second, "exec", e.Settings.Container, "cat", "/var/lib/sing-box/sbctl-started"))), "\n")
+			if len(started) >= 2 && hashRE.MatchString(started[0]) {
+				r.ConfigHash = started[0]
+			}
+		})
 	}
+	_ = Attempt(func() {
+		data := read(filepath.Join(e.Settings.ConfigDir, "config.json"))
+		if hash(data) == r.ConfigHash {
+			config := object(data)
+			r.SemanticHash = digest(config)
+			r.Statistics = statisticsManifest(config, r.Users)
+		} else {
+			observed := configObservation(e.Settings)
+			if observed["loaded_epoch"] == r.Epoch() {
+				r.SemanticHash = str(observed["loaded_semantic_hash"])
+				if r.SemanticHash == digest(object(data)) {
+					r.Statistics = statisticsManifest(object(data), r.Users)
+				}
+			}
+		}
+	})
+	guardMount, configMount := false, false
+	for _, raw := range array(o["Mounts"]) {
+		m := mapping(raw)
+		guardMount = guardMount || (m["Source"] == e.Settings.SafetyDir && m["Destination"] == "/run/sbctl" && !boolean(m["RW"]))
+		configMount = configMount || (m["Source"] == e.Settings.ConfigDir && m["Destination"] == "/etc/sing-box" && !boolean(m["RW"]))
+	}
+	r.Running = r.Running && guardMount && configMount && str(o["Image"]) == "sha256:"+e.Settings.EngineBuildID && config["Image"] == e.Settings.Image && strings.Join(stringsOf(config["Entrypoint"]), " ") == "/bin/sh /run/sbctl/guard.sh"
 	return r
 }
 func (e DockerEngine) Verify(req NodeRequest, previous *NodeRequest) {

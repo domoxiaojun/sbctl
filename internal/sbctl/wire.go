@@ -14,19 +14,27 @@ type Credential struct {
 	Generation   int64   `json:"generation"`
 	Password     string  `json:"password"`
 	UUID         *string `json:"uuid"`
+	ExternalSeq  int64   `json:"external_sync_seq,omitempty"`
 }
 
-func (c Credential) Fingerprint() string {
+func (c Credential) authenticationFingerprint() string {
 	s := c.Password
 	if c.Protocol == "tuic" && c.UUID != nil {
 		s = *c.UUID
 	}
 	return hash([]byte(c.Protocol + ":" + s))
 }
+func (c Credential) Fingerprint() string {
+	fp := c.authenticationFingerprint()
+	if c.ExternalSeq > 0 {
+		return digest(M{"authentication": fp, "credential_id": c.CredentialID, "generation": c.Generation, "external_sync_seq": c.ExternalSeq})
+	}
+	return fp
+}
 func (c *Credential) Validate() {
 	validIdentity(c.UserID)
 	validIdentity(c.CredentialID)
-	if c.Generation < 1 || c.Generation > 1000000 || utf8.RuneCountInString(c.Password) < 1 || utf8.RuneCountInString(c.Password) > 1024 {
+	if c.Generation < 1 || c.Generation > 1000000 || c.ExternalSeq < 0 || utf8.RuneCountInString(c.Password) < 1 || utf8.RuneCountInString(c.Password) > 1024 {
 		fail("CREDENTIAL_INVALID", "凭据字段无效")
 	}
 	switch c.Protocol {
@@ -74,17 +82,18 @@ func (r *NodeRequest) Validate() {
 		}
 		revoked[f] = true
 	}
-	ids, prints := map[string]bool{}, map[string]bool{}
+	ids, prints, authentication := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	comb := map[string]int{}
 	for i := range r.Users {
 		c := &r.Users[i]
 		c.Validate()
 		fp := c.Fingerprint()
-		if ids[c.CredentialID] || prints[fp] || revoked[fp] {
+		if ids[c.CredentialID] || prints[fp] || authentication[c.authenticationFingerprint()] || revoked[fp] {
 			fail("REQUEST_INVALID", "重复或已撤销凭据")
 		}
 		ids[c.CredentialID] = true
 		prints[fp] = true
+		authentication[c.authenticationFingerprint()] = true
 		k := c.UserID + ":" + c.Protocol
 		comb[k]++
 		if comb[k] > 2 {
@@ -116,6 +125,7 @@ type Runtime struct {
 	Paused       bool                `json:"paused"`
 	Restarting   bool                `json:"restarting"`
 	ConfigHash   string              `json:"config_hash"`
+	SemanticHash string              `json:"semantic_hash,omitempty"`
 	NodeRevision int64               `json:"node_revision"`
 	Users        []string            `json:"users"`
 	ImageDigest  string              `json:"image_digest"`

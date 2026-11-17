@@ -386,6 +386,9 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		}
 	} else {
 		rt := engine.Runtime()
+		if changing && observedConfigChanged(s) {
+			fail("CONFIG_SYNC_PENDING", "配置已被手工修改，等待同步后再编辑", 409)
+		}
 		if !rt.Running && changing {
 			fail("NODE_NOT_READY", "节点运行绑定异常，请先检查并更新绑定", 409)
 		}
@@ -419,7 +422,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			runtime := object([]byte(str(before["runtime"])))
 			runtime["config_hash"] = hash([]byte(str(after["config"])))
 			after["runtime"] = string(canonical(runtime))
-			after["guard"] = "allowed\n" + str(runtime["config_hash"]) + "\n" + str(runtime["node_revision"]) + "\n"
+			after["guard"] = "allowed\n2\n" + str(runtime["node_revision"]) + "\n"
 		}
 		candidate := filepath.Join(s.StateDir, "protocol-candidate.json")
 		atomicWrite(candidate, []byte(str(after["config"])), 0600)
@@ -436,7 +439,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		if exists(str(path)) {
 			actual = string(read(str(path)))
 		}
-		if actual != str(before[key]) && actual != str(after[key]) && !(key == "guard" && exists(pendingPath) && actual == "blocked\n\n0\n") {
+		if actual != str(before[key]) && actual != str(after[key]) && !(key == "guard" && exists(pendingPath) && (actual == "blocked\n\n0\n" || actual == "blocked\n2\n0\n")) {
 			fail("PROTOCOL_CHANGED", "维护期间配置被其他操作修改，已停止覆盖，请检查节点", 409)
 		}
 	}
@@ -458,9 +461,12 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 				mode = 0640
 			}
 			if key == "runtime" || key == "guard" {
-				mode = 0644
+				mode = 0640
 			}
 			atomicWrite(path, data, mode)
+			if (key == "runtime" || key == "guard") && os.Geteuid() == 0 {
+				check(os.Chown(path, 0, s.GID))
+			}
 			if key == "config" && os.Geteuid() == 0 {
 				check(os.Chown(path, 0, s.GID))
 			}
@@ -472,6 +478,9 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			NewAgent(s, engine).Guard(false, "", 0)
 		}
 		writeSet(after)
+		if changing {
+			recordControlledConfig(next, []byte(str(after["config"])))
+		}
 		updated := m.Engine(next)
 		if boolean(plan["restart"]) {
 			rt := updated.Runtime()
@@ -487,6 +496,9 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	if err != nil {
 		rollback := Attempt(func() {
 			writeSet(before)
+			if changing {
+				recordControlledConfig(original, []byte(str(before["config"])))
+			}
 			m.Engine(original).Restart()
 			if !m.Engine(original).Runtime().Running {
 				fail("ROLLBACK_FAILED", "原配置未恢复运行", 503)

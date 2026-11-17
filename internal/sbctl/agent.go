@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,12 +30,34 @@ func (a *Agent) Initialize() {
 		fail("NODE_STATE_LOST", "安全状态库缺失但存在旧启动清单，拒绝重建")
 	}
 	check(os.MkdirAll(a.Settings.StateDir, 0700))
+	a.migrateGuardManifest()
 	initialize(a.DBPath, "node")
 	// Repair historical nonterminal requests left behind by older executors.
 	// Only the highest revision can still be applied.
 	transaction(a.DBPath, true, func(d *DB) {
 		d.Exec("UPDATE requests SET state='superseded' WHERE revision<(SELECT max(revision) FROM requests) AND state NOT IN ('verified','superseded')")
 	})
+}
+
+func (a *Agent) migrateGuardManifest() {
+	unlock := a.Lock()
+	defer unlock()
+	path := filepath.Join(a.Settings.SafetyDir, "manifest")
+	if !exists(path) {
+		return
+	}
+	lines := strings.Split(string(read(path)), "\n")
+	if len(lines) < 4 || (lines[1] != "2" && !hashRE.MatchString(lines[1])) {
+		return
+	}
+	if lines[0] != "allowed" && lines[0] != "blocked" {
+		return
+	}
+	if rev, err := strconv.ParseInt(lines[2], 10, 64); err != nil || rev < 0 {
+		return
+	}
+	pathData := []byte(fmt.Sprintf("%s\n2\n%s\n", lines[0], lines[2]))
+	writeSafety(a.Settings, path, pathData)
 }
 func (a *Agent) Lock() func() {
 	return fileLock(filepath.Join(a.Settings.StateDir, "security.lock"), 60*time.Second)
@@ -44,7 +67,12 @@ func (a *Agent) Guard(allow bool, configHash string, revision int64) {
 	if allow {
 		state = "allowed"
 	}
-	atomicWrite(filepath.Join(a.Settings.SafetyDir, "manifest"), []byte(fmt.Sprintf("%s\n%s\n%d\n", state, configHash, revision)), 0644)
+	// Format 2 deliberately carries no configuration digest. The sing-box
+	// container must be able to start after an administrator reformats or edits
+	// an unmanaged part of config.json; the helper observes that change after
+	// startup and synchronizes it with the control plane.
+	path := filepath.Join(a.Settings.SafetyDir, "manifest")
+	writeSafety(a.Settings, path, []byte(fmt.Sprintf("%s\n2\n%d\n", state, revision)))
 }
 func (a *Agent) Probes() []Credential {
 	var probes []Credential
@@ -146,6 +174,9 @@ func (a *Agent) Accept(r NodeRequest) M {
 	}
 	unlock := a.Lock()
 	defer unlock()
+	if observedConfigChanged(a.Settings) || exists(filepath.Join(a.Settings.StateDir, "config-adoption.json")) {
+		fail("CONFIG_SYNC_PENDING", "节点配置已被手工修改，等待主控同步后再执行授权", 409)
+	}
 	var result M
 	transaction(a.DBPath, true, func(d *DB) {
 		old := d.One("SELECT * FROM requests WHERE id=? OR revision=?", r.RequestID, r.NodeRevision)
@@ -196,6 +227,9 @@ func (a *Agent) ApplyOnce() bool {
 	if row == nil || contains([]string{"verified", "revoke_blocked", "failed", "superseded"}, str(row["state"])) {
 		return false
 	}
+	if observedConfigChanged(a.Settings) || exists(filepath.Join(a.Settings.StateDir, "config-adoption.json")) {
+		return false
+	}
 	r := parseRequest(object([]byte(str(row["document"]))))
 	var prev *NodeRequest
 	if prevRow != nil {
@@ -234,6 +268,9 @@ func (a *Agent) ApplyOnce() bool {
 				if superseded {
 					return
 				}
+				if observedConfigChanged(a.Settings) {
+					fail("CONFIG_SYNC_PENDING", "配置已变化，等待同步后继续授权", 409)
+				}
 				a.Guard(false, "", 0)
 				path := filepath.Join(a.Settings.ConfigDir, "config.json")
 				atomicWrite(path, content, 0640)
@@ -244,8 +281,15 @@ func (a *Agent) ApplyOnce() bool {
 				for _, c := range r.Users {
 					users = append(users, c.UserID)
 				}
-				atomicWrite(filepath.Join(a.Settings.SafetyDir, "runtime.json"), canonical(M{"node_revision": r.NodeRevision, "config_hash": ch, "users": unique(users)}), 0644)
+				runtimePath := filepath.Join(a.Settings.SafetyDir, "runtime.json")
+				atomicWrite(runtimePath, canonical(M{"node_revision": r.NodeRevision, "config_hash": ch, "users": unique(users)}), 0640)
+				if os.Geteuid() == 0 {
+					check(os.Chown(runtimePath, 0, a.Settings.GID))
+				}
 				a.Guard(true, ch, r.NodeRevision)
+				// Controlled writes are already part of the node request and do
+				// not need a second external-change adoption cycle.
+				recordControlledConfig(a.Settings, content)
 				rt := a.Engine.Runtime()
 				if !(rt.Running && rt.Epoch() != oldEpoch && rt.ConfigHash == ch && rt.NodeRevision == r.NodeRevision) {
 					a.Engine.Restart()

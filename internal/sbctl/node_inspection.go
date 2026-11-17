@@ -254,10 +254,15 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	atomicWrite(configFile, []byte(str(plan["config_after"])), 0640)
 	check(os.Chown(configFile, 0, s.GID))
 	atomicWrite(composeFile, []byte(str(plan["compose_after"])), 0644)
+	recordControlledConfig(s, []byte(str(plan["config_after"])))
 	revision := integer(plan["revision"])
 	configHash := hash([]byte(str(plan["config_after"])))
 	users := stringsOf(plan["users"])
-	atomicWrite(filepath.Join(s.SafetyDir, "runtime.json"), canonical(M{"node_revision": revision, "config_hash": configHash, "users": users}), 0644)
+	runtimePath := filepath.Join(s.SafetyDir, "runtime.json")
+	atomicWrite(runtimePath, canonical(M{"node_revision": revision, "config_hash": configHash, "users": users}), 0640)
+	if os.Geteuid() == 0 {
+		check(os.Chown(runtimePath, 0, s.GID))
+	}
 	a.Guard(true, configHash, revision)
 	engine := DockerEngine{s}
 	running := false
@@ -385,7 +390,7 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 				u := uuid.NewString()
 				uid = &u
 			}
-			probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), uid})
+			probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), uid, 0})
 		}
 		probeBytes = canonical(probes)
 	}
@@ -513,6 +518,19 @@ func diagnoseNode() M {
 }
 func NodeRPC(v M) M {
 	switch str(v["action"]) {
+	case "config_snapshot":
+		if len(v) != 1 {
+			fail("ACTION_REJECTED", "配置快照参数无效")
+		}
+		return nodeConfigSnapshot(LoadNodeSettings())
+	case "adopt_config":
+		if len(v) != 2 {
+			fail("ACTION_REJECTED", "配置接管参数无效")
+		}
+		s := LoadNodeSettings()
+		var adoption ConfigAdoption
+		decode(canonical(v["adoption"]), &adoption)
+		return adoptConfig(s, env("SBCTL_NODE_CONFIG", "/opt/sbctl/config/node.toml"), DockerEngine{s}, adoption)
 	case "maintenance_receipt":
 		if len(v) != 3 {
 			fail("ACTION_REJECTED", "维护回执查询参数无效")

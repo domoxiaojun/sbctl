@@ -348,7 +348,7 @@ func NodeMain(args []string) int {
 			}
 			emit(M{"probe": "passed", "protocols": len(creds), "udp": *udp})
 		case "worker":
-
+			a.migrateGuardManifest()
 			for {
 				delay := 250 * time.Millisecond
 				err := Attempt(func() {
