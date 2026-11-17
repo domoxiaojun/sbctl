@@ -587,7 +587,9 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 范围：按用户要求将 sbctl 与 sing-box 的 Compose 默认镜像设为 latest；为尚不存在的 sing-box latest 增加 CI 发布，保留 with_v2ray_api 和原内核源码。用户明确只改仓库并提交，不更新服务器；本机不执行编译或 Docker。
 
 - [x] ✅ 1. 修改 Compose、版本一致性检查和升级说明，核对覆盖环境变量的行为。
-- [ ] 2. 修改 sing-box 镜像发布工作流，验证并发布双架构 latest。
-- [ ] 3. 提交推送并等待必要 CI，核对远端标签及记录结果。
+- [x] ✅ 2. 修改 sing-box 镜像发布工作流，验证并发布双架构 latest。
+- [x] ✅ 3. 提交推送并等待必要 CI，核对远端标签及记录结果。
 
-停止条件：两种镜像的 latest 可拉取，仓库默认配置和文档一致，必要检查通过；服务器变更按用户确认的范围执行。
+停止条件：两种镜像的 latest 已发布，仓库默认配置和文档一致，必要检查通过；不执行服务器变更。
+
+完成记录：sbctl 的 `9cf4d8b` 将默认镜像改为 latest，保留 `SBCTL_IMAGE`／`SING_BOX_IMAGE` 覆盖，版本检查与升级说明同步；[主分支 CI](https://github.com/domoxiaojun/sbctl/actions/runs/44116208107) 成功。sing-box 的 `ba932f6` 增加 latest 发布；[双架构构建和协议/统计验证](https://github.com/domoxiaojun/sing-box/actions/runs/44116202008) 全部成功，发布 `v1.12.9-v2ray-api-3` 及 latest。匿名核对 latest 与 `v1.12.9-v2ray-api` 均指向 `sha256:3b2101eed6f02863f4873b5992ac2ec4186c60380774bf451f4360b8dbeea1a4`，清单内容摘要及 amd64/arm64 平台一致。内核源码仍为 1.12.9，守卫/helper 仍通过 sbctl 宿主工具升级；本轮仅提交仓库和发布 CI 产物，未修改服务器。
