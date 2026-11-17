@@ -35,7 +35,6 @@ func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 	l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, TotalInbounds: 1}
 	l.Ingest(rt, rt, []M{}, false)
 	// Preserve the exact checksum of a snapshot without optional series.
 	old := l.Snapshot()
