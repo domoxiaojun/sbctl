@@ -45,7 +45,7 @@ jobs:
           ACTIONLINT=/tmp/actionlint
           if command -v actionlint >/dev/null; then ACTIONLINT=$(command -v actionlint); else
             curl --fail --silent --show-error --location \
-              https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_x86_64.tar.gz \
-              | tar -xz --strip-components=1 -C /tmp actionlint_1.7.7_linux_x86_64/actionlint
+              https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+              | tar -xz --strip-components=1 -C /tmp actionlint_1.7.12_linux_amd64/actionlint
           fi
           "$ACTIONLINT" .github/workflows/*.yml
