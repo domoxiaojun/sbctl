@@ -146,6 +146,7 @@ func TestWorkerRunKeepsOtherNodesMovingWhileOneIsBlocked(t *testing.T) {
 	tr := newGatedTransport()
 	release := tr.block("node_sg", "submit")
 	defer release()
+	tr.delay = 500 * time.Millisecond
 	stop := runWorker(t, NewWorker(c, tr), 4)
 	defer stop()
 	op := str(c.CreateUser("admin", "parallel-create-key-01", CreateUser{DisplayName: "并行下发", GroupIDs: []string{"grp_hk"}}, nil)["operation_id"])
@@ -163,7 +164,7 @@ func TestWorkerRunKeepsOtherNodesMovingWhileOneIsBlocked(t *testing.T) {
 func TestWorkerRunNeverOverlapsAuthorizationOnOneNode(t *testing.T) {
 	c := clusterControl(t)
 	tr := newGatedTransport()
-	tr.delay = 100 * time.Millisecond
+	tr.delay = 500 * time.Millisecond
 	ops := []string{}
 	for i := 0; i < 3; i++ {
 		ops = append(ops, str(c.CreateUser("admin", fmt.Sprintf("parallel-batch-key-%02d", i), CreateUser{DisplayName: fmt.Sprintf("批量 %d", i), GroupIDs: []string{"grp_hk"}}, nil)["operation_id"]))
