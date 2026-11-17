@@ -574,8 +574,10 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 范围：提交配置守卫与双向同步改动，发布 v0.10.6；全部编译、前端生产构建和 Docker 构建在 GitHub Actions 执行，不连接或部署 VPS。
 
 - [x] ✅ 1. 同步版本、节点包内的 guard 和发行升级说明，完成静态检查。
-- [ ] 2. 提交并推送 main 和新版本标签，触发 GitHub Actions。
-- [ ] 3. 等待两种架构验证和镜像发布，核对 GitHub Release、镜像 digest 与下载文件。
-- [ ] 4. 记录发行回执并提交文档，确认工作区状态后停止。
+- [x] ✅ 2. 提交并推送 main 和新版本标签，触发 GitHub Actions（发行源码提交 `9a7a637`）。
+- [x] ✅ 3. 等待两种架构验证和镜像发布，核对 GitHub Release、镜像 digest 与下载文件。
+- [x] ✅ 4. 记录发行回执并提交文档，确认工作区状态后停止。
 
 停止条件：v0.10.6 Release 与 linux/amd64、linux/arm64 GHCR 镜像发布成功，发行回执核对通过；不执行生产升级。
+
+完成记录：源码提交 `9a7a637` 与标签 `v0.10.6` 已推送；主分支 CI 和双架构发行流水线成功，24 项前端单测与 45 项浏览器测试通过。GHCR 的 `v0.10.6`、`latest` 已发布，固定 digest 为 `sha256:88ce5e55dba37fbc2450957d993d02201a9be65fb65a147ba0ce6c5e08fa8282`。两份程序包校验和及包内 guard、发行清单的平台/源码提交/digest 已核对。完整回执见 [v0.10.6 发行记录](docs/qa/release-v0.10.6-20261117/report.md)。全部构建在 GitHub Actions 完成；没有生产部署。
