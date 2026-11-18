@@ -2,6 +2,8 @@
 
 源码仓库为 `domoxiaojun/sbctl`，发行镜像为 `ghcr.io/domoxiaojun/sbctl`。镜像包含 Go 主控、节点程序和 React 生产页面，分别在原生 Linux amd64/arm64 runner 构建验证。代理内核 `ghcr.io/domoxiaojun/sing-box` 单独发布，不随主控更新自动升级。
 
+源码仓库与 sbctl GHCR 包自 2026-11-18 起均公开，`latest` 与已发布版本镜像支持匿名拉取，不需要配置 `read:packages` 凭据。
+
 ## 发行流程
 
 1. 同步 `internal/sbctl/common.go` 和 OpenAPI 的版本；Compose 默认保持 `latest`，不随补丁版本修改。
@@ -23,7 +25,7 @@ sing-box 的 Compose 默认使用 `ghcr.io/domoxiaojun/sing-box:latest`，可用
 
 程序故障可以恢复旧程序和旧镜像。若已经执行了授权或撤销，不能用旧数据库/节点安全状态覆盖新记录；安全状态、撤销意图与配置须保持一致后再恢复。
 
-私有 GHCR 且部署者未配置 `read:packages` 凭据时，可手动运行 `export-image.yml`，传入已发布版本。该流程使用 CI 的仓库包权限读取发行回执中的精确 digest，导出 amd64 镜像及 config ID/SHA-256。通过现有仓库权限下载 `deployment-image` 后传至 Linux 主控，核验归档摘要，使用 `docker load` 导入。导入后再次 `docker save`，核对其中配置 JSON 的 SHA-256 与回执中的 config ID 一致；Docker 29 的 containerd 后端可能将本地 OCI manifest digest 作为 image ID，不能直接用该值和 CI 的配置摘要比较。此时 Compose 使用该已验证版本标签，启动指定 `--pull never`；镜像内容与 GHCR 相同，不把 GitHub 登录凭据写到服务器。
+离线部署或需要传输镜像归档时，可手动运行 `export-image.yml`，传入已发布版本。该流程使用 CI 的仓库包权限读取发行回执中的精确 digest，导出 amd64 镜像及 config ID/SHA-256。下载 `deployment-image` 后传至 Linux 主控，核验归档摘要，使用 `docker load` 导入。导入后再次 `docker save`，核对其中配置 JSON 的 SHA-256 与回执中的 config ID 一致；Docker 29 的 containerd 后端可能将本地 OCI manifest digest 作为 image ID，不能直接用该值和 CI 的配置摘要比较。此时 Compose 使用该已验证版本标签，启动指定 `--pull never`；镜像内容与 GHCR 相同。
 
 ## 单节点验收
 

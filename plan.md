@@ -593,3 +593,15 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 停止条件：两种镜像的 latest 已发布，仓库默认配置和文档一致，必要检查通过；不执行服务器变更。
 
 完成记录：sbctl 的 `9cf4d8b` 将默认镜像改为 latest，保留 `SBCTL_IMAGE`／`SING_BOX_IMAGE` 覆盖，版本检查与升级说明同步；[主分支 CI](https://github.com/domoxiaojun/sbctl/actions/runs/44116208107) 成功。sing-box 的 `ba932f6` 增加 latest 发布；[双架构构建和协议/统计验证](https://github.com/domoxiaojun/sing-box/actions/runs/44116202008) 全部成功，发布 `v1.12.9-v2ray-api-3` 及 latest。匿名核对 latest 与 `v1.12.9-v2ray-api` 均指向 `sha256:3b2101eed6f02863f4873b5992ac2ec4186c60380774bf451f4360b8dbeea1a4`，清单内容摘要及 amd64/arm64 平台一致。内核源码仍为 1.12.9，守卫/helper 仍通过 sbctl 宿主工具升级；本轮仅提交仓库和发布 CI 产物，未修改服务器。
+
+## 2026-11-18 公开源码仓库和 Docker 镜像
+
+用户已明确确认公开 `domoxiaojun/sbctl` 的源码、Git 历史和 GHCR 镜像；不修改服务器。
+
+- [x] ✅ 1. 核对管理员权限和脱敏历史扫描结果，公开 GitHub 源码仓库。
+- [x] ✅ 2. 在 GHCR 包设置公开 sbctl 镜像，并验证匿名读取 latest。
+- [x] ✅ 3. 同步可见性说明，记录验证结果并提交。
+
+停止条件：源码和镜像均可匿名访问，文档与实际状态一致，必要检查完成。
+
+完成记录：用户明确确认后，将 GitHub 源码仓库改为 PUBLIC，并在 GHCR 包设置改为 public。匿名读取源码仓库、latest 和 v0.10.6 镜像清单均返回 200；两个镜像标签仍指向发行 digest `sha256:88ce5e55dba37fbc2450957d993d02201a9be65fb65a147ba0ce6c5e08fa8282`，含 linux/amd64、linux/arm64。公开前 Gitleaks 对 50 个提交执行全 refs 脱敏扫描，4 项均为此前已确认的 SSH 密钥文件名误报，未发现新增命中；未改服务器、未执行本机 Docker 或编译。

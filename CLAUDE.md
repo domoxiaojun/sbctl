@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目定位
 
-sbctl 是私有的 sing-box 集群控制端：集中管理多台 VPS 上的 sing-box 节点（接管、协议入口维护、受控重启）、用户授权与 Surge/Mihomo 订阅、以及多角度累计/按日流量统计。后端是 Go（两个二进制共用一个包），控制台是 React。当前生产范围是 **ovhus 主控 + yxvmhk 单节点**，多节点推广尚未验收。
+sbctl 是自托管的 sing-box 集群控制端：集中管理多台 VPS 上的 sing-box 节点（接管、协议入口维护、受控重启）、用户授权与 Surge/Mihomo 订阅、以及多角度累计/按日流量统计。源码仓库和 GHCR 镜像均公开，镜像支持匿名拉取。后端是 Go（两个二进制共用一个包），控制台是 React。当前生产范围是 **ovhus 主控 + yxvmhk 单节点**，多节点推广尚未验收。
 
 ## 常用命令
 
