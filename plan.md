@@ -642,7 +642,7 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 
 入口历史通过控制台的创建、编辑、停用、启用和删除操作跟踪。直接编辑 sing-box 文件时，采样无法区分同名入口的原地修改与两次采样之间的删除重建。需要区分这两种历史时，使用受管入口操作。
 
-验证记录：`go test ./...`、`go vet ./...`、OpenAPI 契约生成检查、`git diff --check` 和本次文档的 `lychee --offline` 检查通过。回归覆盖同协议入口、非最后与最后入口退役、旧请求拒绝、入口更名与同名重建、账本换代及重放。连接看板新增前端完整类型检查、浏览器验收、受管 VPS 与目标客户端互通仍待运行。
+验证记录：`go test ./...`、`go vet ./...`、OpenAPI 契约生成检查、`git diff --check` 和本次文档的 `lychee --offline` 检查通过。回归覆盖同协议入口、非最后与最后入口退役、旧请求拒绝、入口更名与同名重建、账本换代及重放。前端类型检查与浏览器回归见 v0.11.1 发行记录。受管 VPS 与目标客户端互通仍待实测。
 
 ## sbctl 自研 sing-box 统计接口
 
@@ -653,20 +653,22 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 - [x] ✅ 3. 将自研 socket 服务挂接到 sing-box 原生 trafficcontrol，输出入站、出站、域名、规则、代理链及连接字节。
 - [x] ✅ 4. sbctl-node collector 改读自研 socket，统计 manifest 和 ledger 增加出站维度。
 - [x] ✅ 5. 接管 Compose 注入节点 ID 与 socket 路径，更新节点安装说明和采集服务权限。
-- [ ] 6. 在 1.14.x fork 中补充连接生命周期、短连接、Unix socket 权限和事件断点测试。
-- [ ] 7. 更新 GH Actions 双架构构建、固定 digest 验收和真实节点升级回执。
+- [x] ✅ 6. 在 1.14.x fork 中补充连接生命周期、短连接、Unix socket 权限和事件断点测试。
+- [x] ✅ 7. 完成 GitHub Actions 双架构构建、公开镜像固定摘要核对及容器 socket 冒烟。
 - [x] ✅ 8. 接入 90 天连接明细、域名/IP/规则/策略看板和多节点统计 API。
 
 实施记录：自研 socket 增加连接生命周期序号、增量读取和有界历史；节点账本保存 90 天连接明细，主控增加 `/api/v1/traffic/connections` 及域名、目标、规则、出站聚合，流量页增加连接看板。V2Ray API 和 Clash API 不再作为 sbctl 业务采集协议。入口解耦同时保留零／单／多入口和稳定 `inbound_id` 规则。
 
-当前验证：sbctl `go test ./...`、`go vet ./...`、OpenAPI 契约检查和 sing-box `go test ./common/sbctlstats ./common/trafficcontrol` 通过。尚未构建 1.14.x 双架构镜像、未部署节点、未执行真实 socket 采样、短连接压力测试或浏览器看板验收。第 6、7 步保持未完成，不把本地测试标为生产发布。
+发行前验证：sbctl `go test ./...`、`go vet ./...`、OpenAPI 契约检查和 sing-box `go test ./common/sbctlstats ./common/trafficcontrol` 通过。内核镜像已通过两种架构的容器 socket 和短连接计量检查；发布记录见下节。生产节点升级、真实节点流量对账、短连接压力测试和客户端互通仍待验收。
 
 ## v0.11.1 与 sing-box 1.14.4-sbctl.1 发布
 
 - [x] ✅ 确定版本与构建范围，保留现有 1.12.9 试点材料，全部构建交给 GitHub Actions。
 - [x] ✅ 将连接明细与累计快照分开，按游标分页回传。配套修正 socket 与 API 的生产文件权限。
 - [x] ✅ 修正首轮发布发现的浏览器回归，覆盖可选公网地址、授权入口删除及连接查询 HTTP 契约。发布候选版本改为 v0.11.1。
-- [ ] 完成两个仓库的推送、发布流水线与失败恢复。
-- [ ] 验证公开 GHCR 双架构清单、版本和摘要，记录 CI 与发布回执。
+- [x] ✅ 完成两个仓库的推送、发布流水线与失败恢复。
+- [x] ✅ 验证公开 GHCR 双架构清单、版本和摘要，记录 CI 与发布回执。
 
 停止条件：新版镜像均已发布，可通过固定 digest 拉取，sbctl Release 程序包校验通过。生产 VPS 升级及客户端实机验收单列。
+
+完成记录：sbctl 源码 `4269b3a` 和标签 `v0.11.1` 已推送，主分支 CI、双架构发布、24 项前端单测和 46 项 Chromium 回归通过。sing-box 源码 `96e66e7` 和标签 `v1.14.4-sbctl.1` 已推送，双架构构建及容器 socket 检查通过。两个项目的版本标签与各自的 `latest` 均指向经匿名验证的双架构镜像清单。两份 sbctl 安装包 SHA-256 校验通过。生产节点升级与客户端实测仍待执行。[发行回执](docs/qa/release-v0.11.1-20261118/report.md)
