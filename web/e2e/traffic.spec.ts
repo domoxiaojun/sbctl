@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { fixtures } from '../src/demo/fixtures'
 import { calendarDate } from '../src/lib/traffic'
-import { demoTraffic } from '../src/demo/traffic'
+import { demoTraffic, demoTrafficConnections } from '../src/demo/traffic'
 
 for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地用户 ${width}px`, async ({page},testInfo) => {
  await page.setViewportSize({width,height:1000})
@@ -250,13 +250,23 @@ test('按月趋势切换并定位到当月', async ({ page }) => {
 })
 
 test('连接明细按节点与协议查询', async ({ page }) => {
- const node = fixtures(Date.now()).nodes[0]
- const connections = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/traffic/connections'))
- await page.goto(`/usage?node=${node.id}&protocol=anytls`)
- const request = new URL((await connections).url())
+ const now = Date.now(), seed = fixtures(now), node = seed.nodes[0]
+ await page.route('**/api/v1/**', async route => {
+  const url = new URL(route.request().url())
+  if (url.pathname === '/api/v1/session') return route.fulfill({ json: { admin_id: 'test', display_name: '测试', csrf_token: 'test' } })
+  if (url.pathname === '/api/v1/traffic') return route.fulfill({ json: demoTraffic(seed, url.searchParams, now) })
+  if (url.pathname === '/api/v1/traffic/connections') return route.fulfill({ json: demoTrafficConnections(seed, url.searchParams, now) })
+  return route.fulfill({ status: 404, json: { code: 'NOT_FOUND', message: 'test' } })
+ })
+ const [connectionRequest] = await Promise.all([
+  page.waitForRequest(request => new URL(request.url()).pathname === '/api/v1/traffic/connections'),
+  page.goto(`http://127.0.0.1:14186/usage?node=${node.id}&protocol=anytls`),
+ ])
+ const request = new URL(connectionRequest.url())
  expect(request.searchParams.get('node')).toBe(node.id)
  expect(request.searchParams.get('protocol')).toBe('anytls')
  const details = page.getByRole('region', { name: '连接明细' })
  await expect(details.getByRole('row').filter({ hasText: 'anytls-in' })).toBeVisible()
+ await expect(details.getByRole('row').filter({ hasText: 'tuic-in' })).toHaveCount(0)
  await expect(details.getByText('热门域名')).toBeVisible()
 })
