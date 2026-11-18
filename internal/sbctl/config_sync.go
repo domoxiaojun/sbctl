@@ -176,8 +176,9 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 		}
 		byTag[tag] = in
 	}
-	s.Endpoints = append([]Endpoint{}, s.Endpoints...)
+	s.Endpoints = normalizeEndpoints(s.Endpoints)
 	probes := []Credential{}
+	claimed := map[string]bool{}
 	for n := range s.Endpoints {
 		e := &s.Endpoints[n]
 		in := byTag[e.Tag]
@@ -194,6 +195,10 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 			in = candidates[0]
 			e.Tag = str(in["tag"])
 		}
+		if claimed[e.Tag] {
+			fail("BINDING_CONFLICT", "多个入口绑定到同一标签", 409)
+		}
+		claimed[e.Tag] = true
 		e.Port = int(integer(in["listen_port"]))
 		tls := mapping(in["tls"])
 		if str(tls["server_name"]) != "" {
@@ -208,7 +213,7 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 			u := mapping(rawUser)
 			name := str(u["name"])
 			if name == "sys_probe" {
-				p := Credential{UserID: name, Protocol: e.Protocol, CredentialID: "sys_" + e.Protocol, Generation: 1, Password: str(u["password"]), UUID: nullable(str(u["uuid"]))}
+				p := Credential{UserID: name, Protocol: e.Protocol, InboundID: e.InboundID, CredentialID: "sys_" + e.InboundID, Generation: 1, Password: str(u["password"]), UUID: nullable(str(u["uuid"]))}
 				p.Validate()
 				probes = append(probes, p)
 			} else if !strings.HasPrefix(name, "usr_") {
@@ -219,7 +224,7 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 	}
 	// Missing system probes remain local state for future controlled writes. They
 	// are not injected into the administrator's active file by adoption.
-	if len(probes) != 2 && exists(s.ProbeFile) {
+	if len(probes) != len(s.Endpoints) && exists(s.ProbeFile) {
 		decode(read(s.ProbeFile), &probes)
 	}
 	return s, template, probes
@@ -252,7 +257,7 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 		for _, raw := range array(findInbound(snap.Config, e.Tag)["users"]) {
 			u := mapping(raw)
 			if strings.HasPrefix(str(u["name"]), "usr_") {
-				observed[str(u["name"])+":"+e.Protocol] = digest(pick(u, "password", "uuid"))
+				observed[str(u["name"])+":"+e.InboundID] = digest(pick(u, "password", "uuid"))
 			}
 		}
 	}
@@ -264,7 +269,8 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 		if u.UUID != nil {
 			value["uuid"] = *u.UUID
 		}
-		if observed[u.UserID+":"+u.Protocol] != digest(value) {
+		ep, ok := credentialEndpoint(next.Endpoints, u)
+		if !ok || observed[u.UserID+":"+ep.InboundID] != digest(value) {
 			fail("CONFIG_CHANGED", "接管凭据与节点配置不一致", 409)
 		}
 	}
@@ -272,8 +278,20 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 	var old M
 	transaction(a.DBPath, false, func(d *DB) {
 		old = d.One("SELECT * FROM requests WHERE id=?", r.RequestID)
-		if old == nil && r.NodeRevision <= integer(d.Value("SELECT max(revision) FROM requests")) {
+		latest := integer(d.Value("SELECT max(revision) FROM requests"))
+		if r.NodeRevision < latest || (old == nil && r.NodeRevision == latest) {
 			fail("STALE_REVISION", "配置接管版本已过期", 409)
+		}
+		for _, item := range d.Rows("SELECT fingerprint FROM revoked") {
+			if !contains(r.Revoked, str(item["fingerprint"])) {
+				fail("REVOKED_CREDENTIAL", "配置接管请求遗漏撤销记录", 409)
+			}
+		}
+		for _, credential := range r.Users {
+			endpoint, _ := credentialEndpoint(next.Endpoints, credential)
+			if d.One("SELECT 1 FROM retiring_inbounds WHERE inbound_id=?", endpoint.InboundID) != nil {
+				fail("RETIREMENT_PENDING", "拒绝将手工凭据重新接管到退役入口", 409)
+			}
 		}
 	})
 	if old != nil && old["payload_hash"] != r.PayloadHash {
@@ -281,7 +299,7 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 	}
 	if old == nil {
 		if _, docker := engine.(DockerEngine); docker {
-			for _, u := range r.Users {
+			for _, u := range append(append([]Credential{}, r.Users...), probes...) {
 				if !(DockerEngine{next}).Probe(u, true) {
 					fail("PROBE_FAILED", "手工配置凭据的实际协议探测未通过", 503)
 				}
@@ -322,7 +340,8 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 	obs["adopted_hash"], obs["pending_sync"] = snap.SemanticHash, false
 	atomicWrite(configObservationPath(s), canonical(obs), 0600)
 	checkRemove(journal)
-	return M{"node_id": s.NodeID, "event_seq": snap.EventSeq, "semantic_hash": snap.SemanticHash, "template_hash": next.TemplateHash, "endpoints": next.Endpoints, "node_revision": r.NodeRevision, "request_id": r.RequestID}
+	proof := M{"template_hash": next.TemplateHash, "endpoints_hash": digest(normalizeEndpoints(next.Endpoints)), "runtime_epoch": snap.RuntimeEpoch, "config_hash": snap.ConfigHash, "checked_at": now()}
+	return M{"node_id": s.NodeID, "event_seq": snap.EventSeq, "semantic_hash": snap.SemanticHash, "template_hash": next.TemplateHash, "endpoints": next.Endpoints, "node_revision": r.NodeRevision, "request_id": r.RequestID, "probe_verification": proof}
 }
 func checkRemove(path string) {
 	if exists(path) {
@@ -463,6 +482,7 @@ func (w *Worker) syncNodeConfig(id string, link NodeConnection) {
 		// an older credential snapshot over it.
 		r := plan.Adoption.Request
 		d.Exec("UPDATE nodes SET template_hash=?,endpoints_json=?,revision=max(revision,?),applied_revision=max(applied_revision,?),enabled=1 WHERE id=?", r.TemplateHash, string(canonical(plan.Endpoints)), r.NodeRevision, r.NodeRevision, id)
+		saveProbeVerification(d, id, result)
 		d.Exec("UPDATE outbox SET request_id=NULL WHERE node_id=? AND state<>'done'", id)
 		d.Exec("UPDATE operation_targets SET request_id=NULL WHERE node_id=? AND state NOT IN ('verified','superseded')", id)
 		d.Exec("INSERT INTO node_management(node_id,version,binding_json) VALUES (?,1,'{}') ON CONFLICT(node_id) DO UPDATE SET version=version+1", id)
@@ -476,17 +496,21 @@ func (w *Worker) syncNodeConfig(id string, link NodeConnection) {
 }
 
 func prepareConfigSync(d *DB, c *Control, snap NodeConfigSnapshot, base string) configSyncPlan {
-	var eps []Endpoint
-	decode([]byte(str(d.Value("SELECT endpoints_json FROM nodes WHERE id=?", snap.NodeID))), &eps)
+	eps := decodeEndpoints(d.Value("SELECT endpoints_json FROM nodes WHERE id=?", snap.NodeID))
 	next, template, _ := projectedConfig(NodeSettings{Endpoints: eps}, snap.Config)
-	managed := map[string]M{}
+	type managedInbound struct {
+		endpoint Endpoint
+		inbound  M
+	}
+	managed := []managedInbound{}
 	for _, e := range next.Endpoints {
-		managed[e.Protocol] = findInbound(snap.Config, e.Tag)
+		managed = append(managed, managedInbound{e, findInbound(snap.Config, e.Tag)})
 	}
 	users := []Credential{}
 	seen := map[string]bool{}
 	rawPrints := map[string]bool{}
-	for protocol, in := range managed {
+	for _, item := range managed {
+		protocol, in := item.endpoint.Protocol, item.inbound
 		for _, raw := range array(in["users"]) {
 			u := mapping(raw)
 			name := str(u["name"])
@@ -496,19 +520,22 @@ func prepareConfigSync(d *DB, c *Control, snap NodeConfigSnapshot, base string) 
 			if d.One("SELECT id FROM users WHERE id=?", name) == nil {
 				fail("CONFIG_IDENTITY_CONFLICT", "节点存在未知受管身份", 409)
 			}
-			key := name + ":" + protocol
+			if retiringInbound(d, snap.NodeID, item.endpoint.InboundID) {
+				fail("CONFIG_IDENTITY_CONFLICT", "退役中的入口不能重新导入用户凭据", 409)
+			}
+			key := name + ":" + item.endpoint.InboundID
 			if seen[key] {
 				fail("CONFIG_IDENTITY_CONFLICT", "受管用户有多组凭据，无法唯一匹配", 409)
 			}
 			seen[key] = true
-			cred := Credential{UserID: name, Protocol: protocol, CredentialID: identifier("cred"), Generation: integer(d.Value("SELECT COALESCE(MAX(generation),0)+1 FROM credentials WHERE user_id=? AND node_id=? AND protocol=?", name, snap.NodeID, protocol)), Password: str(u["password"]), UUID: nullable(str(u["uuid"])), ExternalSeq: snap.EventSeq}
+			cred := Credential{UserID: name, Protocol: protocol, InboundID: item.endpoint.InboundID, CredentialID: identifier("cred"), Generation: integer(d.Value("SELECT COALESCE(MAX(generation),0)+1 FROM credentials WHERE user_id=? AND node_id=? AND inbound_id=?", name, snap.NodeID, item.endpoint.InboundID)), Password: str(u["password"]), UUID: nullable(str(u["uuid"])), ExternalSeq: snap.EventSeq}
 			cred.Validate()
 			rawFP := cred.authenticationFingerprint()
 			if rawPrints[rawFP] {
 				fail("CONFIG_IDENTITY_CONFLICT", "入口认证秘密重复", 409)
 			}
 			rawPrints[rawFP] = true
-			current := d.One("SELECT * FROM credentials WHERE user_id=? AND node_id=? AND protocol=? AND revoked=0 ORDER BY generation DESC LIMIT 1", name, snap.NodeID, protocol)
+			current := d.One("SELECT * FROM credentials WHERE user_id=? AND node_id=? AND inbound_id=? AND revoked=0 ORDER BY generation DESC LIMIT 1", name, snap.NodeID, item.endpoint.InboundID)
 			if current != nil {
 				secret := mapping(c.Vault.Decrypt(str(current["secret_ciphertext"])))
 				if str(secret["password"]) == cred.Password && str(secret["uuid"]) == str(u["uuid"]) {
@@ -552,7 +579,7 @@ func commitConfigSync(d *DB, c *Control, plan configSyncPlan) []string {
 	}
 	for _, u := range r.Users {
 		if d.One("SELECT id FROM credentials WHERE id=?", u.CredentialID) == nil {
-			d.Exec("INSERT INTO credentials(id,user_id,node_id,protocol,generation,secret_ciphertext,fingerprint,verified_revision) VALUES (?,?,?,?,?,?,?,?)", u.CredentialID, u.UserID, r.NodeID, u.Protocol, u.Generation, c.Vault.Encrypt(M{"password": u.Password, "uuid": u.UUID, "external_sync_seq": u.ExternalSeq}), u.Fingerprint(), r.NodeRevision)
+			d.Exec("INSERT INTO credentials(id,user_id,node_id,inbound_id,protocol,generation,secret_ciphertext,fingerprint,verified_revision) VALUES (?,?,?,?,?,?,?,?,?)", u.CredentialID, u.UserID, r.NodeID, u.InboundID, u.Protocol, u.Generation, c.Vault.Encrypt(M{"password": u.Password, "uuid": u.UUID, "external_sync_seq": u.ExternalSeq}), u.Fingerprint(), r.NodeRevision)
 		} else {
 			d.Exec("UPDATE credentials SET verified_revision=? WHERE id=?", r.NodeRevision, u.CredentialID)
 		}

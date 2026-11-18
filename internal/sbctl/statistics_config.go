@@ -8,12 +8,14 @@ import (
 )
 
 type InboundIdentity struct {
-	Tag      string `json:"tag"`
-	Protocol string `json:"protocol"`
-	Port     int    `json:"port"`
+	Tag       string `json:"tag"`
+	Protocol  string `json:"protocol"`
+	Port      int    `json:"port"`
+	InboundID string `json:"inbound_id,omitempty"`
 }
 type StatisticsManifest struct {
 	Inbounds      []InboundIdentity `json:"inbounds"`
+	Outbounds     []string          `json:"outbounds"`
 	LocalUsers    []string          `json:"local_users"`
 	TotalInbounds int               `json:"total_inbounds"`
 }
@@ -64,49 +66,29 @@ func configureStatistics(config M, excludedUsers []string) {
 			}
 		}
 	}
-	tags, users := []string{}, []string{}
-	for _, raw := range array(config["inbounds"]) {
-		in := mapping(raw)
-		tags = append(tags, str(in["tag"]))
-		for _, rawUser := range array(in["users"]) {
-			name := str(mapping(rawUser)["name"])
-			if name != "" && name != "sys_probe" && !contains(excludedUsers, name) {
-				if !validStatName(name) {
-					fail("STATS_USER", "用户统计名称无效")
-				}
-				users = append(users, name)
-			}
-		}
-	}
-	experimental := mapping(config["experimental"])
-	api := mapping(experimental["v2ray_api"])
-	stats := mapping(api["stats"])
-	stats["enabled"], stats["inbounds"], stats["users"] = true, unique(tags), unique(users)
-	api["listen"], api["stats"] = "127.0.0.1:10085", stats
-	experimental["v2ray_api"], config["experimental"] = api, experimental
 }
 func statisticsManifest(config M, excludedUsers []string) *StatisticsManifest {
-	api := mapping(mapping(config["experimental"])["v2ray_api"])
-	stats := mapping(api["stats"])
-	if api["listen"] != "127.0.0.1:10085" || !boolean(stats["enabled"]) {
-		fail("STATS_CONFIG", "统计服务未按登记配置启用")
+	out := &StatisticsManifest{Inbounds: []InboundIdentity{}, Outbounds: []string{}, LocalUsers: []string{}, TotalInbounds: len(array(config["inbounds"]))}
+	for _, raw := range array(config["outbounds"]) {
+		if tag := str(mapping(raw)["tag"]); tag != "" {
+			out.Outbounds = append(out.Outbounds, tag)
+		}
 	}
-	tags, names := stringsOf(stats["inbounds"]), stringsOf(stats["users"])
-	out := &StatisticsManifest{Inbounds: []InboundIdentity{}, LocalUsers: []string{}, TotalInbounds: len(array(config["inbounds"]))}
 	for _, raw := range array(config["inbounds"]) {
 		in := mapping(raw)
 		tag := str(in["tag"])
-		if tag != "" && contains(tags, tag) {
-			out.Inbounds = append(out.Inbounds, InboundIdentity{tag, str(in["type"]), int(integer(in["listen_port"]))})
+		if tag != "" {
+			out.Inbounds = append(out.Inbounds, InboundIdentity{Tag: tag, Protocol: str(in["type"]), Port: int(integer(in["listen_port"]))})
 		}
 		for _, rawUser := range array(in["users"]) {
 			name := str(mapping(rawUser)["name"])
-			if name != "" && name != "sys_probe" && !contains(excludedUsers, name) && contains(names, name) {
+			if name != "" && name != "sys_probe" && !contains(excludedUsers, name) {
 				out.LocalUsers = append(out.LocalUsers, name)
 			}
 		}
 	}
 	out.LocalUsers = unique(out.LocalUsers)
+	out.Outbounds = unique(out.Outbounds)
 	sort.Slice(out.Inbounds, func(i, j int) bool { return out.Inbounds[i].Tag < out.Inbounds[j].Tag })
 	return out
 }

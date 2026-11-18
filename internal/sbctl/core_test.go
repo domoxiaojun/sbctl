@@ -42,8 +42,19 @@ func testControl(t *testing.T) *Control {
 	CreateKey(s.KeyFile)
 	c := NewControl(s)
 	c.Initialize()
-	c.Register(M{"id": "node_hk", "name": "香港", "region": "hk", "location": "香港", "connection": M{"address": "100.70.0.10"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", nil}, {"tuic", "tuic-in", "example.test", 443, "example.test", nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+	c.Register(M{"id": "node_hk", "name": "香港", "region": "hk", "location": "香港", "connection": M{"address": "100.70.0.10"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", nil, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", nil, ""}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+	markTestEndpointsVerified(c)
 	return c
+}
+
+func markTestEndpointsVerified(c *Control) {
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		for _, n := range d.Rows("SELECT id,template_hash,endpoints_json FROM nodes") {
+			endpoints := decodeEndpoints(n["endpoints_json"])
+			proof := M{"template_hash": n["template_hash"], "endpoints_hash": digest(endpoints), "config_hash": n["template_hash"], "runtime_epoch": "fixture@1", "checked_at": now()}
+			saveProbeVerification(d, str(n["id"]), M{"template_hash": n["template_hash"], "endpoints": endpoints, "probe_verification": proof})
+		}
+	})
 }
 
 type fakeTransport struct {
@@ -196,7 +207,7 @@ func TestJSONAndWireValidation(t *testing.T) {
 		expectFault(t, "INVALID_JSON", func() { object([]byte(raw)) })
 	}
 	expectFault(t, "INVALID_REQUEST", func() { var c CreateUser; decode([]byte(`{"display_name":"x","unexpected":true}`), &c) })
-	r := NodeRequest{SchemaVersion: 1, NodeID: "node_hk", RequestID: "req_1", NodeRevision: 1, TemplateHash: strings.Repeat("a", 64), EngineBuildID: strings.Repeat("b", 64), Users: []Credential{{"usr_alice", "anytls", "cred_alice", 1, "password", nil, 0}}, Revoked: []string{}}
+	r := NodeRequest{SchemaVersion: 1, NodeID: "node_hk", RequestID: "req_1", NodeRevision: 1, TemplateHash: strings.Repeat("a", 64), EngineBuildID: strings.Repeat("b", 64), Users: []Credential{{"usr_alice", "anytls", "cred_alice", 1, "password", nil, 0, ""}}, Revoked: []string{}}
 	r.Seal()
 	r.Verify()
 	r.Users[0].Password = "changed"
@@ -218,7 +229,7 @@ func TestLedgerAndTrafficMonotonicity(t *testing.T) {
 	l := Ledger{filepath.Join(dir, "ledger.db"), filepath.Join(dir, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, TotalInbounds: 1}
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443, ""}}, TotalInbounds: 1}
 	l.Ingest(rt, rt, counters("100", "200"), false)
 	s := l.Snapshot()
 	if s.Inbounds[0].Upload != "0" {

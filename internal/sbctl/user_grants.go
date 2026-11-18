@@ -36,11 +36,13 @@ func grantPreview(d *DB, user string, selection GrantSelection) M {
 	if u["status"] == "disabled" {
 		fail("USER_DISABLED", "请先重新启用用户，再调整授权", 409)
 	}
-	nodes := targets(d, selection.GroupIDs)
+	nodes := groupNodes(d, selection.GroupIDs)
 	wanted, active, pending := map[string]bool{}, map[string]bool{}, map[string]bool{}
-	credentials := d.Rows("SELECT id,node_id,protocol,generation FROM credentials WHERE user_id=? AND revoked=0 ORDER BY id", user)
+	assigned := map[string]bool{}
+	credentials := d.Rows("SELECT id,node_id,inbound_id,protocol,generation FROM credentials WHERE user_id=? AND revoked=0 ORDER BY id", user)
 	for _, r := range credentials {
 		active[str(r["node_id"])] = true
+		assigned[str(r["node_id"])+"/"+str(r["inbound_id"])] = true
 	}
 	for _, r := range d.Rows("SELECT DISTINCT b.node_id FROM outbox b JOIN operations o ON o.id=b.operation_id WHERE o.user_id=? AND b.state<>'done'", user) {
 		pending[str(r["node_id"])] = true
@@ -51,12 +53,19 @@ func grantPreview(d *DB, user string, selection GrantSelection) M {
 		id := str(n["id"])
 		wanted[id] = true
 		item := pick(n, "id", "name")
-		if active[id] {
-			retained = append(retained, item)
-		} else {
-			added = append(added, item)
+		missing := false
+		eligible := grantableEndpoints(d, n)
+		for _, endpoint := range eligible {
+			missing = missing || !assigned[id+"/"+endpoint.InboundID]
 		}
-		bindings = append(bindings, pick(n, "id", "endpoints_json", "template_hash", "image_digest"))
+		if missing {
+			added = append(added, item)
+		} else if active[id] {
+			retained = append(retained, item)
+		}
+		binding := pick(n, "id", "endpoints_json", "template_hash", "image_digest")
+		binding["eligible"] = eligible
+		bindings = append(bindings, binding)
 	}
 	for _, n := range d.Rows("SELECT id,name FROM nodes ORDER BY id") {
 		id := str(n["id"])
@@ -118,10 +127,11 @@ func (c *Control) UpdateGrants(actor, key, user string, req UpdateGrants) M {
 			d.Exec("UPDATE credentials SET revoked=1,verified_revision=NULL WHERE user_id=? AND node_id=?", user, n["id"])
 		}
 		for _, n := range preview["added"].([]M) {
-			var endpoints []Endpoint
-			decode([]byte(str(d.Value("SELECT endpoints_json FROM nodes WHERE id=?", n["id"]))), &endpoints)
+			endpoints := grantableEndpoints(d, d.One("SELECT * FROM nodes WHERE id=?", n["id"]))
 			for _, e := range endpoints {
-				c.credential(d, user, n, e.Protocol, nil)
+				if d.One("SELECT 1 FROM credentials WHERE user_id=? AND node_id=? AND inbound_id=? AND revoked=0", user, n["id"], e.InboundID) == nil {
+					c.credential(d, user, n, e, nil)
+				}
 			}
 		}
 		d.Exec("DELETE FROM grants WHERE user_id=?", user)
@@ -147,11 +157,10 @@ func (c *Control) UpdateGrants(actor, key, user string, req UpdateGrants) M {
 
 func (c *Control) publishUser(d *DB, u M) {
 	eps := []M{}
-	for _, r := range d.Rows("SELECT c.*,n.endpoints_json FROM credentials c JOIN nodes n ON n.id=c.node_id WHERE c.user_id=? AND c.revoked=0 AND c.verified_revision IS NOT NULL ORDER BY c.node_id,c.protocol", u["id"]) {
-		var endpoints []M
-		decode([]byte(str(r["endpoints_json"])), &endpoints)
+	for _, r := range d.Rows("SELECT c.*,n.endpoints_json FROM credentials c JOIN nodes n ON n.id=c.node_id WHERE c.user_id=? AND c.revoked=0 AND c.verified_revision IS NOT NULL ORDER BY c.node_id,c.inbound_id", u["id"]) {
+		endpoints := endpointMaps(r["endpoints_json"])
 		for _, e := range endpoints {
-			if e["protocol"] == r["protocol"] {
+			if e["inbound_id"] == r["inbound_id"] || (str(r["inbound_id"]) == "" && e["protocol"] == r["protocol"]) {
 				merge(e, M{"node_id": r["node_id"]})
 				merge(e, mapping(c.Vault.Decrypt(str(r["secret_ciphertext"]))))
 				eps = append(eps, e)
@@ -163,7 +172,12 @@ func (c *Control) publishUser(d *DB, u M) {
 		if c.Public.Current()[str(u["token_hash"])] != nil {
 			c.Public.Revoke(str(u["token_hash"]))
 		}
-		d.Exec("UPDATE subscriptions SET state='revoked' WHERE user_id=?", u["id"])
+		if d.One("SELECT 1 FROM credentials WHERE user_id=? AND revoked=0 LIMIT 1", u["id"]) == nil {
+			d.Exec("UPDATE subscriptions SET state='revoked' WHERE user_id=?", u["id"])
+			d.Exec("UPDATE users SET status='active' WHERE id=? AND status='provisioning'", u["id"])
+		} else {
+			d.Exec("UPDATE subscriptions SET state='pending' WHERE user_id=?", u["id"])
+		}
 		return
 	}
 	files := renderSubscriptions(eps)

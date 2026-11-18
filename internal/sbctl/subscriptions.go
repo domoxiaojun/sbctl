@@ -63,9 +63,14 @@ func (p PublicStore) Read(t, name string) []byte {
 func renderSubscriptions(endpoints []M) map[string]string {
 	proxies := []M{}
 	surge, names := []string{}, []string{}
+	nameCounts := map[string]int{}
 	for _, e := range endpoints {
 		protocol := str(e["protocol"])
 		name := str(e["node_id"]) + "-" + strings.ToUpper(protocol)
+		nameCounts[name]++
+		if nameCounts[name] > 1 {
+			name += "-" + str(e["inbound_id"])
+		}
 		for _, k := range []string{"server", "sni", "password", "uuid"} {
 			s := str(e[k])
 			if strings.ContainsAny(s, ",;[]\r\n\x00") {

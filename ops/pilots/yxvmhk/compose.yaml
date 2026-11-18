@@ -1,7 +1,7 @@
 name: sbctl-yxvmhk
 services:
   sing-box:
-    image: ${SING_BOX_IMAGE:-ghcr.io/domoxiaojun/sing-box:latest}
+    image: ${SING_BOX_IMAGE:-ghcr.io/domoxiaojun/sing-box:v1.12.9-v2ray-api-3}
     container_name: sbctl-yxvmhk-sing-box
     network_mode: host
     user: "994:994"

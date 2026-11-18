@@ -121,10 +121,13 @@ func (c *configTransport) Call(_ NodeConnection, body M, _ bool) M {
 	case "config":
 		return c.view
 	case "config_change":
+		endpoints := normalizeEndpoints([]Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}})
+		h := strings.Repeat("c", 64)
 		return M{
-			"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("c", 64),
-			"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
-			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}},
+			"node_id": "node_hk", "ready": true, "template_hash": h,
+			"catalog":            ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
+			"endpoints":          endpoints,
+			"probe_verification": M{"template_hash": h, "endpoints_hash": digest(endpoints), "config_hash": h, "runtime_epoch": "fixture@2", "checked_at": now()},
 		}
 	case "submit":
 		r := parseRequest(body["request"])

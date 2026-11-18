@@ -14,7 +14,7 @@ UMask=0027
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/sbctl/data/ledger
+ReadWritePaths=/opt/sbctl/data/ledger /opt/sbctl/data/sing-box
 # Only the fixed runtime helper can elevate; there is no Docker-group membership.
 
 [Install]

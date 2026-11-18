@@ -33,9 +33,9 @@ function outcome(kind: Kind, row: Row, job?: Job, unread = false): Outcome {
   if (state === 'failed') return { mark: state, note: job?.message || '任务失败，请进入节点详情查看。', tone: 'bad' }
   if (state !== 'completed') return unread ? { mark: state, note: '暂时无法读取任务状态，正在重试…', tone: 'warn' } : { mark: state, note: state === 'running' ? '正在与节点通信，请稍候…' : job?.message || '任务已保存，等待执行' }
   // A check job completes even when the node fails its checks, so the finding has to come from the result.
-  const result = asRecord(job?.result), checks = Array.isArray(result.checks) ? result.checks.map(asRecord) : [], problems = checks.filter(c => !c.ok)
+  const result = asRecord(job?.result), checks = Array.isArray(result.checks) ? result.checks.map(asRecord) : [], problems = checks.filter(c => c.status === 'failed' || c.ok === false)
   if (kind === 'check' && (problems.length || result.ready === false)) return { mark: state, note: problems.length ? `需处理：${problems.map(c => [text(c.name), text(c.message)].filter(Boolean).join('：')).join('；')}` : '节点未就绪，请进入节点详情查看检查结果。', tone: 'warn' }
-  return { mark: state, note: kind === 'check' && checks.length ? `${checks.length} 项检查通过` : job?.message || '任务已完成' }
+  return { mark: state, note: kind === 'check' && checks.length ? `${checks.filter(c => c.ok === true).length} 项检查通过` : job?.message || '任务已完成' }
 }
 const Selection = createContext<{ ids: string[]; toggle: (id: string, checked: boolean) => void }>({ ids: [], toggle: () => {} })
 export function NodeSelectBox({ node }: { node: Node }) {

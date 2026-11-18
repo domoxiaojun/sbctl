@@ -152,6 +152,34 @@ func ControllerMain(args []string) int {
 				atomicWrite(*file, []byte(password+"\n"), 0600)
 			}
 			fmt.Println("管理员密码已重置，该账号的全部会话已失效")
+		case "ledger-history", "register-replacement-ledger":
+			t := Traffic{s.TrafficDB, s.TrafficSnapshot}
+			t.Initialize()
+			if cmd == "ledger-history" {
+				parsed(argsFor(cmd, rest), rest, 1)
+				emit(t.LedgerHistory(rest[0]))
+				return
+			}
+			parsed(argsFor(cmd, rest), rest, 3)
+			nodeID, previousID, expectedID := rest[0], rest[1], rest[2]
+			validIdentity(nodeID)
+			validIdentity(previousID)
+			validIdentity(expectedID)
+			var connection NodeConnection
+			transaction(s.ControlDB, false, func(d *DB) {
+				node := d.One("SELECT connection_json FROM nodes WHERE id=?", nodeID)
+				if node == nil {
+					fail("NOT_FOUND", "节点不存在", 404)
+				}
+				connection = parseConnection(object([]byte(str(node["connection_json"]))))
+			})
+			var snapshot Snapshot
+			decode(canonical((SSH{s.SSHDir}).Call(connection, nil, true)), &snapshot)
+			if snapshot.LedgerID != expectedID {
+				fail("LEDGER_CHANGED", "节点统计通道返回的账本身份与指定的新身份不一致")
+			}
+			t.RegisterReplacement(nodeID, previousID, snapshot)
+			emit(M{"node_id": nodeID, "previous_ledger_id": previousID, "ledger_id": expectedID})
 		case "sync":
 			f := argsFor(cmd, rest)
 			parallel := f.Int("parallel", 4, "")
@@ -269,11 +297,19 @@ func NodeMain(args []string) int {
 				return
 			}
 			v := object(body)
+			if len(v) == 2 && v["action"] == "connections" {
+				after := integer(v["after"])
+				if after < 0 {
+					fail("ACTION_REJECTED", "连接明细游标无效")
+				}
+				emit((Ledger{Path: "/opt/sbctl/data/ledger/ledger.db"}).connectionPage(after))
+				return
+			}
 			if len(v) != 1 || v["action"] != "inspect" {
 				fail("ACTION_REJECTED", "统计动作无效")
 			}
-			checkCollectorTools()
-			emit(M{"ready": true, "version": Version})
+			response := readNativeStats("capabilities")
+			emit(M{"ready": true, "version": Version, "schema_version": response.SchemaVersion, "node_id": response.NodeID, "runtime_epoch": response.RuntimeEpoch})
 			return
 		}
 		if cmd == "collect" {
@@ -291,22 +327,26 @@ func NodeMain(args []string) int {
 			}
 			initialize(l.Path, "ledger")
 			for {
+				delay := 5 * time.Second
 				err := Attempt(func() {
 					var before, after Runtime
 					decode(runCommand([]string{"/usr/bin/sudo", "-n", "/usr/local/sbin/sbctl-runtime"}, nil, 15*time.Second), &before)
-					raw := object(runCommand([]string{"/opt/sbctl/node-tools/grpcurl", "-plaintext", "-connect-timeout", "3", "-max-time", "5", "-import-path", "/opt/sbctl/node-tools", "-proto", "stats.proto", "-d", `{"reset":false}`, "127.0.0.1:10085", "v2ray.core.app.stats.command.StatsService/QueryStats"}, nil, 15*time.Second))
+					epoch, afterSeq := l.connectionCursor()
+					native := readNativeStatsSince("snapshot", epoch, afterSeq)
 					decode(runCommand([]string{"/usr/bin/sudo", "-n", "/usr/local/sbin/sbctl-runtime"}, nil, 15*time.Second), &after)
-					rows := []M{}
-					for _, r := range array(raw["stat"]) {
-						rows = append(rows, mapping(r))
+					if native.NodeID != l.NodeID || before.Statistics == nil || native.Counters == nil {
+						fail("STATS_PROTOCOL", "自研统计接口与节点运行清单不一致")
 					}
-					l.Ingest(before, after, rows, false)
+					l.IngestWithConnections(before, after, nativeStatsRows(native, before.Statistics), nativeStatsConnections(native), native.RuntimeEpoch, native.ConnectionSequence, native.ConnectionsTruncated, false)
+					if native.More {
+						delay = 0
+					}
 				})
 				if err != nil {
 					fmt.Fprintln(os.Stderr, "collector:", PublicFault(err).Code)
 					_ = Attempt(l.WriteExport)
 				}
-				if stopped(ctx, 5*time.Second) {
+				if stopped(ctx, delay) {
 					return
 				}
 			}
@@ -348,7 +388,7 @@ func NodeMain(args []string) int {
 			}
 			emit(M{"probe": "passed", "protocols": len(creds), "udp": *udp})
 		case "worker":
-			a.migrateGuardManifest()
+			a.Initialize()
 			for {
 				delay := 250 * time.Millisecond
 				err := Attempt(func() {

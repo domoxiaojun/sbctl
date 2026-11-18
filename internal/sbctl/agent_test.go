@@ -41,8 +41,8 @@ func testAgent(t *testing.T) (*Agent, *fakeEngine) {
 	atomicWrite(template, canonical(M{"inbounds": []M{{"type": "anytls", "tag": "anytls-in", "users": []M{}}, {"type": "tuic", "tag": "tuic-in", "users": []M{}}, {"type": "direct", "tag": "legacy", "listen_port": 8080}}}), 0600)
 	probes := filepath.Join(dir, "probes.json")
 	u := "d754b796-4d5c-4b91-83e9-5f2951e85c97"
-	atomicWrite(probes, canonical([]Credential{{"sys_probe", "anytls", "cred_probe_anytls", 1, "probe-password", nil, 0}, {"sys_probe", "tuic", "cred_probe_tuic", 1, "probe-password", &u, 0}}), 0600)
-	s := NodeSettings{NodeID: "node_hk", StateDir: filepath.Join(dir, "state"), SafetyDir: filepath.Join(dir, "safety"), ConfigDir: filepath.Join(dir, "config"), TemplateFile: template, ProbeFile: probes, TemplateHash: hash(read(template)), Image: "ghcr.io/owner/image@sha256:" + strings.Repeat("a", 64), EngineBuildID: strings.Repeat("a", 64), Container: "sbctl-test", UID: os.Getuid(), GID: os.Getgid(), RevokeFailure: "stop", Endpoints: []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}}, ProbePort: 31840, ProbeUDPPort: 53190}
+	atomicWrite(probes, canonical([]Credential{{"sys_probe", "anytls", "cred_probe_anytls", 1, "probe-password", nil, 0, ""}, {"sys_probe", "tuic", "cred_probe_tuic", 1, "probe-password", &u, 0, ""}}), 0600)
+	s := NodeSettings{NodeID: "node_hk", StateDir: filepath.Join(dir, "state"), SafetyDir: filepath.Join(dir, "safety"), ConfigDir: filepath.Join(dir, "config"), TemplateFile: template, ProbeFile: probes, TemplateHash: hash(read(template)), Image: "ghcr.io/owner/image@sha256:" + strings.Repeat("a", 64), EngineBuildID: strings.Repeat("a", 64), Container: "sbctl-test", UID: os.Getuid(), GID: os.Getgid(), RevokeFailure: "stop", Endpoints: []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}}, ProbePort: 31840, ProbeUDPPort: 53190}
 	f := &fakeEngine{s: s, binding: M{"config_hash": "old", "node_revision": 0, "users": []string{}}}
 	a := NewAgent(s, f)
 	a.Initialize()
@@ -55,12 +55,12 @@ func agentRequest(a *Agent, rev int64, users []Credential, revoked []string) Nod
 	if revoked == nil {
 		revoked = []string{}
 	}
-	r := NodeRequest{1, a.Settings.NodeID, fmt.Sprintf("req_%d", rev), rev, a.Settings.TemplateHash, a.Settings.EngineBuildID, users, revoked, ""}
+	r := NodeRequest{SchemaVersion: 1, NodeID: a.Settings.NodeID, RequestID: fmt.Sprintf("req_%d", rev), NodeRevision: rev, TemplateHash: a.Settings.TemplateHash, EngineBuildID: a.Settings.EngineBuildID, Users: users, Revoked: revoked}
 	r.Seal()
 	return r
 }
 func testCredential() Credential {
-	return Credential{"usr_alice", "anytls", "cred_alice", 1, "alice-password", nil, 0}
+	return Credential{"usr_alice", "anytls", "cred_alice", 1, "alice-password", nil, 0, ""}
 }
 func TestNodeRevocationAndReplay(t *testing.T) {
 	a, e := testAgent(t)
@@ -134,7 +134,7 @@ func TestNodeEnableUsesNewGenerationAndRetainsRevocations(t *testing.T) {
 	a.ApplyOnce()
 	a.Accept(agentRequest(a, 2, nil, []string{old.Fingerprint()}))
 	a.ApplyOnce()
-	fresh := Credential{old.UserID, old.Protocol, "cred_fresh", 2, "new-test-password", nil, 0}
+	fresh := Credential{old.UserID, old.Protocol, "cred_fresh", 2, "new-test-password", nil, 0, ""}
 	a.Accept(agentRequest(a, 3, []Credential{fresh}, []string{old.Fingerprint()}))
 	a.ApplyOnce()
 	if mapping(a.Status()["latest"])["state"] != "verified" {

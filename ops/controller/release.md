@@ -19,7 +19,7 @@
 
 默认使用 `ghcr.io/domoxiaojun/sbctl:latest`。升级时核对发行回执及 SHA-256，拉取 latest 并记录实际 digest，停止相关写入服务后备份 Compose、现有程序、配置和数据，保留原镜像；无需重新初始化管理员或数据库。若 `/opt/sbctl/.env` 已有旧版本的 `SBCTL_IMAGE`，需要移除该项或改为 `ghcr.io/domoxiaojun/sbctl:latest`，否则它会覆盖 Compose 默认值。需要回退时仍可通过该变量选择指定版本或已记录的 digest。修改标签不会自动更新已运行的容器。
 
-sing-box 的 Compose 默认使用 `ghcr.io/domoxiaojun/sing-box:latest`，可用 `SING_BOX_IMAGE` 覆盖。该标签由 sing-box 独立 CI 在双架构协议和统计检查通过后发布，保留 `with_v2ray_api`。sbctl 的 guard 和节点 helper 属于宿主工具更新，不在 sing-box 镜像内；内核升级后需重新检查并确认节点绑定的实际镜像 ID，不会通过标签变化自动更新绑定。原始试点的固定 digest、探针脚本和运行快照保留用于历史复现。
+sing-box 的 Compose 默认使用 `ghcr.io/domoxiaojun/sing-box:latest`，可用 `SING_BOX_IMAGE` 覆盖。该标签由 sing-box 独立 CI 在双架构协议和统计检查通过后发布，保留 `sbctl 原生统计 socket`。sbctl 的 guard 和节点 helper 属于宿主工具更新，不在 sing-box 镜像内；内核升级后需重新检查并确认节点绑定的实际镜像 ID，不会通过标签变化自动更新绑定。原始试点的固定 digest、探针脚本和运行快照保留用于历史复现。
 
 从 v0.10.5 升至 v0.10.6 时，先停止 sbctl 节点 worker 并备份节点状态和守卫，再用发行包中的 `guard.sh` 替换节点原 guard，最后替换 `/opt/sbctl/bin/sbctl-node` 并启用新版发布/采集服务。新版 helper 会把旧三行 manifest 迁移为格式 2；旧 guard 无法读取新清单，必须遵守先 guard、后 worker 的顺序。主控也须配套升级，才能读取新配置快照 RPC。保留代理 Compose、模板、探针凭据、节点安全版本、配置观察序号、接管日志和累计账本；单独通过节点管理检查/确认验证绑定。程序升级不直接重建 sing-box。本版本发行不代表已完成真实服务器升级和配置同步验收。
 
@@ -39,3 +39,14 @@ sbctl acceptance --base-url http://127.0.0.1:18100 \
 ```
 
 节点 verified 回执包含新凭据的 TCP/UDP 实际认证、移除凭据的失败探测与有效凭据对照。只有一台受管节点时，授权预览验证当前组与节点一致；不声称已完成跨节点增减或失联恢复验收。
+
+## v0.11.0 升级
+
+本版使用捆绑自研统计的 sing-box 1.14.4-sbctl.1。生产升级时，从验证回执选择主控和内核的固定镜像摘要。旧试点的回退镜像和工具在对应试点目录保留。
+
+1. 在维护窗口备份主控与节点的 SQLite、配置、Compose、启动守卫和密钥，保留旧镜像摘要。数据库迁移后回退旧程序需使用对应版本的备份，并先核对备份后的授权与撤销记录。
+2. 将主控流量目录设为 `10002:10002`、`0750`。新版 Compose 让 API 以补充组 10002 只读挂载该目录，统计同步独占写入。同步进程启动后会将数据库设为 `0640`。
+3. 配套更新主控和节点工具。先替换节点 guard，再启动新版 worker。通过「更新绑定」指定新内核固定 digest。接管在受控目录建立专用 Unix socket 挂载，并用实际采集身份检查读取权限。
+4. 检查采样和中心同步，确认累计与历史仍可查。验证新建短连接出现在明细中，再验收 AnyTLS／TUIC、订阅和入口退役。节点滚动升级期间旧统计工具仍可提供累计快照。
+
+本版连接明细保存已结束连接，正常采集下按 90 天保留。节点先写本地账本，主控通过 Tailscale 上的受限 SSH 分页补拉。内核缓冲被覆盖时标记连接历史缺口，累计统计独立继续。

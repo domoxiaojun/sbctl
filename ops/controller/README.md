@@ -64,19 +64,19 @@ curl http://127.0.0.1:18101/healthz
 
 yxvmhk 的 `/opt/sbctl/bin/sbctl-node` 提供固定 RPC、发布、恢复、运行绑定和采集命令。`sbctl-node.service` 以 root 执行发布；`sbctl-collector.service` 使用 sbctl-stats 用户采样并写入独立账本。两者直接执行 Go 程序。
 
-发布与统计 SSH 密钥分开；固定入口继续校验 SSH_ORIGINAL_COMMAND。统计账号只允许调用固定运行状态 helper，不属于 Docker 组。采集使用现有 grpcurl 查询 `reset:false` 的 V2Ray 计数。
+发布与统计 SSH 密钥分开；固定入口继续校验 SSH_ORIGINAL_COMMAND。统计账号只允许调用固定运行状态 helper，不属于 Docker 组。流量采集由受管 sing-box fork 的 sbctl Unix socket 提供，sbctl-node 读取自研 schema 后写入本地账本。
 
-节点文件：`/opt/sbctl/config/node.toml`、固定模板及探针凭据；持久状态位于 `/opt/sbctl/data/node`、`ledger`、`safety`。用户授权管理覆盖登记的 AnyTLS/TUIC 入口；流量统计覆盖全部 sing-box 入口及可识别的命名用户。
+节点文件：`/opt/sbctl/config/node.toml`、固定模板及探针凭据；持久状态位于 `/opt/sbctl/data/node`、`ledger`、`safety`。用户授权管理覆盖已登记且通过当前探针验证的 AnyTLS/TUIC 入口，入口数量可以为零、一个或多个；流量统计覆盖全部 sing-box 入口及可识别的命名用户。
 
 ### 流量统计范围
 
 “流量统计”默认显示协议入口，可切换到“节点本地用户”。0.10.6 起不采集、不汇总、不暴露 sbctl 授权用户流量；yxvmhk 当前 19 个入口全部纳入统计，包含 AnyTLS、TUIC、VMess、VLESS、Shadowsocks 及 direct 转发。direct 表示本机转发入口，不推断它承载的加密协议或远端个人身份；不采集 VPS 网卡流量。
 
-受控接管和后续授权发布会保留所有已有凭据、监听与路由，为无标签入口补充稳定 tag，为支持独立显示名的无名用户补充 name，并开启 V2Ray API 全入口和节点本地命名用户计数。系统探针不计入本地用户用量，但会计入入口总量。共享密码或无独立身份的连接只归属入口；节点本地用户不会因此获得 sbctl 管理授权。
+受控接管和后续授权发布会保留所有已有凭据、监听与路由，为无标签入口补充稳定 tag，为支持独立显示名的无名用户补充 name，并通过 sbctl 原生 Unix socket 读取全入口、节点本地命名用户和连接生命周期计数。系统探针不计入本地用户用量，但会计入入口总量。共享密码或无独立身份的连接只归属入口；节点本地用户不会因此获得 sbctl 管理授权。
 
 入口与用户是两个统计角度，不能相加。新增统计项从首次采样建立基线，历史未采集流量不回填。已记录累计在重启、禁用和移除后保留；采样缺口继续显示，不能把它当成零流量。新字段通过原节点账本的增量表保存，升级不清空已有用户历史。
 
-`GET /api/v1/traffic` 使用管理员会话，返回入口/本地用户累计、起点、新鲜度与质量。采集器经固定 root helper 获取不含凭据的统计清单，统计账号无须读取 sing-box 配置。回归测试同时覆盖 gRPC 对零值省略 `value` 的格式。
+`GET /api/v1/traffic` 使用管理员会话，返回入口/本地用户累计、起点、新鲜度与质量。`GET /api/v1/traffic/connections` 返回最近 90 天的连接、域名、目标、规则、出站和字节明细，并提供聚合摘要。采集器经固定 root helper 获取不含凭据的统计清单，统计账号无须读取 sing-box 配置。连接增量按原生 socket 的生命周期序号读取，避免短连接只存在于一次采样之间时丢失。
 
 0.7.0 增加节点、协议、关键词和记录状态筛选，以及 UTC+8 日期区间查询。主控在流量库内保存日期增量，并导出到 `/opt/sbctl/data/telemetry/history/` 供 API 只读查询；首次基线为 2026-11-16 13:55:46（UTC+8）。旧累计继续保留，升级前日期无明细，不能反推或按零判断。网页每 15 秒读取最新统计，也支持手动刷新。0.8.0 基于相同日期账本提供日趋势及分类排行、点击筛选，保留原日期基线。0.9.1 将这些统计统一集中在流量统计页；总览显示运行摘要，节点页集中 sing-box 管理、配置检查和当前协议清单。节点详情可以定位进入对应流量查询，0.10.4 移除原用户详情的统计跳转。
 
@@ -101,7 +101,7 @@ Go 维护入口包括 `sbctl initialize --password-file PATH`、`register`、`im
 
 节点管理页面支持从主控的只读 Tailscale 快照选择候选主机，也支持手动填写 Tailscale 地址。发现在线只代表主机可见，不代表已经接管。首次接入按页面指引安装固定 helper、配置 `sbctl-publish`/`sbctl-stats` 的受限 SSH 公钥，并核对 SSH 主机公钥；主控不会通过 API 执行任意 root SSH 或 Docker 命令。
 
-点击检查后，worker 只读取 Compose、运行容器、配置摘要、AnyTLS/TUIC 入口、镜像能力、统计工具和现有用户数量；检查结果 15 分钟内有效。确认步骤可保留当前容器名和镜像引用，或指定新的合法名称/镜像；新镜像必须先被拉取、按摘要固定，并通过 `with_v2ray_api` 与配置预检。接管会备份文件、保留非受管入口和固定用户、写入启动守卫，必要时短暂重建当前容器，并用真实协议探针与独立采集通道验证。节点重启后会通过固定 `config_snapshot` 动作记录配置事件序号；主控发现手工修改时加密保存原始快照，并按节点锁吸收入口、凭据和订阅变化。未知用户身份保留快照且不部分更新；受管入口缺失、重复或无法唯一匹配则撤销该节点授权并暂停新增分配。
+点击检查后，worker 只读取 Compose、运行容器、配置摘要、AnyTLS/TUIC 入口、镜像能力、统计工具和现有用户数量；检查结果 15 分钟内有效。确认步骤可保留当前容器名和镜像引用，或指定新的合法名称/镜像；新镜像必须先被拉取、按摘要固定，并通过 `sbctl 原生统计 socket` 与配置预检。接管会备份文件、保留非受管入口和固定用户、写入启动守卫，必要时短暂重建当前容器，并用真实协议探针与独立采集通道验证。节点重启后会通过固定 `config_snapshot` 动作记录配置事件序号；主控发现手工修改时加密保存原始快照，并按节点锁吸收入口、凭据和订阅变化。未知用户身份保留快照且不部分更新；受管入口缺失、重复或无法唯一匹配则撤销该节点授权并暂停新增分配。
 
 节点详情可以编辑名称、地区和分组，或重新打开更新绑定；版本号和并发任务保护避免覆盖其他管理员的修改。任务 ID 会保存在当前浏览器会话中，刷新页面后仍可查看排队、运行或失败结果；私钥和密码不会写入浏览器存储。主控只自动发现 Tailscale 主机，不自动接管其它节点。
 
@@ -109,15 +109,15 @@ Go 维护入口包括 `sbctl initialize --password-file PATH`、`register`、`im
 
 ### 新节点准备
 
-支持 Linux、systemd、Docker Compose 的 `sing-box` 服务，使用 host 网络、明确的非 root 数字 UID:GID；配置目录只读挂载为 `/etc/sing-box`，数据目录可写挂载为 `/var/lib/sing-box`。需要各一个 AnyTLS/TUIC 入口及有效 TLS 证书。公网地址是客户端连接地址；证书域名不同则在页面填写 TLS 证书域名。
+支持 Linux、systemd、Docker Compose 的 `sing-box` 服务，使用 host 网络、明确的非 root 数字 UID:GID；配置目录只读挂载为 `/etc/sing-box`，数据目录可写挂载为 `/var/lib/sing-box`。客户端入口可以为零个、一个或多个。用户授权目前只支持通过当前探针验证的 AnyTLS/TUIC 入口，没有客户端入口的节点仍可纳管、检查、同步和统计，但不能作为用户授权目标。公网地址是客户端连接地址；证书域名不同则在页面填写 TLS 证书域名。
 
-将对应架构的 `dist/linux-<架构>/sbctl-node` 安装到 `/opt/sbctl/bin/sbctl-node`，把 `ops/controller/node` 完整目录传至节点 `/opt/sbctl/install/node`。将经过发布方 checksum 核验的 grpcurl 安装为 `/opt/sbctl/node-tools/grpcurl`，然后以 root 执行：
+将对应架构的 `dist/linux-<架构>/sbctl-node` 安装到 `/opt/sbctl/bin/sbctl-node`，把 `ops/controller/node` 完整目录传至节点 `/opt/sbctl/install/node`。代理容器必须使用包含 sbctl 原生统计 socket 的 sing-box 1.14.x 镜像，然后以 root 执行：
 
 ```sh
 bash /opt/sbctl/install/node/bootstrap.sh
 ```
 
-脚本安装账号、固定 helper、proto、systemd 服务与 guard，不启动或修改代理。两账号 home 可通过 `getent passwd sbctl-publish sbctl-stats` 查询。在各自 `.ssh/authorized_keys` 添加页面给出的对应公钥，使用下面的限制前缀；替换 `<公钥>`，不可写入私钥：
+脚本安装账号、固定 helper、systemd 服务与 guard，不启动或修改代理。两账号 home 可通过 `getent passwd sbctl-publish sbctl-stats` 查询。在各自 `.ssh/authorized_keys` 添加页面给出的对应公钥，使用下面的限制前缀；替换 `<公钥>`，不可写入私钥：
 
 ```text
 from="100.70.0.9",restrict,command="/usr/local/bin/sbctl-publish" <发布公钥>

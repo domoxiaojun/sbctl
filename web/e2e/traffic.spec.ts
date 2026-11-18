@@ -248,3 +248,15 @@ test('按月趋势切换并定位到当月', async ({ page }) => {
  await expect(page.getByRole('img', { name: /每日流量趋势/ })).toBeVisible()
  expect(errors).toEqual([])
 })
+
+test('连接明细按节点与协议查询', async ({ page }) => {
+ const node = fixtures(Date.now()).nodes[0]
+ const connections = page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/traffic/connections'))
+ await page.goto(`/usage?node=${node.id}&protocol=anytls`)
+ const request = new URL((await connections).url())
+ expect(request.searchParams.get('node')).toBe(node.id)
+ expect(request.searchParams.get('protocol')).toBe('anytls')
+ const details = page.getByRole('region', { name: '连接明细' })
+ await expect(details.getByRole('row').filter({ hasText: 'anytls-in' })).toBeVisible()
+ await expect(details.getByText('热门域名')).toBeVisible()
+})

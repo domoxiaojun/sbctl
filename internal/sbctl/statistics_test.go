@@ -41,7 +41,7 @@ func TestStatisticsSeriesLifecycleAndUpgrade(t *testing.T) {
 	var decoded Snapshot
 	decode(canonical(old), &decoded)
 	decoded.Verify()
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"ss-in", "shadowsocks", 443}, {"idle", "direct", 444}}, LocalUsers: []string{"本地用户"}, TotalInbounds: 2}
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"ss-in", "shadowsocks", 443, ""}, {"idle", "direct", 444, ""}}, LocalUsers: []string{"本地用户"}, TotalInbounds: 2}
 	raw := func(up, down string) []M {
 		return []M{{"name": "inbound>>>ss-in>>>traffic>>>uplink", "value": up}, {"name": "inbound>>>ss-in>>>traffic>>>downlink", "value": down}, {"name": "user>>>本地用户>>>traffic>>>uplink", "value": up}, {"name": "user>>>本地用户>>>traffic>>>downlink", "value": down}, {"name": "inbound>>>idle>>>traffic>>>uplink", "value": up}, {"name": "inbound>>>idle>>>traffic>>>downlink", "value": down}}
 	}
@@ -91,10 +91,10 @@ func TestStatisticsSeriesPortChangeKeepsAccumulating(t *testing.T) {
 	l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, LocalUsers: []string{}, TotalInbounds: 1}
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443, ""}}, LocalUsers: []string{}, TotalInbounds: 1}
 	first := []M{{"name": "inbound>>>relay>>>traffic>>>uplink", "value": "100"}, {"name": "inbound>>>relay>>>traffic>>>downlink", "value": "200"}}
 	l.Ingest(rt, rt, first, false)
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 5443}}, LocalUsers: []string{}, TotalInbounds: 1}
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 5443, ""}}, LocalUsers: []string{}, TotalInbounds: 1}
 	second := []M{{"name": "inbound>>>relay>>>traffic>>>uplink", "value": "140"}, {"name": "inbound>>>relay>>>traffic>>>downlink", "value": "260"}}
 	if err := Attempt(func() { l.Ingest(rt, rt, second, false) }); err != nil {
 		t.Fatalf("port edit must not freeze the ledger: %v", err)
@@ -102,6 +102,77 @@ func TestStatisticsSeriesPortChangeKeepsAccumulating(t *testing.T) {
 	s := l.Snapshot()
 	if len(s.Inbounds) != 1 || s.Inbounds[0].Port != 5443 || s.Inbounds[0].Upload != "40" || s.Inbounds[0].Download != "60" {
 		t.Fatalf("port change was not recorded while preserving deltas: %+v", s.Inbounds)
+	}
+}
+
+func TestInboundHistorySurvivesRenameAndSeparatesSameTagRecreation(t *testing.T) {
+	root := t.TempDir()
+	ledger := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
+	ledger.Create()
+	traffic := Traffic{filepath.Join(root, "traffic.db"), filepath.Join(root, "traffic.json")}
+	traffic.Initialize()
+	runtime := testRuntime()
+	sample := func(tag, id, epoch, bytes string) Snapshot {
+		runtime.StartedAt = epoch
+		runtime.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{Tag: tag, Protocol: "direct", Port: 443, InboundID: id}}, TotalInbounds: 1}
+		ledger.Ingest(runtime, runtime, []M{{"name": "inbound>>>" + tag + ">>>traffic>>>uplink", "value": bytes}}, false)
+		result := ledger.Snapshot()
+		traffic.Ingest("node_hk", result)
+		return result
+	}
+	originalID := legacyInboundID(Endpoint{Tag: "relay", Protocol: "direct"})
+	initial := sample("relay", originalID, "epoch-1", "100")
+	sample("relay", originalID, "epoch-1", "140")
+	renamed := sample("renamed", originalID, "epoch-2", "10")
+	if renamed.Inbounds[0].Upload != "50" || renamed.Inbounds[0].HistoryTag != "relay" || renamed.LedgerID != initial.LedgerID {
+		t.Fatal("rename or restart lost history", renamed)
+	}
+	recreatedID := identifier("inb")
+	sample("renamed", recreatedID, "epoch-3", "9")
+	result := sample("renamed", recreatedID, "epoch-3", "17")
+	if len(result.Inbounds) != 2 || traffic.Ingest("node_hk", result) {
+		t.Fatal("recreated series was merged or replayed")
+	}
+	for _, inbound := range result.Inbounds {
+		switch inbound.identity() {
+		case originalID:
+			if inbound.Upload != "50" || inbound.Active {
+				t.Fatal("historical series was overwritten", inbound)
+			}
+		case recreatedID:
+			if inbound.Upload != "8" || !inbound.Active {
+				t.Fatal("new series inherited old counters", inbound)
+			}
+		default:
+			t.Fatal("unexpected identity", inbound)
+		}
+	}
+}
+
+func TestReplacementLedgerRequiresRegistrationAndPreservesArchive(t *testing.T) {
+	root := t.TempDir()
+	traffic := Traffic{filepath.Join(root, "traffic.db"), filepath.Join(root, "traffic.json")}
+	traffic.Initialize()
+	at := "2026-01-01T00:00:30Z"
+	old := historySnapshot(16, at, "100", "200")
+	traffic.Ingest(old.NodeID, old)
+	replacement := historySnapshot(1, "2026-01-01T00:01:00Z", "7", "9")
+	replacement.LedgerID = "ledger_replacement"
+	replacement.Seal()
+	expectFault(t, "LEDGER_CHANGED", func() { traffic.Ingest(old.NodeID, replacement) })
+	if !traffic.RegisterReplacement(old.NodeID, old.LedgerID, replacement) || traffic.RegisterReplacement(old.NodeID, old.LedgerID, replacement) {
+		t.Fatal("registration must commit once")
+	}
+	history := traffic.LedgerHistory(old.NodeID)
+	if len(history) != 1 || history[0]["replaced_by"] != replacement.LedgerID || mapping(history[0]["last_snapshot"])["checksum"] != old.Checksum {
+		t.Fatal("previous identity or archived counters are missing", history)
+	}
+	expectFault(t, "LEDGER_CHANGED", func() { traffic.Ingest(old.NodeID, old) })
+	next := replacement
+	next.Seq++
+	next.Seal()
+	if !traffic.Ingest(old.NodeID, next) || traffic.Ingest(old.NodeID, next) {
+		t.Fatal("replacement ledger did not establish an independent sequence")
 	}
 }
 func TestSnapshotChecksumWithoutOptionalSeries(t *testing.T) {
@@ -121,7 +192,7 @@ func TestStatisticsProtoZeroValues(t *testing.T) {
 	l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), "node_hk"}
 	l.Create()
 	rt := testRuntime()
-	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443}}, LocalUsers: []string{"local"}, TotalInbounds: 1}
+	rt.Statistics = &StatisticsManifest{Inbounds: []InboundIdentity{{"relay", "direct", 443, ""}}, LocalUsers: []string{"local"}, TotalInbounds: 1}
 	raw := []M{}
 	raw = append(raw, M{"name": "inbound>>>relay>>>traffic>>>uplink"}, M{"name": "inbound>>>relay>>>traffic>>>downlink"}, M{"name": "user>>>local>>>traffic>>>uplink"}, M{"name": "user>>>local>>>traffic>>>downlink"})
 	for _, row := range raw {

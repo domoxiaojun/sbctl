@@ -5,3 +5,6 @@ CREATE TABLE IF NOT EXISTS requests (
  previous_epoch TEXT, applied_epoch TEXT
 );
 CREATE TABLE IF NOT EXISTS revoked (fingerprint TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS retiring_inbounds (
+ inbound_id TEXT PRIMARY KEY, job_id TEXT NOT NULL
+);

@@ -15,6 +15,7 @@ type Credential struct {
 	Password     string  `json:"password"`
 	UUID         *string `json:"uuid"`
 	ExternalSeq  int64   `json:"external_sync_seq,omitempty"`
+	InboundID    string  `json:"inbound_id,omitempty"`
 }
 
 func (c Credential) authenticationFingerprint() string {
@@ -34,6 +35,9 @@ func (c Credential) Fingerprint() string {
 func (c *Credential) Validate() {
 	validIdentity(c.UserID)
 	validIdentity(c.CredentialID)
+	if c.InboundID != "" {
+		validIdentity(c.InboundID)
+	}
 	if c.Generation < 1 || c.Generation > 1000000 || c.ExternalSeq < 0 || utf8.RuneCountInString(c.Password) < 1 || utf8.RuneCountInString(c.Password) > 1024 {
 		fail("CREDENTIAL_INVALID", "凭据字段无效")
 	}
@@ -67,12 +71,22 @@ type NodeRequest struct {
 	Users         []Credential `json:"users"`
 	Revoked       []string     `json:"revoked_credentials"`
 	PayloadHash   string       `json:"payload_hash"`
+	Retirement    string       `json:"retiring_inbound_id,omitempty"`
+	RetirementJob string       `json:"retirement_job_id,omitempty"`
 }
+
+const maxNodeCredentials = 400
 
 func (r *NodeRequest) Validate() {
 	validIdentity(r.NodeID)
 	validIdentity(r.RequestID)
-	if r.SchemaVersion != 1 || r.NodeRevision < 1 || !hashRE.MatchString(r.TemplateHash) || !hashRE.MatchString(r.EngineBuildID) || len(r.Users) > 400 || len(r.Revoked) > 10000 || r.Users == nil || r.Revoked == nil {
+	if r.Retirement != "" {
+		validIdentity(r.Retirement)
+		validIdentity(r.RetirementJob)
+	} else if r.RetirementJob != "" {
+		fail("REQUEST_INVALID", "退役请求缺少入口")
+	}
+	if r.SchemaVersion != 1 || r.NodeRevision < 1 || !hashRE.MatchString(r.TemplateHash) || !hashRE.MatchString(r.EngineBuildID) || len(r.Users) > maxNodeCredentials || len(r.Revoked) > 10000 || r.Users == nil || r.Revoked == nil {
 		fail("REQUEST_INVALID", "节点请求字段无效")
 	}
 	revoked := map[string]bool{}
@@ -87,6 +101,9 @@ func (r *NodeRequest) Validate() {
 	for i := range r.Users {
 		c := &r.Users[i]
 		c.Validate()
+		if r.Retirement != "" && r.Retirement == c.InboundID {
+			fail("REQUEST_INVALID", "退役入口仍包含用户凭据")
+		}
 		fp := c.Fingerprint()
 		if ids[c.CredentialID] || prints[fp] || authentication[c.authenticationFingerprint()] || revoked[fp] {
 			fail("REQUEST_INVALID", "重复或已撤销凭据")
@@ -95,9 +112,12 @@ func (r *NodeRequest) Validate() {
 		prints[fp] = true
 		authentication[c.authenticationFingerprint()] = true
 		k := c.UserID + ":" + c.Protocol
+		if c.InboundID != "" {
+			k = c.UserID + ":" + c.InboundID
+		}
 		comb[k]++
 		if comb[k] > 2 {
-			fail("REQUEST_INVALID", "凭据代数过多")
+			fail("REQUEST_INVALID", "同用户同入口凭据代数过多")
 		}
 	}
 }
@@ -138,14 +158,44 @@ func (r Runtime) Stable(s Runtime) bool {
 }
 
 type LedgerInbound struct {
+	Tag        string `json:"tag"`
+	Protocol   string `json:"protocol"`
+	Upload     string `json:"upload_bytes"`
+	Download   string `json:"download_bytes"`
+	Port       int    `json:"port"`
+	StartedAt  string `json:"started_at"`
+	Active     bool   `json:"active"`
+	InboundID  string `json:"inbound_id,omitempty"`
+	HistoryTag string `json:"history_tag,omitempty"`
+}
+
+type LedgerOutbound struct {
 	Tag       string `json:"tag"`
-	Protocol  string `json:"protocol"`
 	Upload    string `json:"upload_bytes"`
 	Download  string `json:"download_bytes"`
-	Port      int    `json:"port"`
 	StartedAt string `json:"started_at"`
 	Active    bool   `json:"active"`
 }
+
+func (i LedgerInbound) identity() string {
+	if i.InboundID != "" {
+		return i.InboundID
+	}
+	return legacyInboundID(Endpoint{Protocol: i.Protocol, Tag: i.Tag})
+}
+func (i LedgerInbound) historyKey() string {
+	return inboundHistoryKey(i.Tag, i.InboundID, i.HistoryTag)
+}
+func inboundHistoryKey(tag, id, originTag string) string {
+	if originTag != "" {
+		return originTag
+	}
+	if id != "" {
+		return "inbound>>>" + id
+	}
+	return tag
+}
+
 type LedgerLocalUser struct {
 	Name      string `json:"name"`
 	Upload    string `json:"upload_bytes"`
@@ -153,25 +203,52 @@ type LedgerLocalUser struct {
 	StartedAt string `json:"started_at"`
 	Active    bool   `json:"active"`
 }
+
+// TrafficConnection is a bounded connection lifecycle record exported by the
+// native sing-box statistics socket. It intentionally contains routing
+// metadata and byte counters, never credentials or payload data.
+type TrafficConnection struct {
+	Sequence     uint64   `json:"sequence,omitempty"`
+	ID           string   `json:"id"`
+	InboundID    string   `json:"inbound_id,omitempty"`
+	Inbound      string   `json:"inbound,omitempty"`
+	InboundType  string   `json:"inbound_type,omitempty"`
+	Network      string   `json:"network,omitempty"`
+	Domain       string   `json:"domain,omitempty"`
+	Destination  string   `json:"destination,omitempty"`
+	Source       string   `json:"source,omitempty"`
+	Outbound     string   `json:"outbound,omitempty"`
+	OutboundType string   `json:"outbound_type,omitempty"`
+	Chain        []string `json:"chain,omitempty"`
+	Rule         string   `json:"rule,omitempty"`
+	Upload       string   `json:"upload_bytes"`
+	Download     string   `json:"download_bytes"`
+	StartedAt    string   `json:"started_at"`
+	ClosedAt     string   `json:"closed_at,omitempty"`
+}
 type DataQuality struct {
 	Integrity string `json:"integrity_state"`
 	HasGap    bool   `json:"has_historical_gap"`
 	Gaps      int64  `json:"gap_count"`
 }
 type Snapshot struct {
-	SchemaVersion int               `json:"schema_version"`
-	NodeID        string            `json:"node_id"`
-	LedgerID      string            `json:"ledger_id"`
-	Seq           int64             `json:"snapshot_seq"`
-	StartedAt     string            `json:"started_at"`
-	SampledAt     *string           `json:"sampled_at"`
-	SourceEpoch   *string           `json:"source_epoch"`
-	ConfigHash    *string           `json:"config_hash"`
-	Inbounds      []LedgerInbound   `json:"inbounds,omitempty"`
-	LocalUsers    []LedgerLocalUser `json:"local_users,omitempty"`
-	TotalInbounds int               `json:"total_inbounds,omitempty"`
-	Quality       DataQuality       `json:"data_quality"`
-	Checksum      string            `json:"checksum"`
+	SchemaVersion  int                 `json:"schema_version"`
+	NodeID         string              `json:"node_id"`
+	LedgerID       string              `json:"ledger_id"`
+	Seq            int64               `json:"snapshot_seq"`
+	StartedAt      string              `json:"started_at"`
+	SampledAt      *string             `json:"sampled_at"`
+	SourceEpoch    *string             `json:"source_epoch"`
+	ConfigHash     *string             `json:"config_hash"`
+	Inbounds       []LedgerInbound     `json:"inbounds,omitempty"`
+	Outbounds      []LedgerOutbound    `json:"outbounds,omitempty"`
+	LocalUsers     []LedgerLocalUser   `json:"local_users,omitempty"`
+	Connections    []TrafficConnection `json:"connections,omitempty"`
+	ConnectionSeq  uint64              `json:"connection_sequence,omitempty"`
+	ConnectionFeed bool                `json:"connection_feed,omitempty"`
+	TotalInbounds  int                 `json:"total_inbounds,omitempty"`
+	Quality        DataQuality         `json:"data_quality"`
+	Checksum       string              `json:"checksum"`
 }
 
 func (s Snapshot) ComputedHash() string { return digest(without(object(canonical(s)), "checksum")) }
@@ -180,18 +257,25 @@ func (s *Snapshot) Seal()               { s.Checksum = s.ComputedHash() }
 func (s Snapshot) Verify() {
 	validIdentity(s.NodeID)
 	validIdentity(s.LedgerID)
-	if s.SchemaVersion != 1 || s.Seq < 1 || len(s.Inbounds) > 4096 || len(s.LocalUsers) > 10000 || s.TotalInbounds < 0 || s.TotalInbounds > 4096 || !contains([]string{"ok", "counter_error", "state_lost"}, s.Quality.Integrity) || s.Quality.Gaps < 0 {
+	if s.SchemaVersion != 1 || s.Seq < 1 || len(s.Inbounds) > 4096 || len(s.LocalUsers) > 10000 || len(s.Connections) > 100000 || s.TotalInbounds < 0 || s.TotalInbounds > 4096 || !contains([]string{"ok", "counter_error", "state_lost"}, s.Quality.Integrity) || s.Quality.Gaps < 0 {
 		fail("SNAPSHOT_INVALID", "快照字段无效")
 	}
 	if s.Checksum != s.ComputedHash() {
 		fail("SNAPSHOT_HASH", "统计快照摘要不匹配")
 	}
-	seenInbound := map[string]bool{}
+	seenInbound, activeTags, historyKeys := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, in := range s.Inbounds {
-		if !validStatName(in.Tag) || !match(`^[a-zA-Z0-9_-]{1,32}$`, in.Protocol) || seenInbound[in.Tag] || in.Port < 0 || in.Port > 65535 {
+		if in.InboundID != "" {
+			validIdentity(in.InboundID)
+		}
+		if !validStatName(in.Tag) || !match(`^[a-zA-Z0-9_-]{1,32}$`, in.Protocol) || seenInbound[in.identity()] || historyKeys[in.historyKey()] || (in.Active && activeTags[in.Tag]) || in.Port < 0 || in.Port > 65535 {
 			fail("DUPLICATE_COUNTER", "统计快照包含重复入口")
 		}
-		seenInbound[in.Tag] = true
+		if in.HistoryTag != "" && (!validStatName(in.HistoryTag) || in.InboundID != legacyInboundID(Endpoint{Protocol: in.Protocol, Tag: in.HistoryTag})) {
+			fail("SNAPSHOT_INVALID", "入口历史归属无效")
+		}
+		seenInbound[in.identity()], historyKeys[in.historyKey()] = true, true
+		activeTags[in.Tag] = activeTags[in.Tag] || in.Active
 		stamp(in.StartedAt)
 		for _, value := range []string{in.Upload, in.Download} {
 			counter(value)
@@ -209,6 +293,26 @@ func (s Snapshot) Verify() {
 		stamp(u.StartedAt)
 		counter(u.Upload)
 		counter(u.Download)
+	}
+	seenConnections := map[string]bool{}
+	for _, c := range s.Connections {
+		if c.ID == "" || len(c.ID) > 128 || strings.ContainsAny(c.ID, "\x00\r\n") {
+			fail("SNAPSHOT_INVALID", "连接身份无效")
+		}
+		if seenConnections[c.ID] || c.StartedAt == "" {
+			fail("DUPLICATE_CONNECTION", "统计快照包含重复连接")
+		}
+		seenConnections[c.ID] = true
+		for _, value := range []string{c.Upload, c.Download} {
+			counter(value)
+		}
+		stamp(c.StartedAt)
+		if c.ClosedAt != "" {
+			stamp(c.ClosedAt)
+			if stamp(c.ClosedAt).Before(stamp(c.StartedAt)) {
+				fail("SNAPSHOT_INVALID", "连接关闭时间早于创建时间")
+			}
+		}
 	}
 }
 func nullable(s string) *string {

@@ -254,7 +254,7 @@ func (v Views) Users() []M {
 func (v Views) Operations() []M {
 	out := []M{}
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		rows := d.Rows("SELECT o.*,COALESCE(s.state,'pending') AS subscription_state FROM operations o LEFT JOIN subscriptions s ON s.user_id=o.user_id ORDER BY created_at DESC LIMIT 10000")
+		rows := d.Rows("SELECT o.*,COALESCE(s.state,'pending') AS subscription_state FROM operations o LEFT JOIN subscriptions s ON s.user_id=o.user_id WHERE o.kind<>'retire_inbound' ORDER BY created_at DESC LIMIT 10000")
 		targets := map[string][]M{}
 		for _, r := range d.Rows("SELECT t.operation_id,t.node_id,n.name,t.state,t.message FROM operation_targets t JOIN nodes n ON n.id=t.node_id") {
 			id := str(r["operation_id"])

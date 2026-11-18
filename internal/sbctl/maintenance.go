@@ -59,27 +59,27 @@ func PrepareNode(input M) {
 				if existing[name] == nil {
 					existing[name] = M{}
 				}
-				if existing[name][ep.Protocol] != nil {
-					fail("IMPORT_CONFLICT", "现有用户有重复协议凭据，需人工确认")
+				if existing[name][ep.InboundID] != nil {
+					fail("IMPORT_CONFLICT", "现有用户有重复入口凭据，需人工确认")
 				}
-				existing[name][ep.Protocol] = M{"password": u["password"], "uuid": u["uuid"]}
+				existing[name][ep.InboundID] = M{"password": u["password"], "uuid": u["uuid"]}
 			}
 			i["users"] = []M{}
 		}
 	}
-	if len(found) != 2 {
-		fail("NODE_BINDING", "未找到两个受管入口")
+	if len(found) != len(s.Endpoints) {
+		fail("NODE_BINDING", "未找到全部登记入口")
 	}
 	template := append(canonical(config), '\n')
 	s.TemplateHash = hash(template)
 	probes := []Credential{}
-	for _, p := range []string{"anytls", "tuic"} {
+	for _, ep := range s.Endpoints {
 		var id *string
-		if p == "tuic" {
+		if ep.Protocol == "tuic" {
 			u := uuid.NewString()
 			id = &u
 		}
-		probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), id, 0})
+		probes = append(probes, Credential{UserID: "sys_probe", Protocol: ep.Protocol, CredentialID: "sys_" + ep.InboundID, Generation: 1, Password: token(32), UUID: id, InboundID: ep.InboundID})
 	}
 	atomicWrite(s.TemplateFile, template, 0600)
 	atomicWrite(s.ProbeFile, canonical(probes), 0600)
@@ -120,6 +120,7 @@ func installGuardQuiet(s NodeSettings) {
 		fail("NODE_BINDING", "Compose 与节点登记不一致")
 	}
 	service["entrypoint"] = []string{"/bin/sh", "/run/sbctl/guard.sh"}
+	service["environment"] = append(stringsOf(service["environment"]), "SBCTL_NODE_ID="+s.NodeID, "SBCTL_STATS_SOCKET=/var/lib/sing-box/sbctl-stats.sock")
 	service["command"] = []string{"-D", "/var/lib/sing-box", "-c", "/etc/sing-box/config.json", "run"}
 	vols := []any{}
 	for _, v := range array(service["volumes"]) {

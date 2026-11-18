@@ -52,25 +52,32 @@ export function createNodeManagementDemo(state: () => NodeState, storage?: Pick<
       if (['protocols','protocol_change','config_change','restart'].includes(submission.kind)) {
         const saved=config(d.id), n=state().nodes.find(n=>n.id===d.id)
         if(!saved || !n)return failure('节点不存在')
-        const catalog=saved.protocol_catalog ?? {node_id:d.id,hash:'b'.repeat(64),checked_at:stamp,items:n.inbounds.filter(i=>i.active).map(i=>({tag:i.tag,protocol:i.protocol,listen:'::',port:i.port,enabled:true,managed:['anytls','tuic'].includes(i.protocol),user_count:1,tls:i.protocol!=='direct',method:i.protocol==='shadowsocks'?'aes-128-gcm':'',target_host:i.protocol==='direct'?'example.test':'',target_port:i.protocol==='direct'?443:0}))}
+        const catalog: Schema['ProtocolCatalog']=saved.protocol_catalog ?? {node_id:d.id,hash:'b'.repeat(64),checked_at:stamp,items:n.inbounds.filter(i=>i.active).map(i=>({tag:i.tag,protocol:i.protocol,listen:'::',port:i.port,enabled:true,managed:['anytls','tuic'].includes(i.protocol),user_count:1,tls:i.protocol!=='direct',method:i.protocol==='shadowsocks'?'aes-128-gcm':'',target_host:i.protocol==='direct'?'example.test':'',target_port:i.protocol==='direct'?443:0}))}
         if(submission.kind==='protocol_change') {
           const change=submission.protocol_change!, existing=catalog.items.find(i=>i.tag===change.tag)
           if(catalog.hash!==change.base_hash || saved.version!==submission.expected_version)return failure('协议配置已变化，请重新读取')
-          if(existing?.managed && ['disable','delete'].includes(change.action))return failure('此入口承担 sbctl 授权与运行探针，不能停用或删除')
+          if(existing?.referenced && ['disable','delete'].includes(change.action))return failure('入口仍被路由规则引用')
           if(change.action==='create') {
-            if(existing || n.inbounds.some(i=>i.tag===change.tag))return failure('入口标签已经使用')
+            if(existing)return failure('入口标签已经使用')
             const source=catalog.items.find(i=>i.tag===change.source_tag);if(!source)return failure('配置模板不存在')
-            catalog.items.push({...source,tag:change.tag,listen:change.listen!,port:change.port!,managed:false,target_host:change.target_host??'',target_port:change.target_port??0})
-            n.inbounds.push({tag:change.tag,protocol:source.protocol,port:change.port!,active:true,upload_bytes:'0',download_bytes:'0',started_at:stamp})
+            const inbound_id='inb_'+crypto.randomUUID().replaceAll('-','')
+            catalog.items.push({...source,inbound_id,tag:change.tag,listen:change.listen!,port:change.port!,managed:!!change.subscription_host,target_host:change.target_host??'',target_port:change.target_port??0})
+            n.inbounds.push({inbound_id,tag:change.tag,protocol:source.protocol,port:change.port!,active:true,upload_bytes:'0',download_bytes:'0',started_at:stamp})
           } else if(!existing)return failure('入口不存在')
-          else if(change.action==='edit'){existing.listen=change.listen!;existing.port=change.port!;existing.target_host=change.target_host??'';existing.target_port=change.target_port??0;const counter=n.inbounds.find(i=>i.tag===change.tag);if(counter)counter.port=change.port!}
-          else {existing.enabled=change.action==='enable';const counter=n.inbounds.find(i=>i.tag===change.tag);if(counter)counter.active=existing.enabled;if(change.action==='delete')catalog.items=catalog.items.filter(i=>i.tag!==change.tag)}
+          else if(change.action==='edit'){existing.listen=change.listen!;existing.port=change.port!;existing.target_host=change.target_host??'';existing.target_port=change.target_port??0;const counter=n.inbounds.find(i=>existing.inbound_id ? i.inbound_id===existing.inbound_id : i.active && i.tag===change.tag);if(counter){counter.port=change.port!;counter.tag=change.new_tag??change.tag}existing.tag=change.new_tag??change.tag;existing.managed=existing.managed||!!change.subscription_host}
+          else {existing.enabled=change.action==='enable';const counter=n.inbounds.find(i=>existing.inbound_id ? i.inbound_id===existing.inbound_id : i.tag===change.tag && !i.inbound_id);if(counter)counter.active=existing.enabled;if(change.action==='delete')catalog.items=catalog.items.filter(i=>i.tag!==change.tag)}
           catalog.hash=crypto.randomUUID().replaceAll('-','').repeat(2)
         }
         if(submission.kind!=='protocols')saved.version++
         catalog.checked_at=stamp;saved.protocol_catalog=catalog;configurations.set(d.id,saved)
         Object.assign(result,submission.kind==='protocols'?catalog:{node_id:d.id,ready:true,catalog,template_hash:'b'.repeat(64),endpoints:[]})
         n.total_inbounds=n.inbounds.filter(i=>i.active).length
+      }
+      if (submission.kind === 'verify_inbounds') {
+        const saved=config(d.id)
+        if(!saved)return failure('节点不存在')
+        for(const item of saved.protocol_catalog?.items??[])if(item.managed&&item.enabled)item.probe_state='passed'
+        configurations.set(d.id,saved)
       }
       if (submission.kind === 'configure') {
         configurations.set(d.id,{protocol_catalog:null,version:submission.expected_version+1,draft:d,binding:result,checked_at:stamp,last_check:result})

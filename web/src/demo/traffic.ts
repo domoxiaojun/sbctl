@@ -55,3 +55,17 @@ export function demoTraffic(state: State, params: URLSearchParams, now: number):
  }
  return { nodes, periods: nodes.map(n => ({ node_id: n.id, history_started_at: n.quality.started_at, status: !from ? 'cumulative' : available.length ? 'partial' : 'unavailable' })), from, to, scope, granularity, trend: granularity === 'hour' ? hours : granularity === 'month' ? months : trend, trend_from: trendFrom, trend_to: trendTo, timezone: 'Asia/Singapore', as_of: new Date(now).toISOString() }
 }
+
+export function demoTrafficConnections(state: State, params: URLSearchParams, now: number): Schema['TrafficConnectionReport'] {
+ const node = params.get('node'), protocol = params.get('protocol'), selected = state.nodes.filter(n => !node || n.id === node)
+ const items: Schema['TrafficConnection'][] = selected.flatMap(n => n.inbounds.filter(i => !protocol || i.protocol === protocol).slice(0, 4).map((i, index) => ({
+  node_id: n.id, connection_id: `demo-${n.id}-${i.tag}`, inbound_id: '', inbound: i.tag, inbound_type: i.protocol, network: 'tcp', domain: `example-${index + 1}.com`, destination: `93.184.216.${34 + index}:443`, source: '10.0.0.2:50000', outbound: 'direct', outbound_type: 'direct', chain: ['direct'], rule: 'final', upload_bytes: '1024', download_bytes: '4096', started_at: new Date(now - (index + 1) * 60_000).toISOString(), closed_at: index % 2 ? '' : new Date(now - index * 30_000).toISOString(),
+ })))
+ const summary = (key: keyof Schema['TrafficConnection']) => {
+  const counts = new Map<string, Schema['TrafficConnectionSummary']>()
+  for (const item of items) { const name = String(item[key] || ''); if (!name) continue; const old = counts.get(name); counts.set(name, { name, connections: (old?.connections ?? 0) + 1, upload_bytes: (BigInt(old?.upload_bytes ?? '0') + BigInt(item.upload_bytes)).toString(), download_bytes: (BigInt(old?.download_bytes ?? '0') + BigInt(item.download_bytes)).toString() }) }
+  return [...counts.values()].sort((a, b) => b.connections - a.connections)
+ }
+ const page = Number(params.get('page') || 1), pageSize = Number(params.get('page_size') || 100)
+ return { items: items.slice((page - 1) * pageSize, page * pageSize), total: items.length, page, page_size: pageSize, retention_days: 90, history_gap: false, from: params.get('from') ?? '', to: params.get('to') ?? '', as_of: new Date(now).toISOString(), summary: { domains: summary('domain'), destinations: summary('destination'), rules: summary('rule'), outbounds: summary('outbound') } }
+}

@@ -21,6 +21,16 @@ type configBridge struct {
 
 func (b *configBridge) Call(_ NodeConnection, body M, _ bool) M {
 	switch body["action"] {
+	case "protocols":
+		config, _ := currentConfig(b.a.Settings)
+		return object(canonical(catalogFor(b.a.Settings, config, protocolState(b.a.Settings))))
+	case "protocol_change":
+		var change ProtocolChange
+		decode(canonical(body["change"]), &change)
+		maintenance := NodeMaintenance{b.a.Settings, b.settingsPath, func(s NodeSettings) Engine { b.e.s = s; return b.e }}
+		result := maintenance.Apply(str(body["request_id"]), &change)
+		b.a = NewAgent(updatedMaintenance(maintenance).Settings, b.e)
+		return result
 	case "submit":
 		r := parseRequest(body["request"])
 		b.a.Accept(r)
@@ -73,6 +83,7 @@ func syncFixture(t *testing.T) (*Control, *Worker, *configBridge, string) {
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		d.Exec("UPDATE nodes SET template_hash=?,image_digest=? WHERE id='node_hk'", a.Settings.TemplateHash, "sha256:"+a.Settings.EngineBuildID)
 	})
+	markTestEndpointsVerified(c)
 	b := &configBridge{a: a, e: e, settingsPath: filepath.Join(t.TempDir(), "node.toml")}
 	settings, err := toml.Marshal(a.Settings)
 	check(err)

@@ -14,7 +14,7 @@ import (
 //go:embed schema/*.sql
 var schemas embed.FS
 
-const schemaVersion = "2"
+const schemaVersion = "3"
 
 type DB struct{ conn *sql.Conn }
 
@@ -67,6 +67,10 @@ func connect(path string, create bool) (*sql.DB, *sql.Conn) {
 	if create {
 		mode = "rwc"
 	}
+	return connectMode(path, mode)
+}
+
+func connectMode(path, mode string) (*sql.DB, *sql.Conn) {
 	u := url.URL{Scheme: "file", Path: path}
 	q := url.Values{"mode": {mode}, "_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "synchronous(FULL)"}}
 	u.RawQuery = q.Encode()
@@ -112,17 +116,62 @@ func initialize(path, kind string) {
 	}
 	d.Exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)")
 	existing := d.Value("SELECT value FROM meta WHERE key='schema_version'")
-	if existing != nil && str(existing) != schemaVersion {
+	if existing != nil && str(existing) != schemaVersion && str(existing) != "2" {
 		fail("SCHEMA_MISMATCH", "旧数据版本不兼容，请使用新的数据目录", 503)
 	}
 	schema, e := schemas.ReadFile("schema/" + kind + ".sql")
 	check(e)
 	d.Exec("BEGIN IMMEDIATE")
 	defer conn.ExecContext(context.Background(), "ROLLBACK")
+	if kind == "control" && str(existing) == "2" {
+		d.Exec("ALTER TABLE credentials RENAME TO credentials_v2")
+	}
 	d.Exec(string(schema))
+	if kind == "control" && str(existing) == "2" {
+		migrateCredentials(d)
+	}
+	if kind == "ledger" && str(existing) == "2" {
+		d.Exec("ALTER TABLE series_totals ADD COLUMN tag TEXT NOT NULL DEFAULT ''")
+		d.Exec("ALTER TABLE series_totals ADD COLUMN history_tag TEXT NOT NULL DEFAULT ''")
+		for _, row := range d.Rows("SELECT key,protocol FROM series_totals WHERE scope='inbound'") {
+			tag := str(row["key"])
+			id := legacyInboundID(Endpoint{Protocol: str(row["protocol"]), Tag: tag})
+			d.Exec("UPDATE series_cursors SET key=? WHERE scope='inbound' AND key=?", id, tag)
+			d.Exec("UPDATE series_totals SET key=?,tag=?,history_tag=? WHERE scope='inbound' AND key=?", id, tag, tag, tag)
+		}
+	}
 	d.Exec("INSERT OR IGNORE INTO meta VALUES ('schema_version',?)", schemaVersion)
+	if existing != nil && str(existing) == "2" {
+		d.Exec("UPDATE meta SET value=? WHERE key='schema_version'", schemaVersion)
+	}
 	d.Exec("COMMIT")
-	check(os.Chmod(path, 0600))
+	mode := os.FileMode(0600)
+	if kind == "traffic" {
+		mode = 0640
+	}
+	check(os.Chmod(path, mode))
+}
+
+func migrateCredentials(d *DB) {
+	for _, node := range d.Rows("SELECT id,endpoints_json FROM nodes") {
+		endpoints := decodeEndpoints(node["endpoints_json"])
+		byProtocol := map[string]string{}
+		for _, endpoint := range endpoints {
+			if byProtocol[endpoint.Protocol] != "" {
+				fail("SCHEMA_MISMATCH", "旧版凭据无法唯一匹配入口", 503)
+			}
+			byProtocol[endpoint.Protocol] = endpoint.InboundID
+		}
+		d.Exec("UPDATE nodes SET endpoints_json=? WHERE id=?", string(canonical(endpoints)), node["id"])
+		for _, row := range d.Rows("SELECT DISTINCT protocol FROM credentials_v2 WHERE node_id=?", node["id"]) {
+			inboundID := byProtocol[str(row["protocol"])]
+			if inboundID == "" {
+				fail("SCHEMA_MISMATCH", "旧版凭据缺少入口绑定", 503)
+			}
+			d.Exec("INSERT INTO credentials SELECT id,user_id,node_id,?,protocol,generation,secret_ciphertext,fingerprint,revoked,verified_revision FROM credentials_v2 WHERE node_id=? AND protocol=?", inboundID, node["id"], row["protocol"])
+		}
+	}
+	d.Exec("DROP TABLE credentials_v2")
 }
 func putMeta(d *DB, k, v string) {
 	d.Exec("INSERT INTO meta VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", k, v)

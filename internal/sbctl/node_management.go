@@ -85,7 +85,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 	if (input.DesiredContainer != "" && !containerName(input.DesiredContainer)) || (input.DesiredImage != "" && !imageReference(input.DesiredImage)) {
 		fail("INVALID_REQUEST", "目标容器名或镜像名称格式无效", 422)
 	}
-	if !contains([]string{"inspect", "configure", "check", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
+	if !contains([]string{"inspect", "configure", "check", "verify_inbounds", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
 		fail("INVALID_REQUEST", "未知节点操作", 422)
 	}
 	if input.Kind != "inspect" {
@@ -96,6 +96,9 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			fail("INVALID_REQUEST", "缺少协议变更", 422)
 		}
 		input.Change.Validate()
+		if input.Change.RetireID != "" || input.Change.RevokedAtRevision != 0 || input.Change.TemplateHash != "" {
+			fail("INVALID_REQUEST", "退役回执参数由主控生成", 422)
+		}
 	} else if input.Change != nil {
 		fail("INVALID_REQUEST", "该操作不接受协议变更", 422)
 	}
@@ -108,6 +111,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 		fail("INVALID_REQUEST", "该操作不接受配置变更", 422)
 	}
 	var out M
+	affected := []string{}
 	path := "/node-jobs"
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		if out = c.replay(d, actor, key, path, input); out != nil {
@@ -115,6 +119,9 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 		}
 		if integer(d.Value("SELECT count(*) FROM node_jobs WHERE state IN ('queued','running')")) >= 20 {
 			fail("QUEUE_BUSY", "节点检查队列繁忙，请稍后重试", 429)
+		}
+		if mutatingNodeJob(input.Kind) && d.One("SELECT 1 FROM inbound_retirements r JOIN node_jobs j ON j.id=r.job_id WHERE j.node_id=? AND j.state='failed' LIMIT 1", input.Draft.ID) != nil {
+			fail("RETIREMENT_PENDING", "请先从节点管理任务重试未完成的入口退役", 409)
 		}
 		if input.Kind == "configure" {
 			checkGroupChange(d, input.Draft.ID, input.Draft.GroupID)
@@ -156,7 +163,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 				fail("NODE_BUSY", "节点仍有配置或授权任务，请完成后操作", 409)
 			}
 		}
-		if contains([]string{"check", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
+		if contains([]string{"check", "verify_inbounds", "protocols", "protocol_change", "config", "config_change", "restart"}, input.Kind) {
 			node := d.One("SELECT connection_json FROM nodes WHERE id=?", input.Draft.ID)
 			if node == nil {
 				fail("NOT_FOUND", "节点不存在", 404)
@@ -167,10 +174,16 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 		}
 		id := identifier("njob")
 		d.Exec("INSERT INTO node_jobs(id,kind,node_id,state,input_json,created_at,updated_at) VALUES (?,?,?,'queued',?,?,?)", id, input.Kind, input.Draft.ID, encodeNodeInput(c, input), now(), now())
+		if input.Change != nil && contains([]string{"disable", "delete"}, input.Change.Action) {
+			affected = beginInboundRetirement(d, id, input.Draft.ID, *input.Change)
+		}
 		out = M{"job_id": id}
 		c.remember(d, actor, key, path, input, out, 202, false)
 		audit(d, actor, "node_"+input.Kind, input.Draft.ID, "提交节点管理任务")
 	})
+	for _, user := range affected {
+		c.RefreshSubscription(user)
+	}
 	return out
 }
 func (c *Control) NodeConfig(id string) M {
@@ -201,7 +214,20 @@ func (c *Control) NodeConfig(id string) M {
 	transaction(c.Settings.ControlDB, false, func(d *DB) {
 		raw := d.Value("SELECT catalog_json FROM node_catalog WHERE node_id=?", id)
 		if raw != nil {
-			catalog = object([]byte(str(raw)))
+			view := object([]byte(str(raw)))
+			for _, value := range array(view["items"]) {
+				item := mapping(value)
+				if boolean(item["managed"]) {
+					item["probe_state"] = "not_run"
+					if probeVerified(d, row) {
+						item["probe_state"] = "passed"
+					}
+				}
+				if retiring := d.One("SELECT j.created_at,t.state,t.message FROM inbound_retirements r JOIN node_jobs j ON j.id=r.job_id JOIN operation_targets t ON t.operation_id=r.operation_id WHERE j.node_id=? AND r.inbound_id=? AND j.state<>'completed' ORDER BY j.created_at DESC LIMIT 1", id, item["inbound_id"]); retiring != nil {
+					item["retirement"] = retiring
+				}
+			}
+			catalog = view
 		}
 	})
 	return M{"protocol_catalog": catalog, "draft": draft, "version": integer(row["config_version"]), "binding": binding, "checked_at": row["checked_at"], "last_check": last}
@@ -277,6 +303,19 @@ func (w *Worker) RunNodeJob(job M) {
 			if str(result["node_id"]) != draft.ID || !hashRE.MatchString(str(result["hash"])) {
 				fail("NODE_RESPONSE", "配置读取回执无效", 409)
 			}
+		case "verify_inbounds":
+			unlock := w.nodeLock(draft.ID)
+			defer unlock()
+			result = callNewerAction(w.Transport, draft.Connection, M{"action": "verify_inbounds"})
+			transaction(c.Settings.ControlDB, true, func(d *DB) {
+				n := d.One("SELECT template_hash,endpoints_json FROM nodes WHERE id=?", draft.ID)
+				if d.Value("SELECT lease_owner FROM node_jobs WHERE id=?", job["id"]) != w.Owner ||
+					result["node_id"] != draft.ID || result["template_hash"] != n["template_hash"] ||
+					digest(decodeEndpoints(result["endpoints"])) != digest(decodeEndpoints(n["endpoints_json"])) ||
+					!saveProbeVerification(d, draft.ID, result) {
+					fail("STALE_REVISION", "节点拨测结果与当前配置版本不符", 409)
+				}
+			})
 		case "inspect":
 			result = w.Transport.Call(draft.Connection, M{"action": "inspect", "container": draft.Container, "config_dir": draft.ConfigDir, "public_host": draft.PublicHost, "server_name": draft.ServerName}, false)
 			stats := w.Transport.Call(draft.Connection, M{"action": "inspect"}, true)
@@ -284,7 +323,22 @@ func (w *Worker) RunNodeJob(job M) {
 				fail("STATS_SETUP", "统计账号或采集工具未就绪，请完成安装指引", 409)
 			}
 		case "check":
-			result = w.Transport.Call(draft.Connection, M{"action": "diagnose"}, false)
+			var node M
+			transaction(c.Settings.ControlDB, false, func(d *DB) {
+				node = d.One("SELECT endpoints_json,template_hash FROM nodes WHERE id=?", draft.ID)
+			})
+			connectError := Attempt(func() {
+				result = w.Transport.Call(draft.Connection, M{"action": "diagnose"}, false)
+				if result["node_id"] != draft.ID {
+					fail("NODE_IDENTITY", "节点检查回执身份不匹配", 409)
+				}
+			})
+			if connectError != nil {
+				result = M{"node_id": draft.ID, "ready": false, "checked_at": now(), "checks": []M{
+					{"name": "管理通道", "status": "failed", "ok": false, "message": PublicFault(connectError).Message},
+					{"name": "运行绑定", "status": "not_run", "message": "等待管理通道恢复"},
+				}}
+			}
 			statsError := Attempt(func() {
 				snapshot := w.Transport.Call(draft.Connection, nil, true)
 				if snapshot["node_id"] != draft.ID || snapshot["sampled_at"] == nil || time.Since(stamp(str(snapshot["sampled_at"]))) > 30*time.Second {
@@ -294,10 +348,20 @@ func (w *Worker) RunNodeJob(job M) {
 			checks := array(result["checks"])
 			if statsError != nil {
 				result["ready"] = false
-				checks = append(checks, M{"name": "统计通道", "ok": false, "message": PublicFault(statsError).Message})
+				checks = append(checks, M{"name": "统计通道", "status": "failed", "ok": false, "message": PublicFault(statsError).Message})
 			} else {
-				checks = append(checks, M{"name": "统计通道", "ok": true, "message": "独立统计账号可达且采样在 30 秒内更新"})
+				checks = append(checks, M{"name": "统计通道", "status": "passed", "ok": true, "message": "独立统计账号可达且采样在 30 秒内更新"})
 			}
+			protocolStatus := "not_run"
+			if len(decodeEndpoints(node["endpoints_json"])) == 0 {
+				protocolStatus = "not_applicable"
+			}
+			checks = append(checks,
+				M{"name": "节点协议拨测", "status": protocolStatus, "message": "节点检查仅读取管理和运行状态"},
+				M{"name": "订阅下载", "status": "not_run", "message": "需针对具体用户订阅验证"},
+				M{"name": "客户端互通", "status": "not_run", "message": "需在目标客户端和网络验证"},
+			)
+			result["template_hash"] = node["template_hash"]
 			result["checks"] = checks
 		case "configure":
 			var observation M
@@ -329,16 +393,9 @@ func (w *Worker) RunNodeJob(job M) {
 			if str(result["node_id"]) != draft.ID {
 				fail("NODE_IDENTITY", "节点响应身份不匹配")
 			}
-			var eps []Endpoint
-			decode(canonical(result["endpoints"]), &eps)
-			if len(eps) != 2 || !hashRE.MatchString(str(result["template_hash"])) || !hashRE.MatchString(str(result["engine_build_id"])) || !boolean(result["ready"]) {
+			eps := decodeEndpoints(result["endpoints"])
+			if !hashRE.MatchString(str(result["template_hash"])) || !hashRE.MatchString(str(result["engine_build_id"])) || !boolean(result["ready"]) {
 				fail("NODE_RESPONSE", "节点接管回执无效")
-			}
-			for i := range eps {
-				eps[i].Validate()
-			}
-			if eps[0].Protocol == eps[1].Protocol || eps[0].Tag == eps[1].Tag {
-				fail("NODE_RESPONSE", "节点协议入口重复")
 			}
 			result["management_job_id"] = job["id"]
 			if version := strings.TrimPrefix(str(result["version"]), "sing-box version "); version != "" {
@@ -349,15 +406,20 @@ func (w *Worker) RunNodeJob(job M) {
 					fail("LEASE_LOST", "节点任务由另一个执行器恢复", 409)
 				}
 				n := d.One("SELECT id FROM nodes WHERE id=?", draft.ID)
+				publicHost := str(draft.PublicHost)
+				if publicHost == "" && len(eps) > 0 {
+					publicHost = eps[0].Server
+				}
 				if n == nil {
-					d.Exec("INSERT INTO nodes(id,name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", draft.ID, draft.Name, draft.Region, draft.Location, draft.Connection.Address, eps[0].Server, string(canonical(draft.Connection)), string(canonical(eps)), result["template_hash"], "sha256:"+str(result["engine_build_id"]), now())
+					d.Exec("INSERT INTO nodes(id,name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", draft.ID, draft.Name, draft.Region, draft.Location, draft.Connection.Address, publicHost, string(canonical(draft.Connection)), string(canonical(eps)), result["template_hash"], "sha256:"+str(result["engine_build_id"]), now())
 				} else {
-					d.Exec("UPDATE nodes SET name=?,region=?,location=?,management_address=?,public_host=?,connection_json=?,endpoints_json=?,template_hash=?,image_digest=? WHERE id=?", draft.Name, draft.Region, draft.Location, draft.Connection.Address, eps[0].Server, string(canonical(draft.Connection)), string(canonical(eps)), result["template_hash"], "sha256:"+str(result["engine_build_id"]), draft.ID)
+					d.Exec("UPDATE nodes SET name=?,region=?,location=?,management_address=?,public_host=?,connection_json=?,endpoints_json=?,template_hash=?,image_digest=? WHERE id=?", draft.Name, draft.Region, draft.Location, draft.Connection.Address, publicHost, string(canonical(draft.Connection)), string(canonical(eps)), result["template_hash"], "sha256:"+str(result["engine_build_id"]), draft.ID)
 				}
 				d.Exec("INSERT OR IGNORE INTO groups VALUES (?,?)", draft.GroupID, draft.GroupName)
 				d.Exec("DELETE FROM group_nodes WHERE node_id=?", draft.ID)
 				d.Exec("INSERT INTO group_nodes VALUES (?,?)", draft.GroupID, draft.ID)
 				d.Exec("INSERT INTO node_management(node_id,version,binding_json,checked_at,check_json) VALUES (?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET version=excluded.version,binding_json=excluded.binding_json,checked_at=excluded.checked_at,check_json=excluded.check_json", draft.ID, input.ExpectedVersion+1, string(canonical(result)), now(), string(canonical(result)))
+				saveProbeVerification(d, draft.ID, result)
 				audit(d, "worker", "configure_node", draft.ID, "节点绑定已确认并保存")
 			})
 			w.ExportInventory()
@@ -373,13 +435,19 @@ func (w *Worker) RunNodeJob(job M) {
 		}
 	})
 	state, message, code := "completed", "操作已完成", ""
+	if input.Kind == "verify_inbounds" {
+		message = "当前配置的节点侧系统探针通过"
+		if result["protocol_status"] == "not_applicable" {
+			message = "没有订阅入口，协议拨测不适用"
+		}
+	}
 	nextAttempt := float64(0)
 	var output any
 	if err != nil {
 		state = "failed"
 		f := PublicFault(err)
 		code, message = f.Code, f.Message
-		if code == "AUTHORIZATION_PENDING" || code == "LOCK_BUSY" || code == "CONFIG_SYNC_PENDING" {
+		if code == "AUTHORIZATION_PENDING" || code == "LOCK_BUSY" || code == "CONFIG_SYNC_PENDING" || (input.Change != nil && contains([]string{"disable", "delete"}, input.Change.Action) && code == "NODE_UNREACHABLE") {
 			state, code, nextAttempt = "queued", "", timestamp()+1
 		}
 	} else {
@@ -451,7 +519,7 @@ func (c *Control) Onboarding() M {
 			keys[role] = ""
 		}
 	}
-	return M{"keys": keys, "instructions": []string{"将对应架构的同版本 Linux sbctl-node 程序安装到 /opt/sbctl/bin，完整 ops/controller/node 目录放到 /opt/sbctl/install/node", "以 root 运行 bash /opt/sbctl/install/node/bootstrap.sh，安装受限 SSH helper（不会改动代理容器）", "将经过发布方 checksum 核验的 grpcurl 安装到 /opt/sbctl/node-tools/grpcurl，bootstrap 会安装 stats.proto", "把主控两把公钥分别加入 sbctl-publish 和 sbctl-stats 的 authorized_keys，使用 restrict,command=\"/usr/local/bin/sbctl-publish\" 或 restrict,command=\"/usr/local/bin/sbctl-stats\"", "通过可信维护通道读取 /etc/ssh/ssh_host_ed25519_key.pub，在高级设置中核对后填写"}, "release": Version}
+	return M{"keys": keys, "instructions": []string{"将对应架构的同版本 Linux sbctl-node 程序安装到 /opt/sbctl/bin，完整 ops/controller/node 目录放到 /opt/sbctl/install/node", "以 root 运行 bash /opt/sbctl/install/node/bootstrap.sh，安装受限 SSH helper（不会改动代理容器）", "确认代理容器使用包含 sbctl 原生 Unix socket 的 sing-box 1.14.x 镜像，并确认 /opt/sbctl/data/sing-box/stats/collector.sock 的 UID/GID 权限", "把主控两把公钥分别加入 sbctl-publish 和 sbctl-stats 的 authorized_keys，使用 restrict,command=\"/usr/local/bin/sbctl-publish\" 或 restrict,command=\"/usr/local/bin/sbctl-stats\"", "通过可信维护通道读取 /etc/ssh/ssh_host_ed25519_key.pub，在高级设置中核对后填写"}, "release": Version}
 }
 
 func checkGroupChange(d *DB, node, group string) {

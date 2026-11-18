@@ -78,6 +78,42 @@ func TestTrafficPortChangePreservesHistoryAndSnapshot(t *testing.T) {
 		t.Fatalf("port change lost central totals: %+v", stored.Inbounds)
 	}
 }
+
+func TestTrafficConnectionsAreStoredAndQueryable(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	first := historySnapshot(1, "2026-01-01T00:00:00Z", "100", "200")
+	started := time.Now().UTC().Add(-2 * time.Minute).Format(time.RFC3339Nano)
+	closed := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
+	first.Connections = []TrafficConnection{{ID: "conn_1", InboundID: "inb_one", Inbound: "anytls-in", InboundType: "anytls", Network: "tcp", Domain: "example.com", Destination: "93.184.216.34:443", Source: "10.0.0.2:50000", Outbound: "direct", OutboundType: "direct", Chain: []string{"direct"}, Rule: "final", Upload: "12", Download: "34", StartedAt: started, ClosedAt: closed}}
+	first.Seal()
+	tr.Ingest("node_hk", first)
+	today := time.Now().In(trafficZone).Format(time.DateOnly)
+	report := (Views{c.Settings}).TrafficConnections(url.Values{"from": {today}, "to": {today}, "inbound": {"anytls"}})
+	items := array(report["items"])
+	if len(items) != 1 || str(mapping(items[0])["connection_id"]) != "conn_1" || str(mapping(items[0])["upload_bytes"]) != "12" {
+		t.Fatalf("connection detail missing: %#v", report)
+	}
+}
+
+func TestConnectionSequenceResetsWithRuntimeEpoch(t *testing.T) {
+	c := testControl(t)
+	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
+	tr.Initialize()
+	first := historySnapshot(1, "2026-01-01T00:00:00Z", "100", "200")
+	first.SourceEpoch = nullable("container-a@2026-01-01T00:00:00Z")
+	first.ConnectionSeq = 8
+	first.Seal()
+	tr.Ingest("node_hk", first)
+	second := historySnapshot(2, "2026-01-01T00:00:15Z", "110", "220")
+	second.SourceEpoch = nullable("container-b@2026-01-01T00:00:15Z")
+	second.ConnectionSeq = 0
+	second.Seal()
+	if !tr.Ingest("node_hk", second) {
+		t.Fatal("runtime epoch change did not advance snapshot")
+	}
+}
 func TestTrafficHistoryGapAndExportRecovery(t *testing.T) {
 	c := testControl(t)
 	tr := Traffic{c.Settings.TrafficDB, c.Settings.TrafficSnapshot}
@@ -188,7 +224,7 @@ func TestTrafficTrendMixedNodeCoverage(t *testing.T) {
 	if mapping(array(report["trend"])[0])["status"] != "complete" {
 		t.Fatal("complete date not recognized")
 	}
-	c.Register(M{"id": "node_other", "name": "未采样节点", "region": "hk", "location": "香港", "connection": M{"address": "100.70.0.11"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "other.test", 443, "other.test", nil}, {"tuic", "tuic-in", "other.test", 443, "other.test", nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+	c.Register(M{"id": "node_other", "name": "未采样节点", "region": "hk", "location": "香港", "connection": M{"address": "100.70.0.11"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "other.test", 443, "other.test", nil, ""}, {"tuic", "tuic-in", "other.test", 443, "other.test", nil, ""}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
 	report = Views{c.Settings}.TrafficReport(query)
 	point := mapping(array(report["trend"])[0])
 	if point["status"] != "partial" || point["upload_bytes"] != "100" {

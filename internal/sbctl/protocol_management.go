@@ -12,22 +12,36 @@ import (
 )
 
 type ProtocolChange struct {
-	Action     string `json:"action"`
-	BaseHash   string `json:"base_hash"`
-	Tag        string `json:"tag"`
-	SourceTag  string `json:"source_tag,omitempty"`
-	Listen     string `json:"listen,omitempty"`
-	Port       int    `json:"port,omitempty"`
-	TargetHost string `json:"target_host,omitempty"`
-	TargetPort int    `json:"target_port,omitempty"`
-	Username   string `json:"username,omitempty"`
-	Password   string `json:"password,omitempty"`
-	UUID       string `json:"uuid,omitempty"`
+	Action            string `json:"action"`
+	BaseHash          string `json:"base_hash"`
+	Tag               string `json:"tag"`
+	SourceTag         string `json:"source_tag,omitempty"`
+	NewTag            string `json:"new_tag,omitempty"`
+	PublicHost        string `json:"subscription_host,omitempty"`
+	ServerName        string `json:"server_name,omitempty"`
+	Listen            string `json:"listen,omitempty"`
+	Port              int    `json:"port,omitempty"`
+	TargetHost        string `json:"target_host,omitempty"`
+	TargetPort        int    `json:"target_port,omitempty"`
+	Username          string `json:"username,omitempty"`
+	Password          string `json:"password,omitempty"`
+	UUID              string `json:"uuid,omitempty"`
+	RetireID          string `json:"retire_id,omitempty"`
+	RevokedAtRevision int64  `json:"revoked_at_revision,omitempty"`
+	TemplateHash      string `json:"retirement_template_hash,omitempty"`
 }
 
 func (p ProtocolChange) Validate() {
 	if !contains([]string{"create", "edit", "enable", "disable", "delete"}, p.Action) || !hashRE.MatchString(p.BaseHash) || !validStatName(p.Tag) || len(p.Tag) > 80 {
 		fail("INVALID_REQUEST", "协议操作、配置版本或入口标签无效", 422)
+	}
+	if p.NewTag != "" && (p.Action != "edit" || len(p.NewTag) > 80 || !validStatName(p.NewTag)) {
+		fail("INVALID_REQUEST", "新入口标签无效", 422)
+	}
+	for _, host := range []string{p.PublicHost, p.ServerName} {
+		if host != "" && (!contains([]string{"create", "edit"}, p.Action) || !match(`^[a-zA-Z0-9.:-]{1,253}$`, host)) {
+			fail("INVALID_REQUEST", "订阅地址或 TLS 域名无效", 422)
+		}
 	}
 	if p.Action == "create" || p.Action == "edit" {
 		if p.Port < 1 || p.Port > 65535 {
@@ -57,6 +71,8 @@ func (p ProtocolChange) Validate() {
 }
 
 type ProtocolItem struct {
+	InboundID  string `json:"inbound_id,omitempty"`
+	Referenced bool   `json:"referenced,omitempty"`
 	Tag        string `json:"tag"`
 	Protocol   string `json:"protocol"`
 	Listen     string `json:"listen"`
@@ -81,7 +97,19 @@ func protocolState(s NodeSettings) M {
 	if exists(p) {
 		return object(read(p))
 	}
-	return M{"inbounds": []any{}, "retired_tags": []string{}}
+	return M{"inbounds": []any{}}
+}
+func inboundIdentity(s NodeSettings, state, inbound M) string {
+	tag := str(inbound["tag"])
+	for _, endpoint := range s.Endpoints {
+		if tag == endpoint.Tag {
+			return endpoint.InboundID
+		}
+	}
+	if id := str(mapping(state["inbound_ids"])[tag]); id != "" {
+		return id
+	}
+	return legacyInboundID(Endpoint{Protocol: str(inbound["type"]), Tag: tag})
 }
 func catalogFor(s NodeSettings, config, disabled M) ProtocolCatalog {
 	result := ProtocolCatalog{NodeID: s.NodeID, Hash: digest(M{"config": config, "disabled": disabled, "template_hash": s.TemplateHash, "endpoints": s.Endpoints}), CheckedAt: now(), Items: []ProtocolItem{}}
@@ -96,7 +124,8 @@ func catalogFor(s NodeSettings, config, disabled M) ProtocolCatalog {
 			if tag == "" {
 				continue
 			}
-			result.Items = append(result.Items, ProtocolItem{tag, str(i["type"]), str(i["listen"]), int(integer(i["listen_port"])), enabled, managed[tag], len(array(i["users"])), boolean(mapping(i["tls"])["enabled"]), str(i["method"]), str(i["override_address"]), int(integer(i["override_port"]))})
+			inboundID := inboundIdentity(s, disabled, i)
+			result.Items = append(result.Items, ProtocolItem{InboundID: inboundID, Referenced: referencedInbound(without(config, "inbounds"), tag), Tag: tag, Protocol: str(i["type"]), Listen: str(i["listen"]), Port: int(integer(i["listen_port"])), Enabled: enabled, Managed: managed[tag], UserCount: len(array(i["users"])), TLS: boolean(mapping(i["tls"])["enabled"]), Method: str(i["method"]), TargetHost: str(i["override_address"]), TargetPort: int(integer(i["override_port"]))})
 		}
 	}
 	appendItems(array(config["inbounds"]), true)
@@ -164,21 +193,37 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 	config = object(canonical(config))
 	template = object(canonical(template))
 	disabled = object(canonical(disabled))
-	if catalogFor(s, config, disabled).Hash != p.BaseHash {
+	if p.RetireID == "" && catalogFor(s, config, disabled).Hash != p.BaseHash {
 		fail("PROTOCOL_CHANGED", "协议配置已变化，请重新读取后操作", 409)
 	}
-	managed := false
+	s.Endpoints = append([]Endpoint{}, s.Endpoints...)
+	ids, savedEndpoints := mapping(disabled["inbound_ids"]), mapping(disabled["subscription_endpoints"])
+	disabled["inbound_ids"], disabled["subscription_endpoints"] = ids, savedEndpoints
+	currentEndpoint := Endpoint{}
 	for _, e := range s.Endpoints {
-		managed = managed || e.Tag == p.Tag
+		if e.Tag == p.Tag {
+			currentEndpoint = e
+		}
 	}
-	if managed && contains([]string{"disable", "delete"}, p.Action) {
-		fail("PROTOCOL_REQUIRED", "此入口承担 sbctl 授权与运行探针，不能停用或删除；可编辑监听配置", 409)
-	}
+	managed := currentEndpoint.InboundID != ""
 	active := findInbound(config, p.Tag)
 	inactive := findInbound(disabled, p.Tag)
+	if p.RetireID != "" && (!managed || p.RetireID != currentEndpoint.InboundID || p.TemplateHash != s.TemplateHash || !contains([]string{"disable", "delete"}, p.Action)) {
+		fail("PROTOCOL_CHANGED", "退役入口或模板已变化，请重新读取配置", 409)
+	}
+	if managed && contains([]string{"disable", "delete"}, p.Action) {
+		if p.RetireID == "" {
+			fail("RETIREMENT_REQUIRED", "先由主控撤销入口授权，再退役入口", 409)
+		}
+		for _, user := range array(active["users"]) {
+			if strings.HasPrefix(str(mapping(user)["name"]), "usr_") {
+				fail("REVOCATION_PENDING", "入口仍有未撤销的用户凭据", 409)
+			}
+		}
+	}
 	if p.Action == "create" {
-		if active != nil || inactive != nil || contains(stringsOf(disabled["retired_tags"]), p.Tag) {
-			fail("PROTOCOL_EXISTS", "入口标签已使用或曾被删除，请使用新标签以区分历史流量", 409)
+		if active != nil || inactive != nil {
+			fail("PROTOCOL_EXISTS", "入口标签已使用", 409)
 		}
 		source := findInbound(template, p.SourceTag)
 		if source == nil {
@@ -213,9 +258,16 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 		config["inbounds"] = append(array(config["inbounds"]), entry)
 		template["inbounds"] = append(array(template["inbounds"]), object(canonical(entry)))
 		active = entry
+		ids[p.Tag] = identifier("inb")
 	} else if active == nil && inactive == nil {
 		fail("NOT_FOUND", "协议入口不存在", 404)
 	}
+	entry := active
+	if entry == nil {
+		entry = inactive
+	}
+	entryID := inboundIdentity(s, disabled, entry)
+	currentTag := p.Tag
 	switch p.Action {
 	case "create", "edit":
 		entry := active
@@ -240,15 +292,57 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 		if active != nil {
 			set(findInbound(template, p.Tag))
 		}
+		if p.PublicHost != "" && !managed {
+			if active == nil || !contains([]string{"anytls", "tuic"}, str(entry["type"])) || !boolean(mapping(entry["tls"])["enabled"]) {
+				fail("PROTOCOL_UNSUPPORTED", "只有已启用 TLS 的活动 AnyTLS 或 TUIC 入口可以加入授权", 422)
+			}
+			currentEndpoint = Endpoint{InboundID: entryID, Protocol: str(entry["type"]), Tag: p.Tag, ALPN: inspectionALPN(mapping(entry["tls"])["alpn"])}
+			s.Endpoints = append(s.Endpoints, currentEndpoint)
+			managed = true
+		}
 		if managed {
-			s.Endpoints = append([]Endpoint{}, s.Endpoints...)
+			for i := range s.Endpoints {
+				ep := &s.Endpoints[i]
+				if ep.Tag != p.Tag {
+					continue
+				}
+				ep.Port = p.Port
+				if p.PublicHost != "" {
+					ep.Server = p.PublicHost
+				}
+				if p.ServerName != "" {
+					ep.SNI = p.ServerName
+				}
+				if ep.SNI == "" {
+					ep.SNI = str(mapping(entry["tls"])["server_name"])
+				}
+				if ep.SNI == "" {
+					ep.SNI = ep.Server
+				}
+				ep.Validate()
+			}
+		}
+		if p.NewTag != "" && p.NewTag != p.Tag {
+			if findInbound(config, p.NewTag) != nil || findInbound(disabled, p.NewTag) != nil || referencedInbound(without(config, "inbounds"), p.Tag) {
+				fail("PROTOCOL_REFERENCED", "新入口标签已使用或旧标签仍被配置引用", 409)
+			}
+			if active != nil {
+				findInbound(template, p.Tag)["tag"] = p.NewTag
+			}
+			entry["tag"], currentTag = p.NewTag, p.NewTag
+			delete(ids, p.Tag)
+			if saved := savedEndpoints[p.Tag]; saved != nil {
+				mapping(saved)["tag"] = p.NewTag
+				savedEndpoints[p.NewTag] = saved
+				delete(savedEndpoints, p.Tag)
+			}
 			for i := range s.Endpoints {
 				if s.Endpoints[i].Tag == p.Tag {
-					s.Endpoints[i].Port = p.Port
-					s.Endpoints[i].Validate()
+					s.Endpoints[i].Tag = p.NewTag
 				}
 			}
 		}
+		ids[currentTag] = entryID
 	case "disable":
 		if active == nil {
 			fail("PROTOCOL_DISABLED", "入口已经停用", 409)
@@ -256,9 +350,32 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 		if referencedInbound(without(config, "inbounds"), p.Tag) {
 			fail("PROTOCOL_REFERENCED", "路由或其他配置引用此入口，请先处理关联规则", 409)
 		}
-		disabled["inbounds"] = append(array(disabled["inbounds"]), object(canonical(active)))
+		// The saved entry can be enabled later. Its revoked credentials and
+		// system probe must never return with that configuration.
+		saved := object(canonical(active))
+		if managed {
+			savedEndpoints[p.Tag] = currentEndpoint
+			users := []any{}
+			for _, user := range array(saved["users"]) {
+				if mapping(user)["name"] != "sys_probe" {
+					users = append(users, user)
+				}
+			}
+			saved["users"] = users
+		}
+		ids[p.Tag] = entryID
+		disabled["inbounds"] = append(array(disabled["inbounds"]), saved)
 		removeInbound(config, p.Tag)
 		removeInbound(template, p.Tag)
+		if managed {
+			kept := []Endpoint{}
+			for _, ep := range s.Endpoints {
+				if ep.Tag != p.Tag {
+					kept = append(kept, ep)
+				}
+			}
+			s.Endpoints = kept
+		}
 	case "enable":
 		if inactive == nil {
 			fail("PROTOCOL_ENABLED", "入口已经启用", 409)
@@ -266,6 +383,14 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 		config["inbounds"] = append(array(config["inbounds"]), object(canonical(inactive)))
 		template["inbounds"] = append(array(template["inbounds"]), object(canonical(inactive)))
 		removeInbound(disabled, p.Tag)
+		if saved := savedEndpoints[p.Tag]; saved != nil {
+			var endpoint Endpoint
+			decode(canonical(saved), &endpoint)
+			endpoint.Port = int(integer(inactive["listen_port"]))
+			endpoint.Validate()
+			s.Endpoints = append(s.Endpoints, endpoint)
+			delete(savedEndpoints, p.Tag)
+		}
 	case "delete":
 		if referencedInbound(without(config, "inbounds"), p.Tag) {
 			fail("PROTOCOL_REFERENCED", "路由或其他配置引用此入口，请先处理关联规则", 409)
@@ -273,15 +398,25 @@ func planProtocol(s NodeSettings, config, template, disabled M, p ProtocolChange
 		removeInbound(config, p.Tag)
 		removeInbound(template, p.Tag)
 		removeInbound(disabled, p.Tag)
-		disabled["retired_tags"] = append(stringsOf(disabled["retired_tags"]), p.Tag)
+		delete(ids, p.Tag)
+		delete(savedEndpoints, p.Tag)
+		if managed {
+			kept := []Endpoint{}
+			for _, ep := range s.Endpoints {
+				if ep.Tag != p.Tag {
+					kept = append(kept, ep)
+				}
+			}
+			s.Endpoints = kept
+		}
 	}
 	// Be conservative about binding collisions, including UDP/TCP cross-protocol ports.
 	if p.Action == "create" || p.Action == "edit" || p.Action == "enable" {
-		changed := findInbound(config, p.Tag)
+		changed := findInbound(config, currentTag)
 		if changed != nil {
 			for _, raw := range array(config["inbounds"]) {
 				i := mapping(raw)
-				if i["tag"] != p.Tag && integer(i["listen_port"]) == integer(changed["listen_port"]) {
+				if i["tag"] != currentTag && integer(i["listen_port"]) == integer(changed["listen_port"]) {
 					fail("PORT_CONFLICT", "该端口已被其他入口使用，请选择独立端口", 409)
 				}
 			}
@@ -302,6 +437,14 @@ type NodeMaintenance struct {
 	Engine       func(NodeSettings) Engine
 }
 
+func (m NodeMaintenance) finishRetirement(jobID string, result M) {
+	if id := str(mapping(result["retirement"])["inbound_id"]); id != "" {
+		transaction(filepath.Join(m.Settings.StateDir, "node.db"), true, func(d *DB) {
+			d.Exec("DELETE FROM retiring_inbounds WHERE inbound_id=? AND job_id=?", id, jobID)
+		})
+	}
+}
+
 // ReceiptStatus reconciles a durable completed receipt. An unfinished plan is
 // never resumed ahead of a queued authorization.
 func (m NodeMaintenance) ReceiptStatus(id, inputHash string) M {
@@ -318,6 +461,7 @@ func (m NodeMaintenance) ReceiptStatus(id, inputHash string) M {
 		if r["input_hash"] != inputHash {
 			fail("REQUEST_CONFLICT", "任务内容与回执不同", 409)
 		}
+		m.finishRetirement(id, mapping(r["result"]))
 		// A crash can happen between committing the receipt and removing the
 		// maintenance barrier. Clear only this completed request's barrier.
 		if exists(pendingPath) {
@@ -366,6 +510,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		if r["input_hash"] != inputHash {
 			fail("REQUEST_CONFLICT", "任务内容与回执不同", 409)
 		}
+		m.finishRetirement(id, mapping(r["result"]))
 		if exists(pendingPath) {
 			check(os.Remove(pendingPath))
 		}
@@ -374,6 +519,16 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	transaction(filepath.Join(s.StateDir, "node.db"), false, func(d *DB) {
 		if state := d.Value("SELECT state FROM requests ORDER BY revision DESC LIMIT 1"); state != nil && state != "verified" {
 			fail("NODE_BUSY", "先完成或恢复节点授权任务，再维护协议", 409)
+		}
+		if p != nil && p.RetireID != "" {
+			row := d.One("SELECT document FROM requests WHERE revision=? AND state='verified'", p.RevokedAtRevision)
+			if row == nil {
+				fail("REVOCATION_PENDING", "节点没有该入口的已验证撤销版本", 409)
+			}
+			req := parseRequest(object([]byte(str(row["document"]))))
+			if req.Retirement != p.RetireID || req.RetirementJob != id || req.TemplateHash != p.TemplateHash {
+				fail("REVOCATION_PENDING", "节点撤销回执与入口退役请求不符", 409)
+			}
 		}
 	})
 	engine := m.Engine(s)
@@ -392,7 +547,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		if !rt.Running && changing {
 			fail("NODE_NOT_READY", "节点运行绑定异常，请先检查并更新绑定", 409)
 		}
-		paths := map[string]string{"config": filepath.Join(s.ConfigDir, "config.json"), "template": s.TemplateFile, "settings": m.SettingsPath, "runtime": filepath.Join(s.SafetyDir, "runtime.json"), "guard": filepath.Join(s.SafetyDir, "manifest"), "disabled": filepath.Join(s.StateDir, "disabled-protocols.json")}
+		paths := map[string]string{"config": filepath.Join(s.ConfigDir, "config.json"), "template": s.TemplateFile, "settings": m.SettingsPath, "runtime": filepath.Join(s.SafetyDir, "runtime.json"), "guard": filepath.Join(s.SafetyDir, "manifest"), "disabled": filepath.Join(s.StateDir, "disabled-protocols.json"), "probes": s.ProbeFile}
 		before := M{}
 		for key, path := range paths {
 			if exists(path) {
@@ -414,6 +569,33 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			after["config"] = string(append(canonical(config), '\n'))
 			after["template"] = string(append(canonical(template), '\n'))
 			after["disabled"] = string(canonical(disabled))
+			if p != nil {
+				existing := map[string]Credential{}
+				for _, probe := range NewAgent(s, nil).Probes() {
+					existing[probe.InboundID] = probe
+				}
+				probes := []Credential{}
+				for _, ep := range next.Endpoints {
+					probe, found := existing[ep.InboundID]
+					if !found {
+						in := findInbound(config, ep.Tag)
+						for _, raw := range array(in["users"]) {
+							if mapping(raw)["name"] == "sys_probe" {
+								fail("PROBE_IDENTITY", "入口已使用系统探针保留名称", 409)
+							}
+						}
+						probe = newInboundProbe(ep)
+						entry := M{"name": "sys_probe", "password": probe.Password}
+						if probe.UUID != nil {
+							entry["uuid"] = *probe.UUID
+						}
+						in["users"] = append(array(in["users"]), entry)
+					}
+					probes = append(probes, probe)
+				}
+				after["config"] = string(append(canonical(config), '\n'))
+				after["probes"] = string(canonical(probes))
+			}
 			next.TemplateHash = hash([]byte(str(after["template"])))
 			next.Validate()
 			settings, err := toml.Marshal(next)
@@ -447,8 +629,11 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	check(toml.Unmarshal([]byte(str(before["settings"])), &original))
 	atomicWrite(pendingPath, canonical(M{"id": id}), 0600)
 	writeSet := func(files M) {
-		for _, key := range []string{"template", "settings", "disabled", "config", "runtime", "guard"} {
+		for _, key := range []string{"template", "probes", "settings", "disabled", "config", "runtime", "guard"} {
 			path := str(paths[key])
+			if path == "" {
+				continue
+			}
 			data := []byte(str(files[key]))
 			if len(data) == 0 {
 				if exists(path) {
@@ -472,6 +657,8 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			}
 		}
 	}
+	var evidence M
+	var verified M
 	err := Attempt(func() {
 		changed := str(before["config"]) != str(after["config"])
 		if changed {
@@ -484,12 +671,37 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		updated := m.Engine(next)
 		if boolean(plan["restart"]) {
 			rt := updated.Runtime()
-			if !rt.Running || rt.Epoch() == str(plan["epoch_before"]) {
+			if !rt.Running || rt.Epoch() == str(plan["epoch_before"]) || rt.ConfigHash != hash([]byte(str(after["config"]))) {
 				updated.Restart()
 			}
-			updated.Verify(NodeRequest{Users: []Credential{}}, nil)
-			if !updated.Runtime().Running {
-				fail("START_FAILED", "维护后的运行绑定检查失败", 503)
+			if p == nil || p.RetireID == "" {
+				verified = verifyManagedEndpoints(next, updated, hash([]byte(str(after["config"]))))
+			}
+		}
+		if p != nil && contains([]string{"disable", "delete"}, p.Action) {
+			rt := updated.Runtime()
+			active, raw := currentConfig(next)
+			originalConfig := object([]byte(str(before["config"])))
+			originalInbound := findInbound(originalConfig, p.Tag)
+			removedListener := originalInbound != nil
+			state := M{}
+			if str(before["disabled"]) != "" {
+				state = object([]byte(str(before["disabled"])))
+			}
+			if originalInbound == nil {
+				originalInbound = findInbound(state, p.Tag)
+			}
+			original.Endpoints = normalizeEndpoints(original.Endpoints)
+			inboundID := inboundIdentity(original, state, originalInbound)
+			if !rt.Running || rt.Paused || rt.Restarting || (removedListener && rt.Epoch() == str(plan["epoch_before"])) ||
+				rt.ConfigHash != hash(raw) || rt.ConfigHash != hash([]byte(str(after["config"]))) ||
+				rt.NodeRevision < p.RevokedAtRevision || findInbound(active, p.Tag) != nil {
+				fail("RETIREMENT_UNVERIFIED", "目标入口退役未通过活动配置与运行版本确认", 503)
+			}
+			evidence = M{"inbound_id": inboundID, "tag": p.Tag, "action": p.Action, "request_id": id, "config_hash": rt.ConfigHash, "runtime_epoch": rt.Epoch(), "node_revision": rt.NodeRevision}
+			if p.RetireID != "" {
+				// Other entrances can refresh their own probe evidence independently.
+				_ = Attempt(func() { verified = verifyManagedEndpoints(next, updated, rt.ConfigHash) })
 			}
 		}
 	})
@@ -514,8 +726,15 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	}
 	catalog := catalogFor(next, object(read(filepath.Join(next.ConfigDir, "config.json"))), protocolState(next))
 	result := M{"node_id": s.NodeID, "ready": true, "catalog": catalog, "template_hash": next.TemplateHash, "endpoints": next.Endpoints, "container": next.Container, "image": next.Image, "config_dir": next.ConfigDir, "engine_build_id": next.EngineBuildID, "backup_id": id, "checked_at": now()}
+	if verified != nil {
+		result["probe_verification"] = verified
+	}
+	if evidence != nil {
+		result["retirement"] = evidence
+	}
 	result = object(canonical(result))
 	atomicWrite(receiptPath, canonical(M{"input_hash": inputHash, "result": result}), 0600)
+	m.finishRetirement(id, result)
 	check(os.Remove(pendingPath))
 	return result
 }

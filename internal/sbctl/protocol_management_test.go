@@ -46,6 +46,7 @@ func TestProtocolCreateEditDisableEnableDelete(t *testing.T) {
 	}
 	m = updatedMaintenance(m)
 	config := object(read(filepath.Join(m.Settings.ConfigDir, "config.json")))
+	firstID := inboundIdentity(m.Settings, protocolState(m.Settings), findInbound(config, p.Tag))
 	if !bytes.Equal(secretBefore, canonical(findInbound(config, "anytls-in")["users"])) {
 		t.Fatal("credentials changed")
 	}
@@ -72,14 +73,19 @@ func TestProtocolCreateEditDisableEnableDelete(t *testing.T) {
 	p.TargetHost = "example.test"
 	p.TargetPort = 443
 	p.Username = "local_test"
-	expectFault(t, "PROTOCOL_EXISTS", func() { m.Apply("maintenance_reuse", &p) })
+	m.Apply("maintenance_reuse", &p)
+	m = updatedMaintenance(m)
+	active := object(read(filepath.Join(m.Settings.ConfigDir, "config.json")))
+	if inboundIdentity(m.Settings, protocolState(m.Settings), findInbound(active, p.Tag)) == firstID {
+		t.Fatal("recreated entrance inherited the deleted entrance ID")
+	}
 }
 func TestProtocolValidationAndProtection(t *testing.T) {
 	m, e := maintenanceFixture(t)
+	p := protocolInput(m, "disable", "anytls-in")
+	expectFault(t, "RETIREMENT_REQUIRED", func() { m.Apply("maintenance_disable_managed", &p) })
 	original := read(filepath.Join(m.Settings.ConfigDir, "config.json"))
 	restarts := e.restarts
-	p := protocolInput(m, "disable", "anytls-in")
-	expectFault(t, "PROTOCOL_REQUIRED", func() { m.Apply("maintenance_protected", &p) })
 	p = protocolInput(m, "edit", "legacy")
 	p.Listen = "0.0.0.0"
 	p.Port = 8081

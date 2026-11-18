@@ -6,7 +6,9 @@ import (
 	"github.com/pelletier/go-toml/v2"
 	"go.yaml.in/yaml/v3"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,12 +26,19 @@ func validateConfigDir(path string) {
 	}
 }
 
-func checkCollectorTools() {
-	tool, err := os.Stat("/opt/sbctl/node-tools/grpcurl")
-	if err != nil || tool.Mode()&0111 == 0 || !exists("/opt/sbctl/node-tools/stats.proto") {
-		fail("STATS_SETUP", "请安装 /opt/sbctl/node-tools/grpcurl 和 stats.proto", 409)
-	}
+const nodeStatsDir = "/opt/sbctl/data/sing-box/stats"
+const containerStatsDir = "/run/sbctl-stats"
+
+func configureStatsDirectory(uid int) {
+	group, err := user.LookupGroup("sbctl-stats")
+	check(err)
+	gid, err := strconv.Atoi(group.Gid)
+	check(err)
+	check(os.MkdirAll(nodeStatsDir, 0750))
+	check(os.Chown(nodeStatsDir, uid, gid))
+	check(os.Chmod(nodeStatsDir, 0750|os.ModeSetgid))
 }
+
 func inspectionALPN(v any) []string {
 	if value, ok := v.(string); ok {
 		return []string{value}
@@ -37,7 +46,6 @@ func inspectionALPN(v any) []string {
 	return stringsOf(v)
 }
 func inspectNode(container, dir, host, serverName string) M {
-	checkCollectorTools()
 	validateConfigDir(dir)
 	resolved, e := filepath.EvalSymlinks(dir)
 	check(e)
@@ -95,7 +103,8 @@ func inspectNode(container, dir, host, serverName string) M {
 	eps := []Endpoint{}
 	managed, unmanaged := 0, 0
 	primary := map[string]bool{}
-	if exists("/opt/sbctl/config/node.toml") {
+	boundSettings := exists("/opt/sbctl/config/node.toml")
+	if boundSettings {
 		for _, e := range LoadNodeSettings().Endpoints {
 			primary[e.Tag] = true
 		}
@@ -103,10 +112,18 @@ func inspectNode(container, dir, host, serverName string) M {
 	for _, v := range array(config["inbounds"]) {
 		i := mapping(v)
 		p := str(i["type"])
-		if len(primary) > 0 && !primary[str(i["tag"])] {
+		if boundSettings && !primary[str(i["tag"])] {
 			continue
 		}
 		if p != "anytls" && p != "tuic" {
+			continue
+		}
+		if !boundSettings && host == "" {
+			for _, user := range array(i["users"]) {
+				if strings.HasPrefix(str(mapping(user)["name"]), "usr_") {
+					managed++
+				}
+			}
 			continue
 		}
 		tls := mapping(i["tls"])
@@ -114,16 +131,21 @@ func inspectNode(container, dir, host, serverName string) M {
 		if len(alpn) == 0 {
 			alpn = []string{"h3"}
 		}
-		if host == "" && exists("/opt/sbctl/config/node.toml") {
-			old := LoadNodeSettings()
-			if len(old.Endpoints) > 0 {
-				host = old.Endpoints[0].Server
+		ep := Endpoint{Protocol: p, Tag: str(i["tag"]), Server: host, Port: int(integer(i["listen_port"])), SNI: str(tls["server_name"]), ALPN: alpn}
+		if exists("/opt/sbctl/config/node.toml") {
+			for _, old := range LoadNodeSettings().Endpoints {
+				if old.Tag == ep.Tag {
+					ep.InboundID = old.InboundID
+					ep.Server = old.Server
+				}
 			}
 		}
-		ep := Endpoint{p, str(i["tag"]), host, int(integer(i["listen_port"])), str(tls["server_name"]), alpn}
+		if ep.InboundID == "" {
+			ep.InboundID = legacyInboundID(ep)
+		}
 		if ep.SNI == "" && exists("/opt/sbctl/config/node.toml") {
 			for _, old := range LoadNodeSettings().Endpoints {
-				if old.Protocol == p {
+				if old.Tag == ep.Tag {
 					ep.SNI = old.SNI
 				}
 			}
@@ -132,7 +154,7 @@ func inspectNode(container, dir, host, serverName string) M {
 			ep.SNI = serverName
 		}
 		if ep.SNI == "" {
-			ep.SNI = host
+			ep.SNI = ep.Server
 		}
 		ep.Validate()
 		eps = append(eps, ep)
@@ -148,16 +170,14 @@ func inspectNode(container, dir, host, serverName string) M {
 			}
 		}
 	}
-	if len(eps) != 2 || eps[0].Protocol == eps[1].Protocol {
-		fail("ENDPOINTS", "当前接管需要各一个有标签的 AnyTLS 与 TUIC 入口")
-	}
+	eps = normalizeEndpoints(eps)
 	uid, gid := 0, 0
 	if _, e := fmt.Sscanf(str(service["user"]), "%d:%d", &uid, &gid); e != nil || uid < 1 || gid < 1 {
 		fail("CONTAINER_USER", "Compose 需要明确非 root 的数字 UID:GID")
 	}
 	version := strings.TrimSpace(string(runCommand([]string{"/usr/bin/docker", "exec", container, "/usr/local/bin/sing-box", "version"}, nil, 10*time.Second)))
-	if !strings.Contains(version, "with_v2ray_api") {
-		fail("STATS_UNSUPPORTED", "镜像缺少 with_v2ray_api，请先更换具备统计功能的镜像")
+	if !strings.Contains(version, "sing-box") {
+		fail("STATS_UNSUPPORTED", "无法识别受管 sing-box 内核版本")
 	}
 	version = strings.Split(version, "\n")[0]
 	ready := boolean(state["Running"])
@@ -166,7 +186,9 @@ func inspectNode(container, dir, host, serverName string) M {
 		nodeID = LoadNodeSettings().NodeID
 	}
 	out := M{"container": container, "config_dir": dir, "image": str(service["image"]), "engine_build_id": strings.TrimPrefix(imageID, "sha256:"), "config_hash": hash(data), "compose_hash": hash(composeBytes), "container_id": o["Id"], "running": ready, "endpoints": eps, "uid": uid, "gid": gid, "existing_node_id": nodeID, "managed_credentials": managed, "preserved_users": unmanaged, "guard_current": guardMounted && strings.Join(stringsOf(cfg["Entrypoint"]), " ") == "/bin/sh /run/sbctl/guard.sh", "can_adopt": ready, "version": version, "checked_at": now(), "impact": "保存节点绑定并安装启动守卫；需要时重新创建当前容器，连接会短暂重连。镜像名称与容器名称保持检查结果。"}
+	out["native_stats_socket"] = exists(nativeStatsSocket())
 	out["server_name"] = serverName
+	out["public_host"] = host
 	out["impact"] = "启用全部 sing-box 入口与节点本地命名用户统计，缺少标签或用户名称时补充统计标识；保留凭据、端口与路由。必要时重建容器，连接短暂重连；默认保留当前镜像和容器名。"
 	out["observation_hash"] = digest(without(out, "checked_at"))
 	return out
@@ -219,6 +241,9 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	if len(selected) != 1 || selected[0]["Id"] != "sha256:"+s.EngineBuildID {
 		fail("IMAGE_DRIFT", "镜像标签指向已变化，请重新检查", 409)
 	}
+	if mapping(mapping(selected[0]["Config"])["Labels"])["io.sbctl.stats.schema"] != "1" {
+		fail("STATS_UNSUPPORTED", "目标镜像必须包含 sbctl 原生统计接口", 409)
+	}
 	configFile := filepath.Join(s.ConfigDir, "config.json")
 	composeFile := filepath.Join(s.ConfigDir, "compose.yaml")
 	if !contains([]string{str(plan["config_before_hash"]), hash([]byte(str(plan["config_after"])))}, hash(read(configFile))) || !contains([]string{str(plan["compose_before_hash"]), hash([]byte(str(plan["compose_after"])))}, hash(read(composeFile))) {
@@ -233,7 +258,7 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	if exists(s.TemplateFile) && !contains([]string{str(plan["template_before_hash"]), hash([]byte(str(plan["template"])))}, hash(read(s.TemplateFile))) {
 		fail("INSPECTION_CHANGED", "节点模板在接管期间变化", 409)
 	}
-	if exists(s.ProbeFile) && hash(read(s.ProbeFile)) != hash([]byte(str(plan["probes"]))) {
+	if exists(s.ProbeFile) && !contains([]string{str(plan["probes_before_hash"]), hash([]byte(str(plan["probes"])))}, hash(read(s.ProbeFile))) {
 		fail("INSPECTION_CHANGED", "探针凭据在接管期间变化", 409)
 	}
 	candidate := filepath.Join(root, "management-candidate.json")
@@ -246,6 +271,14 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	if !exists(a.DBPath) {
 		a.Initialize()
 	}
+	revision := integer(plan["revision"])
+	transaction(a.DBPath, false, func(d *DB) {
+		latest := d.One("SELECT revision,state FROM requests ORDER BY revision DESC LIMIT 1")
+		if latest != nil && (integer(latest["revision"]) > revision || latest["state"] != "verified") {
+			fail("STALE_REVISION", "接管计划早于当前节点安全状态，请重新检查", 409)
+		}
+	})
+	configureStatsDirectory(s.UID)
 	atomicWrite(s.ProbeFile, []byte(str(plan["probes"])), 0600)
 	atomicWrite(s.TemplateFile, []byte(str(plan["template"])), 0600)
 	atomicWrite(path, settings, 0600)
@@ -255,7 +288,6 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	check(os.Chown(configFile, 0, s.GID))
 	atomicWrite(composeFile, []byte(str(plan["compose_after"])), 0644)
 	recordControlledConfig(s, []byte(str(plan["config_after"])))
-	revision := integer(plan["revision"])
 	configHash := hash([]byte(str(plan["config_after"])))
 	users := stringsOf(plan["users"])
 	runtimePath := filepath.Join(s.SafetyDir, "runtime.json")
@@ -266,30 +298,33 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 	a.Guard(true, configHash, revision)
 	engine := DockerEngine{s}
 	running := false
-	_ = Attempt(func() { running = engine.Runtime().Running })
-	if !running {
+	_ = Attempt(func() {
+		rt := engine.Runtime()
+		running = rt.Running && rt.ConfigHash == configHash
+	})
+	if !running || !exists(nativeStatsSocket()) {
 		engine.Restart()
 	}
 	rt := engine.Runtime()
 	if !rt.Running {
 		fail("RUNTIME_BINDING", "运行状态绑定未通过，请重试原任务", 503)
 	}
-	for _, probe := range a.Probes() {
-		if !engine.Probe(probe, true) {
-			fail("PROBE_FAILED", "接管后的真实协议探测未通过，请检查公网地址和 TLS 证书域名后重试", 503)
-		}
-	}
+	verified := verifyManagedEndpoints(s, engine, configHash)
 	// Check the non-resetting statistics endpoint before declaring adoption ready.
-	runCommand([]string{"/opt/sbctl/node-tools/grpcurl", "-plaintext", "-connect-timeout", "3", "-max-time", "5", "-import-path", "/opt/sbctl/node-tools", "-proto", "stats.proto", "-d", `{"reset":false}`, "127.0.0.1:10085", "v2ray.core.app.stats.command.StatsService/QueryStats"}, nil, 10*time.Second)
+	if readNativeStats("capabilities").NodeID != id {
+		fail("NODE_IDENTITY", "原生统计 socket 的节点身份不符", 409)
+	}
 	// The collector's ID is local state, never a remote command argument.
 	atomicWrite("/opt/sbctl/config/collector.env", []byte("SBCTL_NODE_ID="+id+"\n"), 0644)
 	if !exists("/opt/sbctl/data/ledger/ledger.db") {
 		runCommand([]string{"/usr/sbin/runuser", "-u", "sbctl-stats", "--", "/opt/sbctl/bin/sbctl-node", "collect", "--initialize-ledger", id}, nil, 10*time.Second)
 	}
+	runCommand([]string{"/usr/sbin/runuser", "-u", "sbctl-stats", "--", "/opt/sbctl/bin/sbctl-node", "stats-rpc"}, []byte(`{"action":"inspect"}`), 10*time.Second)
 	runCommand([]string{"/usr/bin/systemctl", "start", "sbctl-node"}, nil, 10*time.Second)
 	runCommand([]string{"/usr/bin/systemctl", "restart", "sbctl-collector"}, nil, 10*time.Second)
 	runCommand([]string{"/usr/bin/systemctl", "enable", "sbctl-node", "sbctl-collector"}, nil, 10*time.Second)
 	result := M{"node_id": id, "container": s.Container, "image": s.Image, "engine_build_id": s.EngineBuildID, "config_dir": s.ConfigDir, "template_hash": s.TemplateHash, "endpoints": s.Endpoints, "runtime": rt, "checked_at": now(), "ready": true}
+	result["probe_verification"] = verified
 	result["version"] = strings.Split(strings.TrimSpace(string(runCommand([]string{"/usr/bin/docker", "exec", s.Container, "/usr/local/bin/sing-box", "version"}, nil, 10*time.Second))), "\n")[0]
 	atomicWrite(receiptPath, canonical(M{"input_hash": inputHash, "result": result}), 0600)
 	return result
@@ -297,10 +332,11 @@ func configureNode(id, requestID string, inspection M, desiredContainer, desired
 func prepareManagementPlan(id, requestID string, inspection M, desiredContainer, desiredImage, inputHash string) M {
 	var eps []Endpoint
 	decode(canonical(inspection["endpoints"]), &eps)
-	if len(eps) != 2 {
-		fail("INSPECTION_INVALID", "入口检查数据无效")
+	actualHost := str(inspection["public_host"])
+	if _, legacy := inspection["public_host"]; legacy == false && len(eps) > 0 {
+		actualHost = eps[0].Server
 	}
-	actual := inspectNode(str(inspection["container"]), str(inspection["config_dir"]), eps[0].Server, str(inspection["server_name"]))
+	actual := inspectNode(str(inspection["container"]), str(inspection["config_dir"]), actualHost, str(inspection["server_name"]))
 	if actual["observation_hash"] != inspection["observation_hash"] {
 		fail("INSPECTION_CHANGED", "节点运行状态或配置已变化，请重新检查", 409)
 	}
@@ -354,8 +390,8 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 			fail("IMAGE_INVALID", "无法识别目标镜像")
 		}
 		version := string(runCommand([]string{"/usr/bin/docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--user", fmt.Sprintf("%d:%d", s.UID, s.GID), "--entrypoint", "/usr/local/bin/sing-box", str(images[0]["Id"]), "version"}, nil, 15*time.Second))
-		if !strings.Contains(version, "with_v2ray_api") {
-			fail("STATS_UNSUPPORTED", "目标镜像缺少 with_v2ray_api")
+		if !strings.Contains(version, "sing-box") {
+			fail("STATS_UNSUPPORTED", "目标镜像不是可识别的 sing-box 内核")
 		}
 		s.Image, s.EngineBuildID = desiredImage, strings.TrimPrefix(str(images[0]["Id"]), "sha256:")
 	}
@@ -380,17 +416,37 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	config := object(oldConfig)
 	probes := []Credential{}
 	var probeBytes []byte
+	probeBeforeHash := ""
 	if exists(s.ProbeFile) {
 		probeBytes = read(s.ProbeFile)
+		probeBeforeHash = hash(probeBytes)
 		decode(probeBytes, &probes)
+		// Bind legacy protocol-only probes to the current endpoint ID while the
+		// node is being adopted. Ambiguous same-protocol probes fail closed.
+		for i := range probes {
+			if probes[i].InboundID != "" {
+				continue
+			}
+			candidates := []Endpoint{}
+			for _, ep := range s.Endpoints {
+				if ep.Protocol == probes[i].Protocol {
+					candidates = append(candidates, ep)
+				}
+			}
+			if len(candidates) != 1 {
+				fail("PROBE_IDENTITY", "旧探针无法唯一绑定入口，请重新生成探针")
+			}
+			probes[i].InboundID = candidates[0].InboundID
+		}
+		probeBytes = canonical(probes)
 	} else {
-		for _, p := range []string{"anytls", "tuic"} {
+		for _, ep := range s.Endpoints {
 			var uid *string
-			if p == "tuic" {
+			if ep.Protocol == "tuic" {
 				u := uuid.NewString()
 				uid = &u
 			}
-			probes = append(probes, Credential{"sys_probe", p, "sys_" + p, 1, token(32), uid, 0})
+			probes = append(probes, Credential{UserID: "sys_probe", Protocol: ep.Protocol, CredentialID: "sys_" + ep.InboundID, Generation: 1, Password: token(32), UUID: uid, InboundID: ep.InboundID})
 		}
 		probeBytes = canonical(probes)
 	}
@@ -426,7 +482,13 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 			}
 		}
 		for _, c := range probes {
-			if c.Protocol == str(in["type"]) {
+			entryID := ""
+			for _, ep := range s.Endpoints {
+				if ep.Tag == str(in["tag"]) {
+					entryID = ep.InboundID
+				}
+			}
+			if c.InboundID == entryID {
 				u := M{"name": c.UserID, "password": c.Password}
 				if c.UUID != nil {
 					u["uuid"] = *c.UUID
@@ -474,17 +536,32 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 	service["container_name"] = s.Container
 	service["image"] = s.Image
 	service["entrypoint"] = []string{"/bin/sh", "/run/sbctl/guard.sh"}
+	environment := M{}
+	if entries, ok := service["environment"].(map[string]any); ok {
+		environment = entries
+	} else {
+		for _, line := range stringsOf(service["environment"]) {
+			key, value, hasValue := strings.Cut(line, "=")
+			environment[key] = nil
+			if hasValue {
+				environment[key] = value
+			}
+		}
+	}
+	environment["SBCTL_NODE_ID"] = s.NodeID
+	environment["SBCTL_STATS_SOCKET"] = containerStatsDir + "/collector.sock"
+	service["environment"] = environment
 	volumes := []any{}
 	for _, v := range array(service["volumes"]) {
-		if text, ok := v.(string); ok && strings.Contains(text, ":/run/sbctl:") {
+		if text, ok := v.(string); ok && (strings.Contains(text, ":/run/sbctl:") || strings.Contains(text, ":"+containerStatsDir)) {
 			continue
 		}
-		if mapping(v)["target"] == "/run/sbctl" {
+		if target := mapping(v)["target"]; target == "/run/sbctl" || target == containerStatsDir {
 			continue
 		}
 		volumes = append(volumes, v)
 	}
-	service["volumes"] = append(volumes, s.SafetyDir+":/run/sbctl:ro")
+	service["volumes"] = append(volumes, s.SafetyDir+":/run/sbctl:ro", nodeStatsDir+":"+containerStatsDir)
 	composeAfter, e := yaml.Marshal(compose)
 	check(e)
 	backup := filepath.Join("/opt/sbctl/backups/management", requestID)
@@ -494,24 +571,24 @@ func prepareManagementPlan(id, requestID string, inspection M, desiredContainer,
 		atomicWrite(filepath.Join(backup, "node.before.toml"), read(path), 0600)
 		atomicWrite(filepath.Join(backup, "template.before.json"), read(s.TemplateFile), 0600)
 	}
-	return M{"node_id": id, "input_hash": inputHash, "settings": s, "settings_before_hash": settingsHash, "template_before_hash": templateHash, "config_before_hash": hash(oldConfig), "config_after": string(afterConfig), "compose_before_hash": hash(original), "compose_after": string(composeAfter), "template": string(templateBytes), "probes": string(probeBytes), "revision": revision, "users": unique(users)}
+	return M{"node_id": id, "input_hash": inputHash, "settings": s, "settings_before_hash": settingsHash, "template_before_hash": templateHash, "probes_before_hash": probeBeforeHash, "config_before_hash": hash(oldConfig), "config_after": string(afterConfig), "compose_before_hash": hash(original), "compose_after": string(composeAfter), "template": string(templateBytes), "probes": string(probeBytes), "revision": revision, "users": unique(users)}
 }
 func diagnoseNode() M {
 	s := LoadNodeSettings()
 	result := M{"node_id": s.NodeID, "container": s.Container, "image": s.Image, "engine_build_id": s.EngineBuildID, "config_dir": s.ConfigDir, "checked_at": now(), "ready": false, "checks": []M{}}
-	checks := []M{}
+	checks := []M{{"name": "管理通道", "status": "passed", "ok": true, "message": "管理 SSH 固定命令已响应"}}
 	err := Attempt(func() {
-		actual := inspectNode(s.Container, s.ConfigDir, s.Endpoints[0].Server, "")
+		actual := inspectNode(s.Container, s.ConfigDir, "", "")
 		result["observed"] = actual
-		checks = append(checks, M{"name": "SSH 与容器", "ok": true, "message": "固定命令可达，容器运行信息已读取"})
 		rt := DockerEngine{s}.Runtime()
 		result["runtime"] = rt
-		checks = append(checks, M{"name": "运行绑定", "ok": rt.Running, "message": map[bool]string{true: "容器、配置和启动守卫一致", false: "容器、镜像或启动守卫与登记不一致，请重新检查并确认绑定"}[rt.Running]})
-		result["ready"] = rt.Running
+		ok := rt.Running && !rt.Paused && !rt.Restarting && rt.ConfigHash == str(actual["config_hash"])
+		checks = append(checks, M{"name": "运行绑定", "ok": ok, "status": map[bool]string{true: "passed", false: "failed"}[ok], "message": map[bool]string{true: "容器、配置和启动守卫一致", false: "容器、镜像、配置或启动守卫与登记不一致"}[ok]})
+		result["ready"] = ok
 	})
 	if err != nil {
 		f := PublicFault(err)
-		checks = append(checks, M{"name": "节点检查", "ok": false, "message": f.Message, "code": f.Code})
+		checks = append(checks, M{"name": "运行绑定", "ok": false, "status": "failed", "message": f.Message, "code": f.Code})
 	}
 	result["checks"] = checks
 	return result
@@ -586,6 +663,26 @@ func NodeRPC(v M) M {
 			fail("ACTION_REJECTED", "诊断参数无效")
 		}
 		return diagnoseNode()
+	case "verify_inbounds":
+		if len(v) != 1 {
+			fail("ACTION_REJECTED", "协议拨测参数无效")
+		}
+		unlock := fileLock("/opt/sbctl/data/node/management.lock", 20*time.Second)
+		defer unlock()
+		s := LoadNodeSettings()
+		executor := fileLock(filepath.Join(s.StateDir, "executor.lock"), 3*time.Second)
+		defer executor()
+		security := NewAgent(s, nil).Lock()
+		defer security()
+		if observedConfigChanged(s) || exists(filepath.Join(s.StateDir, "maintenance-pending.json")) || exists(filepath.Join(s.StateDir, "config-adoption.json")) {
+			fail("CONFIG_SYNC_PENDING", "先完成同步或维护，再验证授权入口", 409)
+		}
+		_, raw := currentConfig(s)
+		status := "passed"
+		if len(s.Endpoints) == 0 {
+			status = "not_applicable"
+		}
+		return M{"node_id": s.NodeID, "template_hash": s.TemplateHash, "endpoints": s.Endpoints, "protocol_status": status, "probe_verification": verifyManagedEndpoints(s, DockerEngine{s}, hash(raw))}
 	case "status", "submit":
 		unlock := fileLock("/opt/sbctl/data/node/management.lock", 120*time.Second)
 		defer unlock()

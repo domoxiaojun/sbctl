@@ -39,7 +39,7 @@ async function request<T>(path: string, method = 'GET', body?: unknown, key?: st
   }
   return result as T
 }
-function query(filters: Filters = {}) {
+function query(filters: Filters | Record<string, string | number | undefined> = {}) {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
   return params.size ? `?${params}` : ''
@@ -76,6 +76,7 @@ export const api = {
   userAudit: (id: string, signal?: AbortSignal) => request<Schema['UserAudit']>(`/users/${encodeURIComponent(id)}/audit`, 'GET', undefined, undefined, signal),
   groups: (signal?: AbortSignal) => request<Schema['Group'][]>('/groups', 'GET', undefined, undefined, signal),
   traffic: (f: TrafficFilters = {}, signal?: AbortSignal) => request<Schema['TrafficReport']>(`/traffic${query(f)}`, 'GET', undefined, undefined, signal),
+  trafficConnections: (f: Record<string, string | number | undefined> = {}, signal?: AbortSignal) => request<Schema['TrafficConnectionReport']>(`/traffic/connections${query(f)}`, 'GET', undefined, undefined, signal),
   operations: (f?: Filters, signal?: AbortSignal) => request<Schema['OperationPage']>(`/operations${query(f)}`, 'GET', undefined, undefined, signal),
   operation: (id: string, signal?: AbortSignal) => request<Schema['Operation']>(`/operations/${encodeURIComponent(id)}`, 'GET', undefined, undefined, signal),
   createUser: (body: Schema['CreateUser'], key: string) => request<Schema['Accepted']>('/users', 'POST', body, key),

@@ -30,10 +30,11 @@ CREATE TABLE IF NOT EXISTS grants (
 );
 CREATE TABLE IF NOT EXISTS credentials (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), node_id TEXT NOT NULL REFERENCES nodes(id),
- protocol TEXT NOT NULL, generation INTEGER NOT NULL, secret_ciphertext TEXT NOT NULL,
+ inbound_id TEXT NOT NULL DEFAULT '', protocol TEXT NOT NULL, generation INTEGER NOT NULL, secret_ciphertext TEXT NOT NULL,
  fingerprint TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0, verified_revision INTEGER,
- UNIQUE(user_id,node_id,protocol,generation), UNIQUE(node_id,protocol,fingerprint)
+ UNIQUE(user_id,node_id,inbound_id,generation), UNIQUE(node_id,inbound_id,fingerprint)
 );
+CREATE INDEX IF NOT EXISTS credentials_inbound ON credentials(node_id,inbound_id,protocol,revoked);
 CREATE TABLE IF NOT EXISTS revocations (
  node_id TEXT NOT NULL REFERENCES nodes(id), fingerprint TEXT NOT NULL, credential_id TEXT NOT NULL,
  created_at TEXT NOT NULL, PRIMARY KEY(node_id,fingerprint)
@@ -91,6 +92,11 @@ CREATE TABLE IF NOT EXISTS user_management (
 );
 CREATE TABLE IF NOT EXISTS node_catalog (
  node_id TEXT PRIMARY KEY REFERENCES nodes(id), catalog_json TEXT NOT NULL, checked_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS inbound_retirements (
+ job_id TEXT PRIMARY KEY REFERENCES node_jobs(id),
+ operation_id TEXT UNIQUE NOT NULL REFERENCES operations(id),
+ inbound_id TEXT NOT NULL, template_hash TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS node_config_snapshots (
  node_id TEXT PRIMARY KEY REFERENCES nodes(id), event_seq INTEGER NOT NULL,

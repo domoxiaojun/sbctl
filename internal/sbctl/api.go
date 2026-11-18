@@ -178,6 +178,9 @@ func API(c *Control) http.Handler {
 	auth("GET /api/v1/traffic", func(w http.ResponseWriter, r *http.Request, a M) {
 		jsonResponse(w, 200, v.TrafficReport(r.URL.Query()))
 	})
+	auth("GET /api/v1/traffic/connections", func(w http.ResponseWriter, r *http.Request, a M) {
+		jsonResponse(w, 200, v.TrafficConnections(r.URL.Query()))
+	})
 	auth("GET /api/v1/node-discovery", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Discovery()) })
 	auth("GET /api/v1/node-onboarding", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Onboarding()) })
 	auth("POST /api/v1/node-jobs", func(w http.ResponseWriter, r *http.Request, a M) {

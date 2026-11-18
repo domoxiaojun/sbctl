@@ -1,6 +1,6 @@
 import type { Schema, Filters } from '../api/types'
 import { fixtures } from './fixtures'
-import { demoTraffic } from './traffic'
+import { demoTraffic, demoTrafficConnections } from './traffic'
 import { createNodeManagementDemo } from './node-management'
 
 type State = { managementRequests?: Record<string, { signature: string; result: unknown }>; userAudits?: Record<string, Schema['UserAudit']> } & ReturnType<typeof fixtures> & { requests: Record<string, { signature: string; operation_id: string }>; signedIn: boolean; operationRevisions?: Record<string, number>; authorizedNodes?: Record<string, string[]>; linkRevisions?: Record<string, number> }
@@ -71,6 +71,7 @@ export function createDemoService(storage?: Pick<Storage, 'getItem' | 'setItem'>
     const f: Filters = { q: url.searchParams.get('q') ?? '', status: url.searchParams.get('status') ?? '', region: url.searchParams.get('region') ?? '', page: Number(url.searchParams.get('page') ?? 1), page_size: Number(url.searchParams.get('page_size') ?? 8), archived: (url.searchParams.get('archived') ?? 'false') as Filters['archived'], sort: (url.searchParams.get('sort') ?? 'name') as Filters['sort'] }
     if (p === '/overview') return json({ node_count: state.nodes.length, online_count: state.nodes.filter(n => n.status === 'online').length, degraded_count: state.nodes.filter(n => n.status === 'degraded').length, offline_count: state.nodes.filter(n => n.status === 'offline').length, user_count: state.users.filter(u => u.status !== 'disabled').length, pending_count: state.operations.filter(op => op.state !== 'completed').length, regions: [...new Set(state.nodes.map(n => n.region))].map(id => ({ id, name: state.nodes.find(n => n.region === id)!.location, node_count: state.nodes.filter(n => n.region === id).length, online_count: state.nodes.filter(n => n.region === id && n.status === 'online').length })), operations: state.operations.slice(0, 3), alerts: state.alerts.filter(a => a.state === 'open'), as_of: new Date(now()).toISOString() } satisfies Schema['Overview'])
     if (p === '/traffic') { try { return json(demoTraffic(state, url.searchParams, now())) } catch { return fail('DATE_RANGE_INVALID', '日期范围无效。', 422) } }
+    if (p === '/traffic/connections') { try { return json(demoTrafficConnections(state, url.searchParams, now())) } catch { return fail('DATE_RANGE_INVALID', '日期范围无效。', 422) } }
     if (p === '/groups') return json(state.groups)
     if (method === 'GET') {
       if (p === '/nodes') return json(paginate(state.nodes, f))

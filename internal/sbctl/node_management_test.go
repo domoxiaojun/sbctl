@@ -28,9 +28,9 @@ func (m *managementTransport) Call(n NodeConnection, b M, stats bool) M {
 		}
 		return M{"state": "missing"}
 	case "inspect":
-		return M{"can_adopt": true, "container": "sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "observation_hash": strings.Repeat("c", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}}}
+		return M{"can_adopt": true, "container": "sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "observation_hash": strings.Repeat("c", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}, ""}}}
 	case "configure":
-		return M{"node_id": b["node_id"], "ready": true, "container": "sing-box", "config_dir": "/etc/sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}}}
+		return M{"node_id": b["node_id"], "ready": true, "container": "sing-box", "config_dir": "/etc/sing-box", "image": "registry.example/sing-box:custom", "engine_build_id": strings.Repeat("a", 64), "template_hash": strings.Repeat("b", 64), "endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}, ""}}}
 	default:
 		return M{"ready": false, "checks": []M{{"name": "binding", "ok": false, "message": "changed container"}}}
 	}
@@ -42,7 +42,7 @@ func TestNodeActionReconcilesCompletedMaintenanceReceipt(t *testing.T) {
 	catalog := ProtocolCatalog{NodeID: draft.ID, Hash: strings.Repeat("c", 64), CheckedAt: now(), Items: []ProtocolItem{}}
 	tr := &managementTransport{Receipt: M{"state": "completed", "result": M{
 		"node_id": draft.ID, "ready": true, "template_hash": strings.Repeat("a", 64),
-		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}}},
+		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 4443, "example.test", []string{"h3"}, ""}},
 		"catalog":   catalog,
 	}}}
 	w := NewWorker(c, tr)
@@ -107,7 +107,7 @@ func TestLostMaintenanceReplyThenDisableRecovers(t *testing.T) {
 	tr.receipt = M{"state": "completed", "result": M{
 		"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("c", 64),
 		"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
-		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}},
+		"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}},
 	}}
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		d.Exec("UPDATE node_jobs SET state='queued',lease_until=0 WHERE id=?", job["job_id"])
@@ -290,7 +290,7 @@ func (tr *interruptedMaintenanceTransport) Call(_ NodeConnection, body M, _ bool
 		return M{
 			"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("c", 64),
 			"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("d", 64), CheckedAt: now(), Items: []ProtocolItem{}},
-			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}}},
+			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}},
 		}
 	case "maintenance_receipt":
 		if tr.pending {

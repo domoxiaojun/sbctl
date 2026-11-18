@@ -546,6 +546,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/traffic/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__traffic_connections"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -904,7 +920,7 @@ export interface components {
         };
         NodeJobInput: {
             /** @enum {string} */
-            kind: "inspect" | "configure" | "check" | "protocols" | "protocol_change" | "config" | "config_change" | "restart";
+            kind: "inspect" | "configure" | "check" | "verify_inbounds" | "protocols" | "protocol_change" | "config" | "config_change" | "restart";
             draft: components["schemas"]["NodeDraft"];
             inspection_id: string;
             expected_version: number;
@@ -971,6 +987,8 @@ export interface components {
             release: string;
         };
         NodeInbound: {
+            inbound_id?: string;
+            history_tag?: string;
             tag: string;
             protocol: string;
             port: number;
@@ -1078,6 +1096,15 @@ export interface components {
             created_at: string;
         }[];
         ProtocolItem: {
+            inbound_id?: string;
+            referenced?: boolean;
+            /** @enum {string} */
+            probe_state?: "passed" | "not_run";
+            retirement?: {
+                state: string;
+                created_at: string;
+                message: string;
+            };
             tag: string;
             protocol: string;
             listen: string;
@@ -1102,6 +1129,9 @@ export interface components {
             base_hash: string;
             tag: string;
             source_tag?: string;
+            new_tag?: string;
+            subscription_host?: string;
+            server_name?: string;
             listen?: string;
             port?: number;
             target_host?: string;
@@ -1147,6 +1177,52 @@ export interface components {
                 server_port: number;
             }[];
             inbound_tags: string[];
+        };
+        TrafficConnection: {
+            node_id: string;
+            connection_id: string;
+            inbound_id: string;
+            inbound: string;
+            inbound_type: string;
+            network: string;
+            domain: string;
+            destination: string;
+            source: string;
+            outbound: string;
+            outbound_type: string;
+            chain: string[];
+            rule: string;
+            upload_bytes: string;
+            download_bytes: string;
+            /** Format: date-time */
+            started_at: string;
+            closed_at: string;
+        };
+        TrafficConnectionReport: {
+            items: components["schemas"]["TrafficConnection"][];
+            total: number;
+            page: number;
+            page_size: number;
+            retention_days: number;
+            /** Format: date-time */
+            from: string;
+            /** Format: date-time */
+            to: string;
+            /** Format: date-time */
+            as_of: string;
+            summary: {
+                domains: components["schemas"]["TrafficConnectionSummary"][];
+                destinations: components["schemas"]["TrafficConnectionSummary"][];
+                rules: components["schemas"]["TrafficConnectionSummary"][];
+                outbounds: components["schemas"]["TrafficConnectionSummary"][];
+            };
+            history_gap: boolean;
+        };
+        TrafficConnectionSummary: {
+            name: string;
+            connections: number;
+            upload_bytes: string;
+            download_bytes: string;
         };
     };
     responses: never;
@@ -3364,6 +3440,63 @@ export interface operations {
             };
             /** @description State conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__traffic_connections: {
+        parameters: {
+            query?: {
+                /** @description 连接明细筛选 */
+                node?: string;
+                /** @description 连接明细筛选 */
+                inbound?: string;
+                /** @description 连接明细筛选 */
+                outbound?: string;
+                /** @description 连接明细筛选 */
+                domain?: string;
+                /** @description 连接明细筛选 */
+                rule?: string;
+                from?: string;
+                to?: string;
+                page?: number;
+                page_size?: number;
+                protocol?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrafficConnectionReport"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

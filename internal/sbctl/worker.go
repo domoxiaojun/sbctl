@@ -51,7 +51,7 @@ func (w *Worker) Request(task M) (NodeRequest, NodeConnection) {
 		users := []Credential{}
 		for _, r := range d.Rows("SELECT c.* FROM credentials c JOIN users u ON u.id=c.user_id WHERE c.node_id=? AND c.revoked=0 AND u.status<>'disabled' ORDER BY c.id", n["id"]) {
 			secret := mapping(w.Control.Vault.Decrypt(str(r["secret_ciphertext"])))
-			users = append(users, Credential{str(r["user_id"]), str(r["protocol"]), str(r["id"]), integer(r["generation"]), str(secret["password"]), nullable(str(secret["uuid"])), integer(secret["external_sync_seq"])})
+			users = append(users, Credential{UserID: str(r["user_id"]), Protocol: str(r["protocol"]), CredentialID: str(r["id"]), Generation: integer(r["generation"]), Password: str(secret["password"]), UUID: nullable(str(secret["uuid"])), ExternalSeq: integer(secret["external_sync_seq"]), InboundID: str(r["inbound_id"])})
 		}
 		revoked := []string{}
 		for _, r := range d.Rows("SELECT fingerprint FROM revocations WHERE node_id=? ORDER BY fingerprint", n["id"]) {
@@ -59,12 +59,15 @@ func (w *Worker) Request(task M) (NodeRequest, NodeConnection) {
 		}
 		last := d.One("SELECT * FROM node_requests WHERE node_id=? ORDER BY revision DESC LIMIT 1", n["id"])
 		req = NodeRequest{SchemaVersion: 1, NodeID: str(n["id"]), RequestID: identifier("req"), NodeRevision: integer(n["revision"]) + 1, TemplateHash: str(n["template_hash"]), EngineBuildID: strings.TrimPrefix(str(n["image_digest"]), "sha256:"), Users: users, Revoked: revoked}
+		if retiring := d.One("SELECT inbound_id,job_id FROM inbound_retirements WHERE operation_id=?", task["operation_id"]); retiring != nil {
+			req.Retirement, req.RetirementJob = str(retiring["inbound_id"]), str(retiring["job_id"])
+		}
 		req.Seal()
 		if last != nil {
 			old := parseRequest(w.Control.Vault.Decrypt(str(last["payload_ciphertext"])))
 			a := without(object(canonical(req)), "request_id", "node_revision", "payload_hash")
 			b := without(object(canonical(old)), "request_id", "node_revision", "payload_hash")
-			if digest(a) == digest(b) {
+			if integer(last["revision"]) == integer(n["revision"]) && digest(a) == digest(b) {
 				req = old
 			}
 		}
@@ -96,6 +99,13 @@ func (w *Worker) Deliver(task M) {
 		unlock := w.nodeLock(str(task["node_id"]))
 		defer unlock()
 		req, link := w.Request(task)
+		if req.Retirement != "" {
+			var users []M
+			transaction(w.Control.Settings.ControlDB, false, func(d *DB) { users = retirementUsers(d, req.NodeID, req.Retirement) })
+			for _, user := range users {
+				w.Control.RefreshSubscription(str(user["user_id"]))
+			}
+		}
 		value := w.Transport.Call(link, M{"action": "submit", "request": req}, false)
 		if str(value["node_id"]) != req.NodeID {
 			fail("NODE_IDENTITY", "节点响应身份不匹配")
@@ -129,6 +139,15 @@ func (w *Worker) Deliver(task M) {
 				if op["kind"] == "update_grants" {
 					wanted := integer(d.Value("SELECT count(*) FROM credentials WHERE user_id=? AND node_id=? AND revoked=0", op["user_id"], req.NodeID)) > 0
 					goal = !disabled && present == wanted
+				}
+				if op["kind"] == "retire_inbound" {
+					goal = req.Retirement != ""
+					for _, credential := range req.Users {
+						goal = goal && credential.InboundID != req.Retirement
+					}
+					if goal {
+						d.Exec("UPDATE operations SET state='completed' WHERE id=?", task["operation_id"])
+					}
 				}
 				goal = goal && operationCurrent(d, op)
 				state, message, done = "superseded", "用户后续变更已替代本次授权目标", true
@@ -310,14 +329,14 @@ func (w *Worker) Reconcile() {
 				return true
 			}
 			expected := "published"
-			if op["kind"] == "disable_user" {
+			if op["kind"] == "disable_user" || (op["kind"] == "update_grants" && d.One("SELECT 1 FROM credentials WHERE user_id=? AND revoked=0 LIMIT 1", op["user_id"]) == nil) {
 				expected = "revoked"
 			}
 			state := "running"
 			switch {
 			case all("verified", "superseded") && (contains(states, "superseded") || !operationCurrent(d, op)):
 				state = "superseded"
-			case all("verified") && op["subscription_state"] == expected:
+			case (all("verified") || (op["kind"] == "update_grants" && len(states) == 0)) && op["subscription_state"] == expected:
 				state = "completed"
 			case contains(states, "failed") || contains(states, "revoke_blocked"):
 				state = "failed"

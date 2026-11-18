@@ -61,11 +61,11 @@ e2e 自行启动 `15186`（开发版）和 `14186`（生产预览，读 `web/dis
 
 1. **授权下发**（新增/禁用/启用用户、调整授权）。`Control.*`（`control.go`、`user_grants.go`、`user_management.go`）在一个写事务里完成幂等重放、改写 users/credentials/revocations，并写入 `operations` + `operation_targets` + `outbox`。主控 worker 的 `Step` 领取 outbox 租约，为该节点生成**完整期望状态**的 `NodeRequest`（全部有效凭据 + 全部撤销指纹，单调 `node_revision`，`payload_hash` 封印；内容相同则复用旧请求），经 SSH `submit`。节点 `Agent.Accept` 持久接收，`sbctl-node worker` 循环 `ApplyOnce`：渲染模板 → Docker 预检 → 写 `config.json` 与启动守卫 → 重建 sing-box 容器 → 用真实协议探针验证（新凭据可用、被撤销凭据不可用）→ 回执 `verified`。主控轮询到 `verified` 后由 `Reconcile` 发布订阅并汇总操作状态。
 2. **节点维护**（接管、协议入口增改启停删、配置片段修改、受控重启）。`POST /api/v1/node-jobs` 写入 `node_jobs`，worker 的 `RunNodeJob` 执行；节点侧 `NodeMaintenance.apply`（`protocol_management.go`，配置片段见 `config_management.go`）先落盘包含全部受影响文件前后内容的计划，再写入、重启、探针验证，失败自动回滚并保留回执。它与同一节点的授权链路互斥：提交时有待处理授权返回 `NODE_BUSY`，执行时遇到则保持排队；靠 `node_management.version`、`management_job_id` 和节点的 `maintenance_receipt` 做丢回执与中断后的恢复。新增一种会改动节点的任务类型时，SQL 里的 `kind IN ('configure','protocol_change','config_change','restart')` 列表、`mutatingNodeJob` 和 `transport.go` 的超时列表都要同步。
-3. **流量统计**。节点 `sbctl-node collect` 每 5 秒用 grpcurl 读取 sing-box V2Ray API 计数（`reset:false`），`Ledger.Ingest` 按容器运行周期（epoch）把增量累加进 ledger.db 并导出 `export.json`。主控 `sync` 用统计账号拉取，`Traffic.Ingest` 校验序号、累计不回退、统计身份不变后写入 traffic.db，并按 UTC+8 记录日增量和小时增量（小时保留约 62 天，按月趋势由日增量折叠）。API 侧 `Views`（`views.go`、`traffic_history.go`）只读这些导出文件。统计有三个互不相加的角度：受管用户（`usr_*`）、入口（inbound tag）、节点本地命名用户。
+3. **流量统计**。节点 `sbctl-node collect` 每 5 秒通过 sing-box 1.14.x 的 sbctl 原生 Unix socket 读取累计计数和连接生命周期增量，`Ledger.Ingest` 按容器运行周期（epoch）把增量累加进 ledger.db 并导出 `export.json`。主控 `sync` 用统计账号拉取，`Traffic.Ingest` 校验序号、累计不回退、统计身份不变后写入 traffic.db，并按 UTC+8 记录日增量和小时增量（小时保留约 62 天，按月趋势由日增量折叠）。API 侧 `Views`（`views.go`、`traffic_history.go`）只读这些导出文件，并提供 90 天连接明细和域名、目标、规则、出站聚合。统计有两个互不相加的角度：入口（inbound tag）和节点本地命名用户。
 
 在这个系统里，**配置生效等于重建 sing-box 容器**：没有热重载，任何授权或协议变更都会让该节点的现有连接短暂中断。容器入口是 `guard.sh`，只检查受控安全状态和版本格式；配置语义摘要由节点 helper 在启动后观察并按事件序号同步，避免格式化或手工修改非受管字段阻止 sing-box 启动。
 
-每个节点受管的入口固定为两个（一个 AnyTLS、一个 TUIC），用户授权、订阅和探针都绑定在这两个入口上；其余入口只做维护与统计。
+每个节点受管入口可以为零个、一个或多个。用户授权、订阅和探针按稳定 `inbound_id` 绑定到已验证的 AnyTLS/TUIC 入口；其它协议仍可维护和统计，进入用户订阅前必须补齐对应协议的凭据、探针和渲染能力。
 
 ### 非显而易见的代码约定
 

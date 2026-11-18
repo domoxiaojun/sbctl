@@ -1,6 +1,7 @@
+// Legacy schema retained only for replaying the v1.12.9 yxvmhk pilot.
+// Current sbctl nodes use the native sbctl Unix socket and do not install or
+// expose this V2Ray API schema.
 syntax = "proto3";
-// Wire schema from sing-box v1.12.9 experimental/v2rayapi/stats.proto.
-// The server registers the service under this canonical V2Ray package name.
 package v2ray.core.app.stats.command;
 message QueryStatsRequest {
   string pattern = 1;

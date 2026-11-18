@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.10.6",
+    "version": "0.11.0",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -2706,6 +2706,116 @@
           }
         }
       }
+    },
+    "/api/v1/traffic/connections": {
+      "get": {
+        "operationId": "get__traffic_connections",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "连接明细筛选"
+          },
+          {
+            "name": "inbound",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "连接明细筛选"
+          },
+          {
+            "name": "outbound",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "连接明细筛选"
+          },
+          {
+            "name": "domain",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "连接明细筛选"
+          },
+          {
+            "name": "rule",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "连接明细筛选"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 100
+            }
+          },
+          {
+            "name": "protocol",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficConnectionReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3785,6 +3895,7 @@
               "inspect",
               "configure",
               "check",
+              "verify_inbounds",
               "protocols",
               "protocol_change",
               "config",
@@ -4091,6 +4202,12 @@
       "NodeInbound": {
         "type": "object",
         "properties": {
+          "inbound_id": {
+            "type": "string"
+          },
+          "history_tag": {
+            "type": "string"
+          },
           "tag": {
             "type": "string"
           },
@@ -4588,6 +4705,39 @@
       "ProtocolItem": {
         "type": "object",
         "properties": {
+          "inbound_id": {
+            "type": "string"
+          },
+          "referenced": {
+            "type": "boolean"
+          },
+          "probe_state": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "not_run"
+            ]
+          },
+          "retirement": {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "state",
+              "created_at",
+              "message"
+            ],
+            "additionalProperties": false
+          },
           "tag": {
             "type": "string"
           },
@@ -4684,6 +4834,15 @@
             "type": "string"
           },
           "source_tag": {
+            "type": "string"
+          },
+          "new_tag": {
+            "type": "string"
+          },
+          "subscription_host": {
+            "type": "string"
+          },
+          "server_name": {
             "type": "string"
           },
           "listen": {
@@ -4846,6 +5005,197 @@
           "sections",
           "outbounds",
           "inbound_tags"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficConnection": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "connection_id": {
+            "type": "string"
+          },
+          "inbound_id": {
+            "type": "string"
+          },
+          "inbound": {
+            "type": "string"
+          },
+          "inbound_type": {
+            "type": "string"
+          },
+          "network": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "outbound": {
+            "type": "string"
+          },
+          "outbound_type": {
+            "type": "string"
+          },
+          "chain": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rule": {
+            "type": "string"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closed_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "connection_id",
+          "inbound_id",
+          "inbound",
+          "inbound_type",
+          "network",
+          "domain",
+          "destination",
+          "source",
+          "outbound",
+          "outbound_type",
+          "chain",
+          "rule",
+          "upload_bytes",
+          "download_bytes",
+          "started_at",
+          "closed_at"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficConnectionReport": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficConnection"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "page_size": {
+            "type": "integer"
+          },
+          "retention_days": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "domains": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficConnectionSummary"
+                }
+              },
+              "destinations": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficConnectionSummary"
+                }
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficConnectionSummary"
+                }
+              },
+              "outbounds": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TrafficConnectionSummary"
+                }
+              }
+            },
+            "required": [
+              "domains",
+              "destinations",
+              "rules",
+              "outbounds"
+            ],
+            "additionalProperties": false
+          },
+          "history_gap": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "retention_days",
+          "from",
+          "to",
+          "as_of",
+          "summary",
+          "history_gap"
+        ],
+        "additionalProperties": false
+      },
+      "TrafficConnectionSummary": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "connections": {
+            "type": "integer"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "connections",
+          "upload_bytes",
+          "download_bytes"
         ],
         "additionalProperties": false
       }

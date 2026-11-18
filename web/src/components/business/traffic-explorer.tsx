@@ -9,6 +9,7 @@ import { DataState, FilterSelect } from './common'
 import { ProtocolTraffic, LocalUserTraffic } from './protocol-traffic'
 import { TrafficDatePicker } from './traffic-date-picker'
 import { TrafficRankings } from './traffic-rankings'
+import { TrafficConnections } from './traffic-connections'
 import { exactBytes, formatBytes, formatTime, totalBytes } from '@/lib/format'
 import { dateError, hourlyAllowed, knownTrafficNodes, trafficCsv, trafficTotals, type TrafficFilters } from '@/lib/traffic'
 const TrafficTrend = lazy(() => import('./traffic-trend'))
@@ -76,6 +77,7 @@ export function TrafficExplorer() {
    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3" aria-label="筛选结果汇总">{[['合计', totalBytes(sum)], ['上传', sum.upload_bytes], ['下载', sum.download_bytes]].map(([label, value]) => <div className="panel p-5" key={label}><p className="text-sm text-muted-foreground">{period ? '区间' : '累计'}{label}</p><strong className="text-2xl numeric block mt-2" title={nodes.length ? exactBytes(value) : undefined}>{nodes.length ? formatBytes(value) : '—'}</strong><p className="text-xs text-muted-foreground mt-2">当前筛选 · {rows.length} 条记录</p></div>)}</div>
    <Suspense fallback={<DataState loading />}><TrafficTrend report={report} onSelect={selectRange} onGranularity={value => update({ granularity: value === 'day' ? undefined : value })} hourlyDisabled={hourlyDisabled} /></Suspense>
    <TrafficRankings report={report} scope={scope} onSelect={update} />
+   <TrafficConnections key={JSON.stringify([filters.node, filters.protocol, filters.from, filters.to])} node={filters.node} protocol={filters.protocol} from={filters.from} to={filters.to} />
    {period && <details className="panel p-4 text-xs text-muted-foreground" open={report.periods.some(p => p.status === 'unavailable')}><summary className="cursor-pointer min-h-7">{report.periods.some(p => p.status !== 'complete') ? '该时段记录不完整 · 查看记录范围' : '该时段记录完整 · 查看记录范围'}</summary><div className="space-y-2 mt-2">{report.periods.map(p => <p key={p.node_id}>{report.nodes.find(n => n.id === p.node_id)?.name ?? p.node_id}：{p.status === 'unavailable' ? '该时段无日期明细，不能按零流量判断。' : p.status === 'partial' ? '当前显示已记录部分。' : '该时段记录完整。'} 明细起点：{formatTime(p.history_started_at, true)}。</p>)}<p>跨日用量按结束采样归档，正常日期边界最多偏移 3 分钟。</p></div></details>}
    <div className="space-y-3"><h2 className="text-sm text-muted-foreground">用量明细</h2>{scope === 'inbounds' ? <ProtocolTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} /> : <LocalUserTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} />}</div>
   </>}

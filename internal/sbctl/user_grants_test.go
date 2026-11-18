@@ -14,7 +14,8 @@ import (
 func grantControl(t *testing.T) (*Control, *Worker, *fakeTransport, string) {
 	t.Helper()
 	c := testControl(t)
-	c.Register(M{"id": "node_sg", "name": "新加坡", "region": "sg", "location": "新加坡", "connection": M{"address": "100.70.0.3"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "sg.test", 443, "sg.test", nil}, {"tuic", "tuic-in", "sg.test", 443, "sg.test", nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_sg", "group_name": "新加坡"})
+	c.Register(M{"id": "node_sg", "name": "新加坡", "region": "sg", "location": "新加坡", "connection": M{"address": "100.70.0.3"}, "endpoints": []Endpoint{{"anytls", "anytls-in", "sg.test", 443, "sg.test", nil, ""}, {"tuic", "tuic-in", "sg.test", 443, "sg.test", nil, ""}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_sg", "group_name": "新加坡"})
+	markTestEndpointsVerified(c)
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		d.Exec("INSERT INTO groups VALUES ('grp_both','香港和新加坡')")
 		d.Exec("INSERT INTO group_nodes VALUES ('grp_both','node_hk'),('grp_both','node_sg')")

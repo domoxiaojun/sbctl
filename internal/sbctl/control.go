@@ -52,7 +52,7 @@ func unique(in []string) []string {
 	sort.Strings(out)
 	return out
 }
-func targets(d *DB, groups []string) []M {
+func groupNodes(d *DB, groups []string) []M {
 	groups = unique(groups)
 	if len(groups) == 0 {
 		fail("GRANT_EMPTY", "至少选择一个节点组")
@@ -67,16 +67,27 @@ func targets(d *DB, groups []string) []M {
 	if len(d.Rows("SELECT id FROM groups WHERE id IN ("+q+")", args...)) != len(groups) {
 		fail("GROUP_UNKNOWN", "节点组不存在")
 	}
-	nodes := d.Rows("SELECT DISTINCT n.* FROM nodes n JOIN group_nodes g ON g.node_id=n.id WHERE g.group_id IN ("+q+") AND n.enabled=1 AND NOT EXISTS(SELECT 1 FROM node_config_snapshots s WHERE s.node_id=n.id AND s.state IN ('conflict','pending_sync','pending_restart')) ORDER BY n.id", args...)
-	if len(nodes) == 0 {
-		fail("GRANT_EMPTY", "所选节点组没有可管理节点")
-	}
-	return nodes
+	return d.Rows("SELECT DISTINCT n.* FROM nodes n JOIN group_nodes g ON g.node_id=n.id WHERE g.group_id IN ("+q+") AND n.enabled=1 ORDER BY n.id", args...)
 }
-func (c *Control) credential(d *DB, user string, node M, protocol string, existing M) {
+func targets(d *DB, groups []string) []M {
+	eligible := []M{}
+	for _, node := range groupNodes(d, groups) {
+		if len(grantableEndpoints(d, node)) > 0 {
+			eligible = append(eligible, node)
+		}
+	}
+	if len(eligible) == 0 {
+		fail("GRANT_EMPTY", "所选节点组没有通过当前配置验证的授权入口")
+	}
+	return eligible
+}
+func (c *Control) credential(d *DB, user string, node M, endpoint Endpoint, existing M) {
+	if integer(d.Value("SELECT count(*) FROM credentials WHERE node_id=? AND revoked=0", node["id"])) >= maxNodeCredentials {
+		fail("NODE_CREDENTIAL_LIMIT", "目标节点已达到有效凭据容量上限", 409)
+	}
 	password := token(32)
 	var u *string
-	if protocol == "tuic" {
+	if endpoint.Protocol == "tuic" {
 		s := uuid.NewString()
 		u = &s
 	}
@@ -84,10 +95,10 @@ func (c *Control) credential(d *DB, user string, node M, protocol string, existi
 		password = str(existing["password"])
 		u = nullable(str(existing["uuid"]))
 	}
-	generation := integer(d.Value("SELECT COALESCE(MAX(generation),0)+1 FROM credentials WHERE user_id=? AND node_id=? AND protocol=?", user, node["id"], protocol))
-	cred := Credential{user, protocol, identifier("cred"), generation, password, u, 0}
+	generation := integer(d.Value("SELECT COALESCE(MAX(generation),0)+1 FROM credentials WHERE user_id=? AND node_id=? AND inbound_id=?", user, node["id"], endpoint.InboundID))
+	cred := Credential{UserID: user, Protocol: endpoint.Protocol, CredentialID: identifier("cred"), Generation: generation, Password: password, UUID: u, InboundID: endpoint.InboundID}
 	cred.Validate()
-	d.Exec("INSERT INTO credentials(id,user_id,node_id,protocol,generation,secret_ciphertext,fingerprint) VALUES (?,?,?,?,?,?,?)", cred.CredentialID, user, node["id"], protocol, generation, c.Vault.Encrypt(M{"password": cred.Password, "uuid": cred.UUID}), cred.Fingerprint())
+	d.Exec("INSERT INTO credentials(id,user_id,node_id,inbound_id,protocol,generation,secret_ciphertext,fingerprint) VALUES (?,?,?,?,?,?,?,?)", cred.CredentialID, user, node["id"], endpoint.InboundID, endpoint.Protocol, generation, c.Vault.Encrypt(M{"password": cred.Password, "uuid": cred.UUID}), cred.Fingerprint())
 }
 func operation(d *DB, kind, user, subject string, nodes []string, priority int) string {
 	id := identifier("op")
@@ -135,22 +146,26 @@ func (c *Control) CreateUser(actor, key string, req CreateUser, imported M) M {
 		nodeIDs := []string{}
 		for _, n := range nodes {
 			nodeIDs = append(nodeIDs, str(n["id"]))
-			var endpoints []M
-			decode([]byte(str(n["endpoints_json"])), &endpoints)
-			protocols := []string{}
-			for _, e := range endpoints {
-				protocols = append(protocols, str(e["protocol"]))
-			}
-			for _, p := range unique(protocols) {
+			endpoints := grantableEndpoints(d, n)
+			for _, ep := range endpoints {
 				var old M
 				if imported != nil {
-					v := mapping(imported[str(n["id"])])[p]
+					v := mapping(imported[str(n["id"])])[ep.InboundID]
+					protocolCount := 0
+					for _, candidate := range endpoints {
+						if candidate.Protocol == ep.Protocol {
+							protocolCount++
+						}
+					}
+					if v == nil && protocolCount == 1 {
+						v = mapping(imported[str(n["id"])])[ep.Protocol]
+					}
 					if v == nil {
 						fail("IMPORT_INCOMPLETE", "导入缺少节点协议凭据")
 					}
 					old = mapping(v)
 				}
-				c.credential(d, uid, n, p, old)
+				c.credential(d, uid, n, ep, old)
 			}
 		}
 		t := token(48)
@@ -262,14 +277,9 @@ func (c *Control) EnableUser(actor, key, user string, req EnableUser) M {
 		nodeIDs := []string{}
 		for _, n := range nodes {
 			nodeIDs = append(nodeIDs, str(n["id"]))
-			var endpoints []Endpoint
-			decode([]byte(str(n["endpoints_json"])), &endpoints)
-			protocols := []string{}
-			for _, e := range endpoints {
-				protocols = append(protocols, e.Protocol)
-			}
-			for _, protocol := range unique(protocols) {
-				c.credential(d, user, n, protocol, nil)
+			endpoints := grantableEndpoints(d, n)
+			for _, ep := range endpoints {
+				c.credential(d, user, n, ep, nil)
 			}
 		}
 		oldToken := str(d.Value("SELECT token_hash FROM subscriptions WHERE user_id=?", user))
@@ -354,17 +364,7 @@ func (c *Control) Register(v M) {
 	id := str(v["id"])
 	validIdentity(id)
 	link := parseConnection(v["connection"])
-	var eps []Endpoint
-	decode(canonical(v["endpoints"]), &eps)
-	if len(eps) != 2 {
-		fail("ENDPOINTS", "节点需要 AnyTLS 与 TUIC 入口")
-	}
-	for i := range eps {
-		eps[i].Validate()
-	}
-	if eps[0].Protocol == eps[1].Protocol {
-		fail("ENDPOINTS", "入口协议重复")
-	}
+	eps := decodeEndpoints(v["endpoints"])
 	if !hashRE.MatchString(str(v["template_hash"])) || !match(`^sha256:[a-f0-9]{64}$`, str(v["image_digest"])) {
 		fail("NODE_BUILD", "模板或镜像摘要无效")
 	}
@@ -381,7 +381,11 @@ func (c *Control) Register(v M) {
 		if d.One("SELECT 1 FROM nodes WHERE id=?", id) != nil {
 			fail("NODE_EXISTS", "节点已登记，拒绝覆盖")
 		}
-		d.Exec("INSERT INTO nodes(id,name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", id, str(v["name"]), str(v["region"]), str(v["location"]), link.Address, eps[0].Server, string(canonical(link)), string(canonical(eps)), v["template_hash"], v["image_digest"], now())
+		publicHost := str(v["public_host"])
+		if publicHost == "" && len(eps) > 0 {
+			publicHost = eps[0].Server
+		}
+		d.Exec("INSERT INTO nodes(id,name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", id, str(v["name"]), str(v["region"]), str(v["location"]), link.Address, publicHost, string(canonical(link)), string(canonical(eps)), v["template_hash"], v["image_digest"], now())
 		d.Exec("INSERT OR IGNORE INTO groups VALUES (?,?)", g, gn)
 		d.Exec("INSERT INTO group_nodes VALUES (?,?)", g, id)
 	})

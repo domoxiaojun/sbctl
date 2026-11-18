@@ -31,6 +31,7 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 	c := w.Control
 	id := input.Draft.ID
 	hasAuthorizationWork := false
+	var retirement M
 	transaction(c.Settings.ControlDB, false, func(d *DB) {
 		n := d.One("SELECT n.connection_json,COALESCE(m.version,0) AS version FROM nodes n LEFT JOIN node_management m ON m.node_id=n.id WHERE n.id=?", id)
 		if n == nil {
@@ -47,7 +48,16 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 			}
 		}
 		hasAuthorizationWork = mutatingNodeJob(input.Kind) && integer(d.Value("SELECT count(*) FROM outbox WHERE node_id=? AND state<>'done'", id)) > 0
+		retirement = d.One("SELECT r.inbound_id,r.template_hash,t.state,q.revision FROM inbound_retirements r JOIN operation_targets t ON t.operation_id=r.operation_id LEFT JOIN node_requests q ON q.id=t.request_id WHERE r.job_id=?", job["id"])
 	})
+	if retirement != nil {
+		if retirement["state"] != "verified" || integer(retirement["revision"]) < 1 {
+			fail("AUTHORIZATION_PENDING", "等待目标入口的用户凭据撤销通过验证", 409)
+		}
+		input.Change.RetireID = str(retirement["inbound_id"])
+		input.Change.RevokedAtRevision = integer(retirement["revision"])
+		input.Change.TemplateHash = str(retirement["template_hash"])
+	}
 	// The node derives the same digest from the change it is given.
 	inputHash := digest(input.Change)
 	if input.Kind == "config_change" {
@@ -98,19 +108,33 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 	if typed.NodeID != id || !hashRE.MatchString(typed.Hash) {
 		fail("NODE_RESPONSE", "协议清单回执无效", 409)
 	}
+	if retirement != nil {
+		evidence := mapping(result["retirement"])
+		if evidence["inbound_id"] != retirement["inbound_id"] || evidence["tag"] != input.Change.Tag || evidence["action"] != input.Change.Action ||
+			evidence["request_id"] != job["id"] || integer(evidence["node_revision"]) < integer(retirement["revision"]) ||
+			!hashRE.MatchString(str(evidence["config_hash"])) || str(evidence["runtime_epoch"]) == "" {
+			fail("NODE_RESPONSE", "节点未确认目标入口的版本化退役回执", 409)
+		}
+		for _, item := range typed.Items {
+			if item.Tag == input.Change.Tag && (item.Enabled || input.Change.Action == "delete") {
+				fail("NODE_RESPONSE", "退役入口仍出现在活动配置中", 409)
+			}
+		}
+	}
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		if d.Value("SELECT lease_owner FROM node_jobs WHERE id=?", job["id"]) != w.Owner {
 			fail("LEASE_LOST", "任务已交给另一执行器恢复", 409)
 		}
 		d.Exec("INSERT INTO node_catalog(node_id,catalog_json,checked_at) VALUES (?,?,?) ON CONFLICT(node_id) DO UPDATE SET catalog_json=excluded.catalog_json,checked_at=excluded.checked_at", id, string(canonical(typed)), now())
 		if mutatingNodeJob(input.Kind) {
-			var endpoints []Endpoint
-			decode(canonical(result["endpoints"]), &endpoints)
-			if len(endpoints) != 2 || !hashRE.MatchString(str(result["template_hash"])) || !boolean(result["ready"]) {
+			endpoints := decodeEndpoints(result["endpoints"])
+			if result["endpoints"] == nil || !hashRE.MatchString(str(result["template_hash"])) || !boolean(result["ready"]) {
 				fail("NODE_RESPONSE", "配置执行回执无效", 409)
 			}
 			for _, e := range endpoints {
-				e.Validate()
+				if retirement != nil && (e.InboundID == input.Change.RetireID || e.Tag == input.Change.Tag) {
+					fail("NODE_RESPONSE", "退役入口仍登记为授权入口", 409)
+				}
 			}
 			row := d.One("SELECT version,binding_json FROM node_management WHERE node_id=?", id)
 			binding := M{}
@@ -123,6 +147,7 @@ func (w *Worker) executeNodeAction(job M, input NodeJobInput) M {
 			merge(binding, without(result, "catalog"))
 			binding["management_job_id"] = job["id"]
 			d.Exec("UPDATE nodes SET template_hash=?,endpoints_json=? WHERE id=?", result["template_hash"], string(canonical(endpoints)), id)
+			saveProbeVerification(d, id, result)
 			// Authorization work may have been created with the previous template
 			// while this maintenance receipt was missing. Retain accepted request
 			// revisions so the node's monotonic safety version never goes backward.

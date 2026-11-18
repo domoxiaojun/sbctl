@@ -23,6 +23,7 @@ type Agent struct {
 }
 
 func NewAgent(s NodeSettings, e Engine) *Agent {
+	s.Endpoints = normalizeEndpoints(s.Endpoints)
 	return &Agent{s, e, filepath.Join(s.StateDir, "node.db")}
 }
 func (a *Agent) Initialize() {
@@ -40,6 +41,9 @@ func (a *Agent) Initialize() {
 }
 
 func (a *Agent) migrateGuardManifest() {
+	if !exists(filepath.Join(a.Settings.SafetyDir, "manifest")) {
+		return
+	}
 	unlock := a.Lock()
 	defer unlock()
 	path := filepath.Join(a.Settings.SafetyDir, "manifest")
@@ -75,42 +79,61 @@ func (a *Agent) Guard(allow bool, configHash string, revision int64) {
 	writeSafety(a.Settings, path, []byte(fmt.Sprintf("%s\n2\n%d\n", state, revision)))
 }
 func (a *Agent) Probes() []Credential {
+	if len(a.Settings.Endpoints) == 0 {
+		return []Credential{}
+	}
 	var probes []Credential
 	decode(read(a.Settings.ProbeFile), &probes)
-	protocols := []string{}
-	for i := range probes {
-		probes[i].Validate()
-		if !strings.HasPrefix(probes[i].UserID, "sys_") {
-			fail("PROBE_IDENTITY", "运维探针身份无效")
-		}
-		protocols = append(protocols, probes[i].Protocol)
-	}
-	if len(unique(protocols)) != 2 {
-		fail("PROBE_IDENTITY", "运维探针身份不完整")
-	}
-	return probes
+	return bindProbes(a.Settings.Endpoints, probes)
 }
+
+func bindProbes(endpoints []Endpoint, probes []Credential) []Credential {
+	active := make([]Credential, 0, len(endpoints))
+	seen := map[string]bool{}
+	for _, probe := range probes {
+		probe.Validate()
+		endpoint, ok := credentialEndpoint(endpoints, probe)
+		if !ok || seen[endpoint.InboundID] || probe.UserID != "sys_probe" {
+			fail("PROBE_IDENTITY", "系统探针无法唯一绑定到已登记入口")
+		}
+		probe.InboundID = endpoint.InboundID
+		seen[endpoint.InboundID] = true
+		active = append(active, probe)
+	}
+	if len(active) != len(endpoints) {
+		fail("PROBE_IDENTITY", "已登记入口缺少系统探针")
+	}
+	return active
+}
+
 func (a *Agent) Render(r NodeRequest) []byte {
 	data := read(a.Settings.TemplateFile)
 	if hash(data) != a.Settings.TemplateHash {
 		fail("TEMPLATE_MISMATCH", "本机模板摘要不匹配")
 	}
 	t := object(data)
-	tags := map[string]string{}
+	tags := map[string]Endpoint{}
 	for _, e := range a.Settings.Endpoints {
-		tags[e.Tag] = e.Protocol
+		tags[e.Tag] = e
 	}
 	probes := a.Probes()
-	all := append(append([]Credential{}, r.Users...), probes...)
+	usersByTag := map[string][]Credential{}
+	for _, c := range append(append([]Credential{}, r.Users...), probes...) {
+		ep, ok := credentialEndpoint(a.Settings.Endpoints, c)
+		if !ok {
+			fail("CREDENTIAL_BINDING", "凭据未绑定到有效入口", 409)
+		}
+		usersByTag[ep.Tag] = append(usersByTag[ep.Tag], c)
+	}
 	found := map[string]bool{}
 	for _, value := range array(t["inbounds"]) {
 		i := mapping(value)
 		tag := str(i["tag"])
-		protocol, ok := tags[tag]
+		ep, ok := tags[tag]
 		if !ok {
 			continue
 		}
-		if i["type"] != protocol || found[tag] {
+		if i["type"] != ep.Protocol || found[tag] {
 			fail("TEMPLATE_INVALID", "受管入口类型或标签不匹配")
 		}
 		found[tag] = true
@@ -118,24 +141,22 @@ func (a *Agent) Render(r NodeRequest) []byte {
 		for _, fixed := range array(i["users"]) {
 			users = append(users, mapping(fixed))
 		}
-		for _, c := range all {
-			if c.Protocol == protocol {
-				for _, fixed := range users {
-					if str(fixed["password"]) == c.Password || (c.Protocol == "tuic" && str(fixed["uuid"]) == str(*c.UUID)) {
-						fail("CREDENTIAL_CONFLICT", "凭据与节点保留用户冲突")
-					}
+		for _, c := range usersByTag[tag] {
+			for _, fixed := range users {
+				if str(fixed["password"]) == c.Password || (c.Protocol == "tuic" && str(fixed["uuid"]) == str(*c.UUID)) {
+					fail("CREDENTIAL_CONFLICT", "凭据与节点保留用户冲突")
 				}
-				u := M{"name": c.UserID, "password": c.Password}
-				if protocol == "tuic" {
-					u["uuid"] = c.UUID
-				}
-				users = append(users, u)
 			}
+			u := M{"name": c.UserID, "password": c.Password}
+			if c.Protocol == "tuic" {
+				u["uuid"] = c.UUID
+			}
+			users = append(users, u)
 		}
 		i["users"] = users
 	}
 	if len(found) != len(tags) {
-		fail("TEMPLATE_INVALID", "模板缺少受管入口")
+		fail("TEMPLATE_INVALID", "模板缺少已登记入口")
 	}
 	excludedUsers := []string{}
 	for _, c := range r.Users {
@@ -193,6 +214,27 @@ func (a *Agent) Accept(r NodeRequest) M {
 		if r.NodeRevision <= integer(d.Value("SELECT max(revision) FROM requests")) {
 			fail("STALE_REVISION", "请求早于已接受安全版本", 409)
 		}
+		if r.Retirement != "" {
+			found := false
+			for _, endpoint := range a.Settings.Endpoints {
+				found = found || endpoint.InboundID == r.Retirement
+			}
+			if !found {
+				fail("CREDENTIAL_BINDING", "退役请求指向未登记入口", 409)
+			}
+			if job := d.Value("SELECT job_id FROM retiring_inbounds WHERE inbound_id=?", r.Retirement); job != nil && job != r.RetirementJob {
+				fail("RETIREMENT_PENDING", "入口已由另一个退役请求锁定", 409)
+			}
+		}
+		for _, c := range r.Users {
+			endpoint, ok := credentialEndpoint(a.Settings.Endpoints, c)
+			if !ok || endpoint.InboundID == r.Retirement {
+				fail("CREDENTIAL_BINDING", "凭据未绑定到有效入口", 409)
+			}
+			if d.One("SELECT 1 FROM retiring_inbounds WHERE inbound_id=?", endpoint.InboundID) != nil {
+				fail("RETIREMENT_PENDING", "入口正在退役，拒绝恢复用户凭据", 409)
+			}
+		}
 		for _, row := range d.Rows("SELECT fingerprint FROM revoked") {
 			f := str(row["fingerprint"])
 			if !contains(r.Revoked, f) {
@@ -209,6 +251,9 @@ func (a *Agent) Accept(r NodeRequest) M {
 		// Keep its document and applied_at for the next verification comparison.
 		d.Exec("UPDATE requests SET state='superseded' WHERE revision<? AND state NOT IN ('verified','superseded')", r.NodeRevision)
 		d.Exec("INSERT INTO requests(id,revision,payload_hash,document,state,accepted_at) VALUES (?,?,?,?,'accepted',?)", r.RequestID, r.NodeRevision, r.PayloadHash, string(canonical(r)), now())
+		if r.Retirement != "" {
+			d.Exec("INSERT OR IGNORE INTO retiring_inbounds(inbound_id,job_id) VALUES (?,?)", r.Retirement, r.RetirementJob)
+		}
 		for _, f := range r.Revoked {
 			d.Exec("INSERT OR IGNORE INTO revoked VALUES (?)", f)
 		}
@@ -218,10 +263,12 @@ func (a *Agent) Accept(r NodeRequest) M {
 }
 func (a *Agent) ApplyOnce() bool {
 	var row, prevRow M
+	var appliedSinceVerification []M
 	transaction(a.DBPath, false, func(d *DB) {
 		row = d.One("SELECT * FROM requests ORDER BY revision DESC LIMIT 1")
 		if row != nil {
-			prevRow = d.One("SELECT document FROM requests WHERE applied_at IS NOT NULL AND revision<? ORDER BY revision DESC LIMIT 1", row["revision"])
+			prevRow = d.One("SELECT document FROM requests WHERE verified_at IS NOT NULL AND revision<? ORDER BY revision DESC LIMIT 1", row["revision"])
+			appliedSinceVerification = d.Rows("SELECT document FROM requests WHERE applied_at IS NOT NULL AND revision<? AND revision>COALESCE((SELECT max(revision) FROM requests WHERE verified_at IS NOT NULL AND revision<?),0) ORDER BY revision", row["revision"], row["revision"])
 		}
 	})
 	if row == nil || contains([]string{"verified", "revoke_blocked", "failed", "superseded"}, str(row["state"])) {
@@ -235,6 +282,19 @@ func (a *Agent) ApplyOnce() bool {
 	if prevRow != nil {
 		p := parseRequest(object([]byte(str(prevRow["document"]))))
 		prev = &p
+	}
+	for _, applied := range appliedSinceVerification {
+		p := parseRequest(object([]byte(str(applied["document"]))))
+		if prev == nil {
+			prev = &NodeRequest{}
+		}
+		// Earlier applied requests can have exposed credentials before a valid
+		// receipt was obtained. Keep removed ones in the negative test set.
+		for _, credential := range p.Users {
+			if contains(r.Revoked, credential.Fingerprint()) {
+				prev.Users = append(prev.Users, credential)
+			}
+		}
 	}
 	pending := false
 	for _, f := range r.Revoked {

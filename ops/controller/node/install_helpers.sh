@@ -9,12 +9,10 @@ for account in sbctl-publish sbctl-stats; do
     useradd --system --user-group --create-home --home-dir "/opt/sbctl/data/$account" --shell /bin/sh "$account"
   fi
 done
-install -d -m 0755 /opt/sbctl/data /opt/sbctl/data/safety
+install -d -m 0755 /opt/sbctl/data /opt/sbctl/data/safety /opt/sbctl/data/sing-box
 install -d -m 0750 -o sbctl-stats -g sbctl-stats /opt/sbctl/data/ledger
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-install -d -m 0755 /opt/sbctl/node-tools /opt/sbctl/bin
-install -m 0755 /opt/sbctl/pilots/yxvmhk/tools/grpcurl /opt/sbctl/node-tools/grpcurl
-install -m 0644 /opt/sbctl/pilots/yxvmhk/stats.proto /opt/sbctl/node-tools/stats.proto
+install -d -m 0755 /opt/sbctl/bin
 install -m 0755 "$root/publish-entry.sh" /opt/sbctl/bin/sbctl-publish
 install -m 0755 "$root/stats-entry.sh" /opt/sbctl/bin/sbctl-stats
 install -m 0755 "$root/rpc-root.sh" /opt/sbctl/bin/sbctl-node-rpc

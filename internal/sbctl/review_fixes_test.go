@@ -53,7 +53,7 @@ func (tr *maintenanceQueueTransport) Call(n NodeConnection, body M, stats bool) 
 		}
 		return M{"node_id": "node_hk", "ready": true, "template_hash": strings.Repeat("a", 64),
 			"catalog":   ProtocolCatalog{NodeID: "node_hk", Hash: strings.Repeat("c", 64), CheckedAt: now(), Items: []ProtocolItem{}},
-			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", nil}, {"tuic", "tuic-in", "example.test", 4443, "example.test", nil}}}
+			"endpoints": []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", nil, ""}, {"tuic", "tuic-in", "example.test", 4443, "example.test", nil, ""}}}
 	}
 	return tr.gatedTransport.Call(n, body, stats)
 }

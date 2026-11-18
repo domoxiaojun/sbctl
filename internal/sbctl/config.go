@@ -95,11 +95,17 @@ type Endpoint struct {
 	Port     int      `json:"port" toml:"port"`
 	SNI      string   `json:"sni" toml:"sni"`
 	ALPN     []string `json:"alpn" toml:"alpn"`
+	// InboundID is the immutable identity of this managed entry. Tag is a
+	// display/configuration label and may be edited without changing history.
+	InboundID string `json:"inbound_id,omitempty" toml:"inbound_id,omitempty"`
 }
 
 func (e *Endpoint) Validate() {
 	if e.Protocol != "anytls" && e.Protocol != "tuic" || !match(`^[a-zA-Z0-9_-]{1,64}$`, e.Tag) || !match(`^[a-zA-Z0-9.:-]{1,253}$`, e.Server) || !match(`^[a-zA-Z0-9.-]{1,253}$`, e.SNI) || e.Port < 1 || e.Port > 65535 || len(e.ALPN) > 4 {
 		fail("ENDPOINT_INVALID", "入口配置无效")
+	}
+	if e.InboundID != "" {
+		validIdentity(e.InboundID)
 	}
 	if e.ALPN == nil {
 		e.ALPN = []string{"h3"}
@@ -138,15 +144,72 @@ func LoadNodeSettings() NodeSettings {
 }
 func (s *NodeSettings) Validate() {
 	validIdentity(s.NodeID)
-	if !hashRE.MatchString(s.TemplateHash) || !hashRE.MatchString(s.EngineBuildID) || !imageReference(s.Image) || !containerName(s.Container) || s.UID < 1 || s.GID < 1 || !contains([]string{"stop", "preserve"}, s.RevokeFailure) || s.ProbePort < 1024 || s.ProbePort > 65000 || s.ProbeUDPPort < 1024 || s.ProbeUDPPort > 65000 || len(s.Endpoints) != 2 {
+	if !hashRE.MatchString(s.TemplateHash) || !hashRE.MatchString(s.EngineBuildID) || !imageReference(s.Image) || !containerName(s.Container) || s.UID < 1 || s.GID < 1 || !contains([]string{"stop", "preserve"}, s.RevokeFailure) || s.ProbePort < 1024 || s.ProbePort > 65000 || s.ProbeUDPPort < 1024 || s.ProbeUDPPort > 65000 || len(s.Endpoints) > 4096 {
 		fail("CONFIG_INVALID", "节点配置无效")
 	}
-	for i := range s.Endpoints {
-		s.Endpoints[i].Validate()
+	s.Endpoints = normalizeEndpoints(s.Endpoints)
+}
+
+// legacyInboundID gives pre-ID configurations a deterministic identity. New
+// entries must receive an explicit generated ID, so deleting and recreating an
+// entry never inherits the old history merely because its tag or port matches.
+func legacyInboundID(e Endpoint) string {
+	return "inb_legacy_" + hash([]byte(e.Protocol + ":" + e.Tag))[:24]
+}
+
+func normalizeEndpoints(eps []Endpoint) []Endpoint {
+	out := append([]Endpoint{}, eps...)
+	ids, tags := map[string]bool{}, map[string]bool{}
+	for i := range out {
+		if out[i].InboundID == "" {
+			out[i].InboundID = legacyInboundID(out[i])
+		}
+		out[i].Validate()
+		if ids[out[i].InboundID] || tags[out[i].Tag] {
+			fail("CONFIG_INVALID", "入口身份或标签重复")
+		}
+		ids[out[i].InboundID], tags[out[i].Tag] = true, true
 	}
-	if s.Endpoints[0].Protocol == s.Endpoints[1].Protocol || s.Endpoints[0].Tag == s.Endpoints[1].Tag {
-		fail("CONFIG_INVALID", "受管入口协议或标签重复")
+	return out
+}
+
+func credentialEndpoint(endpoints []Endpoint, credential Credential) (Endpoint, bool) {
+	var found Endpoint
+	for _, endpoint := range endpoints {
+		legacy := credential.InboundID == "" && strings.HasPrefix(endpoint.InboundID, "inb_legacy_")
+		if credential.Protocol != endpoint.Protocol || (!legacy && credential.InboundID != endpoint.InboundID) {
+			continue
+		}
+		if found.InboundID != "" {
+			return Endpoint{}, false
+		}
+		found = endpoint
 	}
+	return found, found.InboundID != ""
+}
+
+func decodeEndpoints(value any) []Endpoint {
+	var eps []Endpoint
+	switch raw := value.(type) {
+	case []byte:
+		decode(raw, &eps)
+	case string:
+		decode([]byte(raw), &eps)
+	default:
+		decode(canonical(value), &eps)
+	}
+	return normalizeEndpoints(eps)
+}
+
+func endpointMaps(value any) []M {
+	eps := decodeEndpoints(value)
+	out := make([]M, 0, len(eps))
+	for _, ep := range eps {
+		var m M
+		decode(canonical(ep), &m)
+		out = append(out, m)
+	}
+	return out
 }
 
 type NodeConnection struct {

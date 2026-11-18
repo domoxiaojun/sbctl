@@ -14,10 +14,12 @@ x-common: &common
 services:
   api:
     <<: *common
+    group_add: ["10002"]
     ports: [127.0.0.1:18100:8080, 100.70.0.9:18100:8080]
     volumes:
       - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
       - /opt/sbctl/config/master.key:/run/secrets/master.key:ro
+      - /opt/sbctl/data/traffic:/data/traffic:ro
       - /opt/sbctl/data/control:/data/control
       - /opt/sbctl/data/publication:/data/publication
       - /opt/sbctl/data/telemetry:/data/telemetry:ro

@@ -27,7 +27,7 @@ export function ProtocolTraffic({ nodes, period = false, sort }: { nodes: Schema
    <div className="p-5 space-y-3"><div className="flex flex-wrap justify-between gap-3"><div><h2><Link to="/nodes/$nodeId" params={{nodeId:node.id}} search={{}} className="hover:text-primary">{node.name}</Link></h2><p className="text-xs text-muted-foreground mt-2">匹配 {inbounds.length} 个入口 · 客户端→节点为上传，节点→客户端为下载</p></div><DataFreshness quality={node.quality}/></div>
     <div className="flex flex-wrap gap-2">{protocols.map(protocol => <span className="rounded-md border px-3 py-2 text-xs" key={protocol}>{protocol.toUpperCase()} <strong className="numeric ml-2">{formatBytes(totalBytes(trafficTotals(inbounds.filter(i => i.protocol === protocol))))}</strong></span>)}</div>
    </div>
-   <TrafficRows rows={inbounds.map(row => ({...row,id:row.tag,name:row.tag,description:`${row.protocol.toUpperCase()} · ${row.active ? '当前入口' : '已移除，保留历史'}`}))}/>
+   <TrafficRows rows={inbounds.map(row => ({...row,id:row.inbound_id ?? row.tag,name:row.tag,description:`${row.protocol.toUpperCase()} · ${row.active ? '当前入口' : '已移除，保留历史'}`}))}/>
    <p className="p-5 border-t text-xs text-muted-foreground">{period ? '区间' : '累计'}入口用量包含匿名、共享密码连接及运维探针。VMess 等现有入口在这里查看；与节点本地用户用量不相加。</p>
   </section>
  })}</div>

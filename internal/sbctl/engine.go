@@ -84,6 +84,16 @@ func (e DockerEngine) Runtime() Runtime {
 				}
 			}
 		}
+		if exists(filepath.Join(e.Settings.StateDir, "maintenance-pending.json")) {
+			r.Statistics = nil
+		}
+		if r.Statistics != nil {
+			disabled := protocolState(e.Settings)
+			for i := range r.Statistics.Inbounds {
+				in := &r.Statistics.Inbounds[i]
+				in.InboundID = inboundIdentity(e.Settings, disabled, M{"tag": in.Tag, "type": in.Protocol})
+			}
+		}
 	})
 	guardMount, configMount := false, false
 	for _, raw := range array(o["Mounts"]) {
@@ -121,9 +131,23 @@ func (e DockerEngine) Verify(req NodeRequest, previous *NodeRequest) {
 		}
 	}
 	removed := false
+	active, _ := currentConfig(e.Settings)
 	for _, c := range old {
 		if _, ok := current[c.CredentialID]; !ok {
 			removed = true
+			for _, raw := range array(active["inbounds"]) {
+				inbound := mapping(raw)
+				if inbound["type"] != c.Protocol {
+					continue
+				}
+				for _, entry := range array(inbound["users"]) {
+					user := mapping(entry)
+					candidate := Credential{Protocol: c.Protocol, Password: str(user["password"]), UUID: nullable(str(user["uuid"]))}
+					if candidate.authenticationFingerprint() == c.authenticationFingerprint() {
+						fail("REVOKE_FAILED", "活动配置仍包含已撤销的认证材料")
+					}
+				}
+			}
 			if e.Probe(c, false) {
 				fail("REVOKE_FAILED", "已撤销凭据仍能完成代理请求")
 			}
@@ -151,7 +175,9 @@ func dnsProbe(port int) bool {
 	}
 	buf := make([]byte, 4096)
 	n, err := c.Read(buf)
-	return err == nil && n >= 12 && bytes.Equal(buf[:2], tx) && buf[3]&15 == 0 && binary.BigEndian.Uint16(buf[6:8]) > 0
+	return err == nil && n >= len(q) && bytes.Equal(buf[:2], tx) && buf[2]&0x82 == 0x80 &&
+		buf[3]&15 == 0 && binary.BigEndian.Uint16(buf[4:6]) == 1 &&
+		binary.BigEndian.Uint16(buf[6:8]) > 0 && bytes.Equal(buf[12:len(q)], q[12:])
 }
 func probePorts(tcp, udp int) {
 	lc := net.ListenConfig{Control: func(network, address string, raw syscall.RawConn) error {
@@ -173,14 +199,9 @@ func probePorts(tcp, udp int) {
 	u.Close()
 }
 func (e DockerEngine) Probe(c Credential, udp bool) bool {
-	var endpoint Endpoint
-	for _, p := range e.Settings.Endpoints {
-		if p.Protocol == c.Protocol {
-			endpoint = p
-		}
-	}
-	if endpoint.Protocol == "" {
-		fail("PROBE_PROTOCOL", "缺少协议探针入口")
+	endpoint, ok := credentialEndpoint(normalizeEndpoints(e.Settings.Endpoints), c)
+	if !ok {
+		fail("PROBE_PROTOCOL", "凭据未绑定到唯一协议入口")
 	}
 	tls := M{"enabled": true, "server_name": endpoint.SNI}
 	out := M{"type": c.Protocol, "tag": "proxy", "server": endpoint.Server, "server_port": endpoint.Port, "password": c.Password, "tls": tls}
@@ -216,7 +237,7 @@ func (e DockerEngine) Probe(c Credential, udp bool) bool {
 	}
 	var code []byte
 	err = Attempt(func() {
-		code = runCommand([]string{"/usr/bin/curl", "--silent", "--max-time", "8", "--proxy", fmt.Sprintf("socks5h://127.0.0.1:%d", e.Settings.ProbePort), "--output", "/dev/null", "--write-out", "%{http_code}", "https://www.gstatic.com/generate_204"}, nil, 10*time.Second)
+		code = runCommand([]string{"/usr/bin/curl", "--disable", "--noproxy", "", "--silent", "--max-time", "8", "--proxy", fmt.Sprintf("socks5h://127.0.0.1:%d", e.Settings.ProbePort), "--output", "/dev/null", "--write-out", "%{http_code}", "https://www.gstatic.com/generate_204"}, nil, 10*time.Second)
 	})
 	return err == nil && string(code) == "204" && (!udp || dnsProbe(e.Settings.ProbeUDPPort))
 }

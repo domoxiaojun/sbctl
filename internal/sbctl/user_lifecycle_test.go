@@ -257,6 +257,7 @@ func TestEnableUsesCurrentGroupsAndRetainsHistoricalUsage(t *testing.T) {
 		d.Exec("DELETE FROM group_nodes WHERE group_id='grp_hk'")
 		d.Exec("INSERT INTO group_nodes VALUES ('grp_hk','node_new')")
 	})
+	markTestEndpointsVerified(c)
 	rev := int64(2)
 	enabled := c.EnableUser("admin", "current-group-enable", id, EnableUser{&rev, "恢复"})
 	v := Views{c.Settings}

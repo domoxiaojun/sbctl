@@ -11,7 +11,10 @@ export function useNodeCommand(nodeId: string) {
   const submit = useMutation({ gcTime: 0, mutationFn: ({ input, key }: { input: Schema['NodeJobInput']; key: string }) => api.submitNodeJob(input, key), onSuccess: async result => {
     setJobId(result.job_id)
     try { sessionStorage.setItem(storageKey, result.job_id) } catch { /* Result remains visible in server task history. */ }
-    await client.invalidateQueries({ queryKey: ['node-jobs', nodeId] })
+    await Promise.all([
+      client.invalidateQueries({ queryKey: ['node-jobs', nodeId] }),
+      client.invalidateQueries({ queryKey: ['node-config', nodeId] }),
+    ])
   } })
   useEffect(() => {
     if (!job.data || !['completed', 'failed'].includes(job.data.state)) return

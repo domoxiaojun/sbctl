@@ -17,8 +17,9 @@ func clusterControl(t *testing.T) *Control {
 	t.Helper()
 	c := testControl(t)
 	for _, n := range [][4]string{{"node_sg", "新加坡", "100.70.0.3", "sg.test"}, {"node_jp", "日本", "100.70.0.4", "jp.test"}} {
-		c.Register(M{"id": n[0], "name": n[1], "region": "ap", "location": n[1], "connection": M{"address": n[2]}, "endpoints": []Endpoint{{"anytls", "anytls-in", n[3], 443, n[3], nil}, {"tuic", "tuic-in", n[3], 443, n[3], nil}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
+		c.Register(M{"id": n[0], "name": n[1], "region": "ap", "location": n[1], "connection": M{"address": n[2]}, "endpoints": []Endpoint{{"anytls", "anytls-in", n[3], 443, n[3], nil, ""}, {"tuic", "tuic-in", n[3], 443, n[3], nil, ""}}, "template_hash": strings.Repeat("a", 64), "image_digest": "sha256:" + strings.Repeat("b", 64), "group_id": "grp_hk", "group_name": "香港"})
 	}
+	markTestEndpointsVerified(c)
 	return c
 }
 func draftOf(c *Control, id string) NodeDraft {
