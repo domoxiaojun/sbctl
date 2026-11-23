@@ -547,7 +547,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		if !rt.Running && changing {
 			fail("NODE_NOT_READY", "节点运行绑定异常，请先检查并更新绑定", 409)
 		}
-		paths := map[string]string{"config": filepath.Join(s.ConfigDir, "config.json"), "template": s.TemplateFile, "settings": m.SettingsPath, "runtime": filepath.Join(s.SafetyDir, "runtime.json"), "guard": filepath.Join(s.SafetyDir, "manifest"), "disabled": filepath.Join(s.StateDir, "disabled-protocols.json"), "probes": s.ProbeFile}
+		paths := map[string]string{"config": filepath.Join(s.ConfigDir, "config.json"), "template": s.TemplateFile, "settings": m.SettingsPath, "runtime": filepath.Join(s.SafetyDir, "runtime.json"), "guard": filepath.Join(s.SafetyDir, "manifest"), "disabled": filepath.Join(s.StateDir, "disabled-protocols.json")}
 		before := M{}
 		for key, path := range paths {
 			if exists(path) {
@@ -569,33 +569,6 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			after["config"] = string(append(canonical(config), '\n'))
 			after["template"] = string(append(canonical(template), '\n'))
 			after["disabled"] = string(canonical(disabled))
-			if p != nil {
-				existing := map[string]Credential{}
-				for _, probe := range NewAgent(s, nil).Probes() {
-					existing[probe.InboundID] = probe
-				}
-				probes := []Credential{}
-				for _, ep := range next.Endpoints {
-					probe, found := existing[ep.InboundID]
-					if !found {
-						in := findInbound(config, ep.Tag)
-						for _, raw := range array(in["users"]) {
-							if mapping(raw)["name"] == "sys_probe" {
-								fail("PROBE_IDENTITY", "入口已使用系统探针保留名称", 409)
-							}
-						}
-						probe = newInboundProbe(ep)
-						entry := M{"name": "sys_probe", "password": probe.Password}
-						if probe.UUID != nil {
-							entry["uuid"] = *probe.UUID
-						}
-						in["users"] = append(array(in["users"]), entry)
-					}
-					probes = append(probes, probe)
-				}
-				after["config"] = string(append(canonical(config), '\n'))
-				after["probes"] = string(canonical(probes))
-			}
 			next.TemplateHash = hash([]byte(str(after["template"])))
 			next.Validate()
 			settings, err := toml.Marshal(next)
@@ -629,7 +602,7 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	check(toml.Unmarshal([]byte(str(before["settings"])), &original))
 	atomicWrite(pendingPath, canonical(M{"id": id}), 0600)
 	writeSet := func(files M) {
-		for _, key := range []string{"template", "probes", "settings", "disabled", "config", "runtime", "guard"} {
+		for _, key := range []string{"template", "settings", "disabled", "config", "runtime", "guard"} {
 			path := str(paths[key])
 			if path == "" {
 				continue
@@ -658,7 +631,6 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 		}
 	}
 	var evidence M
-	var verified M
 	err := Attempt(func() {
 		changed := str(before["config"]) != str(after["config"])
 		if changed {
@@ -674,12 +646,12 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 			if !rt.Running || rt.Epoch() == str(plan["epoch_before"]) || rt.ConfigHash != hash([]byte(str(after["config"]))) {
 				updated.Restart()
 			}
-			if p == nil || p.RetireID == "" {
-				verified = verifyManagedEndpoints(next, updated, hash([]byte(str(after["config"]))))
-			}
+		}
+		rt := updated.Runtime()
+		if !rt.Running || rt.Paused || rt.Restarting || rt.ConfigHash != hash([]byte(str(after["config"]))) {
+			fail("RUNTIME_BINDING", "维护变更未通过运行状态绑定确认", 503)
 		}
 		if p != nil && contains([]string{"disable", "delete"}, p.Action) {
-			rt := updated.Runtime()
 			active, raw := currentConfig(next)
 			originalConfig := object([]byte(str(before["config"])))
 			originalInbound := findInbound(originalConfig, p.Tag)
@@ -699,10 +671,6 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 				fail("RETIREMENT_UNVERIFIED", "目标入口退役未通过活动配置与运行版本确认", 503)
 			}
 			evidence = M{"inbound_id": inboundID, "tag": p.Tag, "action": p.Action, "request_id": id, "config_hash": rt.ConfigHash, "runtime_epoch": rt.Epoch(), "node_revision": rt.NodeRevision}
-			if p.RetireID != "" {
-				// Other entrances can refresh their own probe evidence independently.
-				_ = Attempt(func() { verified = verifyManagedEndpoints(next, updated, rt.ConfigHash) })
-			}
 		}
 	})
 	if err != nil {
@@ -726,9 +694,6 @@ func (m NodeMaintenance) apply(id string, p *ProtocolChange, c *ConfigChange) M 
 	}
 	catalog := catalogFor(next, object(read(filepath.Join(next.ConfigDir, "config.json"))), protocolState(next))
 	result := M{"node_id": s.NodeID, "ready": true, "catalog": catalog, "template_hash": next.TemplateHash, "endpoints": next.Endpoints, "container": next.Container, "image": next.Image, "config_dir": next.ConfigDir, "engine_build_id": next.EngineBuildID, "backup_id": id, "checked_at": now()}
-	if verified != nil {
-		result["probe_verification"] = verified
-	}
 	if evidence != nil {
 		result["retirement"] = evidence
 	}

@@ -6,10 +6,11 @@ import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DataState, FilterSelect } from './common'
-import { ProtocolTraffic, LocalUserTraffic } from './protocol-traffic'
+import { ProtocolTraffic, OutboundTraffic, LocalUserTraffic } from './protocol-traffic'
 import { TrafficDatePicker } from './traffic-date-picker'
 import { TrafficRankings } from './traffic-rankings'
 import { TrafficConnections } from './traffic-connections'
+import { TrafficLivePanel } from './traffic-live'
 import { exactBytes, formatBytes, formatTime, totalBytes } from '@/lib/format'
 import { dateError, hourlyAllowed, knownTrafficNodes, trafficCsv, trafficTotals, type TrafficFilters } from '@/lib/traffic'
 const TrafficTrend = lazy(() => import('./traffic-trend'))
@@ -19,20 +20,31 @@ export function TrafficExplorer() {
  const [refreshMessage, setRefreshMessage] = useState(''), [advanced, setAdvanced] = useState(false)
  const scope = search.scope ?? 'inbounds'
  const dates = { from: search.from ?? '', to: search.to ?? '' }
- const update = (next: TrafficFilters) => { setRefreshMessage(''); void navigate({ to: '.', search: old => ({ ...dates, q: old.q, node: old.node, protocol: old.protocol, activity: old.activity, local_user: old.local_user, scope: old.scope, sort: old.sort, granularity: old.granularity, ...next }), resetScroll: false }) }
+ const update = (next: TrafficFilters) => { setRefreshMessage(''); void navigate({ to: '.', search: old => ({ ...dates, q: old.q, node: old.node, protocol: old.protocol, outbound: old.outbound, activity: old.activity, local_user: old.local_user, scope: old.scope, sort: old.sort, granularity: old.granularity, ...next }), resetScroll: false }) }
  // 超过 7 天的区间只提供按日趋势；网址里的小时选择保留，缩短区间后自动恢复。
  const hourlyDisabled = !hourlyAllowed(dates.from, dates.to), granularity = search.granularity === 'hour' && hourlyDisabled ? undefined : search.granularity
- const filters: TrafficFilters = { q: search.q, node: search.node, ...dates, scope, ...(scope === 'inbounds' ? { protocol: search.protocol } : {}), activity: search.activity, ...(scope === 'local' ? { local_user: search.local_user } : {}), ...(granularity ? { granularity } : {}) }
+ const filters: TrafficFilters = {
+  q: search.q,
+  node: search.node,
+  ...dates,
+  scope,
+  ...(scope === 'inbounds' ? { protocol: search.protocol } : {}),
+  ...(scope === 'outbounds' ? { outbound: search.outbound } : {}),
+  activity: search.activity,
+  ...(scope === 'local' ? { local_user: search.local_user } : {}),
+  ...(granularity ? { granularity } : {}),
+ }
  const error = dateError(filters.from, filters.to)
- const query = useQuery({ queryKey: ['traffic', filters], queryFn: ({ signal }) => api.traffic(filters, signal), enabled: !error, refetchInterval: 15_000 })
+ const query = useQuery({ queryKey: ['traffic', filters], queryFn: ({ signal }) => api.traffic(filters, signal), enabled: !error, refetchInterval: 10_000 })
  const catalog = useQuery({ queryKey: ['traffic-catalog'], queryFn: ({ signal }) => api.traffic({}, signal), staleTime: 60_000 })
  const options = catalog.data?.nodes ?? query.data?.nodes ?? []
  const protocols = [...new Set(options.filter(n => !filters.node || n.id === filters.node).flatMap(n => n.inbounds.map(i => i.protocol)))].sort()
+ const outbounds = [...new Set(options.filter(n => !filters.node || n.id === filters.node).flatMap(n => n.outbounds.map(o => o.tag)))].sort()
  const report = query.data, nodes = report ? knownTrafficNodes(report) : []
- const rows = scope === 'inbounds' ? nodes.flatMap(n => n.inbounds) : nodes.flatMap(n => n.local_users)
+ const rows = scope === 'inbounds' ? nodes.flatMap(n => n.inbounds) : scope === 'outbounds' ? nodes.flatMap(n => n.outbounds) : nodes.flatMap(n => n.local_users)
  const sum = trafficTotals(rows), period = !!(filters.from && filters.to)
  const sampled = nodes.map(n => n.quality.sampled_at).filter((s): s is string => !!s).sort()[0]
- const hasFilters = !!(search.q || search.node || search.protocol || search.activity || search.local_user || period)
+ const hasFilters = !!(search.q || search.node || search.protocol || search.outbound || search.activity || search.local_user || period)
  const refresh = async () => {
   const before = JSON.stringify([query.data?.nodes, query.data?.trend])
   const result = await query.refetch()
@@ -52,34 +64,37 @@ export function TrafficExplorer() {
   {filters.node && <div className="flex flex-wrap items-center gap-2 text-sm" aria-label="统计对象导航">
    {filters.node && <Link to="/nodes/$nodeId" params={{ nodeId: filters.node }} search={{}} className="workspace-link">管理节点：{options.find(n => n.id === filters.node)?.name ?? filters.node}<ArrowUpRight size={16} /></Link>}
   </div>}
+  <TrafficLivePanel node={filters.node} />
   <section className="panel p-4 sm:p-5 space-y-3" aria-label="流量筛选">
    <div className="flex flex-wrap items-center justify-between gap-3">
-    <div role="group" aria-label="统计范围" className="flex flex-wrap gap-1">{([['inbounds', '协议入口'], ['local', '节点本地用户']] as const).map(([value, label]) => <Button key={value} className="min-h-11" variant={scope === value ? 'secondary' : 'ghost'} aria-pressed={scope === value} onClick={() => update({ scope: value, q: '', protocol: '', activity: '', local_user: '' })}>{label}</Button>)}</div>
+    <div role="group" aria-label="统计范围" className="flex flex-wrap gap-1">{([['inbounds', '协议入口'], ['outbounds', '出站分流'], ['local', '节点本地用户']] as const).map(([value, label]) => <Button key={value} className="min-h-11" variant={scope === value ? 'secondary' : 'ghost'} aria-pressed={scope === value} onClick={() => update({ scope: value, q: '', protocol: '', outbound: '', activity: '', local_user: '' })}>{label}</Button>)}</div>
     <div className="flex flex-wrap gap-1"><Button className="min-h-11" variant="ghost" disabled={!rows.length || !!error} onClick={exportCsv}><Download size={16} />导出 CSV</Button><Button className="min-h-11" variant="ghost" disabled={query.isFetching || !!error} onClick={() => { void refresh() }}><RefreshCw size={16} className={query.isFetching ? 'animate-spin motion-reduce:animate-none' : ''} />{query.isFetching ? '正在刷新' : '刷新统计'}</Button></div>
    </div>
    <div className="flex flex-wrap gap-2 items-center">
-    <div className="relative grow basis-48"><Search className="absolute left-3 top-3.5 text-muted-foreground" size={16} /><Input className="pl-9 min-h-11" aria-label="搜索流量记录" placeholder={scope === 'inbounds' ? '搜索入口、协议或端口' : '搜索用户名称'} value={search.q ?? ''} onChange={e => update({ q: e.target.value })} /></div>
-    <div className="grow sm:grow-0 basis-36"><FilterSelect label="筛选流量节点" value={search.node || 'all'} onChange={v => update({ node: v === 'all' ? '' : v, protocol: '' })} options={[{ value: 'all', label: '全部节点' }, ...options.map(n => ({ value: n.id, label: n.name }))]} /></div>
+    <div className="relative grow basis-48"><Search className="absolute left-3 top-3.5 text-muted-foreground" size={16} /><Input className="pl-9 min-h-11" aria-label="搜索流量记录" placeholder={scope === 'inbounds' ? '搜索入口、协议或端口' : scope === 'outbounds' ? '搜索出站标签（如 direct / warp）' : '搜索用户名称'} value={search.q ?? ''} onChange={e => update({ q: e.target.value })} /></div>
+    <div className="grow sm:grow-0 basis-36"><FilterSelect label="筛选流量节点" value={search.node || 'all'} onChange={v => update({ node: v === 'all' ? '' : v, protocol: '', outbound: '' })} options={[{ value: 'all', label: '全部节点' }, ...options.map(n => ({ value: n.id, label: n.name }))]} /></div>
     {scope === 'inbounds' && <div className="grow sm:grow-0 basis-32"><FilterSelect label="筛选协议" value={search.protocol || 'all'} onChange={v => update({ protocol: v === 'all' ? '' : v })} options={[{ value: 'all', label: '全部协议' }, ...protocols.map(p => ({ value: p, label: p.toUpperCase() }))]} /></div>}
+    {scope === 'outbounds' && <div className="grow sm:grow-0 basis-36"><FilterSelect label="筛选出站" value={search.outbound || 'all'} onChange={v => update({ outbound: v === 'all' ? '' : v })} options={[{ value: 'all', label: '全部出站' }, ...outbounds.map(o => ({ value: o, label: o }))]} /></div>}
     <TrafficDatePicker from={dates.from} to={dates.to} onChange={update} />
     <Button className="min-h-11" variant={advanced ? 'secondary' : 'ghost'} aria-expanded={advanced} aria-controls="traffic-advanced" onClick={() => setAdvanced(!advanced)}><SlidersHorizontal size={16} />高级筛选{search.activity && ' · 1'}</Button>
-    {hasFilters && <Button className="min-h-11" variant="ghost" onClick={() => update({ q: '', node: '', protocol: '', activity: '', local_user: '', from: '', to: '', sort: 'bytes' })}><X size={14} />重置筛选</Button>}
+    {hasFilters && <Button className="min-h-11" variant="ghost" onClick={() => update({ q: '', node: '', protocol: '', outbound: '', activity: '', local_user: '', from: '', to: '', sort: 'bytes' })}><X size={14} />重置筛选</Button>}
    </div>
    {advanced && <div id="traffic-advanced" className="border-t pt-3 grid gap-3 sm:grid-cols-2">
     <div className="space-y-1.5 text-sm"><span>记录状态</span><FilterSelect label="筛选记录状态" value={search.activity || 'all'} onChange={v => update({ activity: v === 'all' ? '' : v })} options={[{ value: 'all', label: '当前与历史' }, { value: 'active', label: '当前记录' }, { value: 'removed', label: '已移除记录' }]} /></div>
     <div className="space-y-1.5 text-sm"><span>明细排序</span><FilterSelect label="流量排序" value={search.sort === 'name' ? 'name' : 'bytes'} onChange={v => update({ sort: v as 'name' | 'bytes' })} options={[{ value: 'bytes', label: '用量从高到低' }, { value: 'name', label: '名称排序' }]} /></div>
    </div>}
    {filters.local_user && <Button variant="outline" className="min-h-11" onClick={() => update({ local_user: '' })}>已定位用户：{filters.local_user}<X size={14} /><span className="sr-only">清除用户筛选</span></Button>}
+   {filters.outbound && <Button variant="outline" className="min-h-11" onClick={() => update({ outbound: '' })}>已筛选出站：{filters.outbound}<X size={14} /><span className="sr-only">清除出站筛选</span></Button>}
    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
   </section>
-  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{refreshMessage || (sampled ? `最近采样 ${formatTime(sampled, true)}` : '等待统计快照')}</p><span>每 15 秒更新 · 入口与节点本地用户用量分别统计</span></div>
+  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{refreshMessage || (sampled ? `最近采样 ${formatTime(sampled, true)}` : '等待统计快照')}</p><span>实时流式推送 · 入口、出站分流与节点内建用户多维独立归档</span></div>
   {error ? null : query.isPending || query.error ? <DataState loading={query.isPending} error={query.error} retry={() => query.refetch()} /> : report && <>
    <div className="grid gap-3 grid-cols-1 sm:grid-cols-3" aria-label="筛选结果汇总">{[['合计', totalBytes(sum)], ['上传', sum.upload_bytes], ['下载', sum.download_bytes]].map(([label, value]) => <div className="panel p-5" key={label}><p className="text-sm text-muted-foreground">{period ? '区间' : '累计'}{label}</p><strong className="text-2xl numeric block mt-2" title={nodes.length ? exactBytes(value) : undefined}>{nodes.length ? formatBytes(value) : '—'}</strong><p className="text-xs text-muted-foreground mt-2">当前筛选 · {rows.length} 条记录</p></div>)}</div>
    <Suspense fallback={<DataState loading />}><TrafficTrend report={report} onSelect={selectRange} onGranularity={value => update({ granularity: value === 'day' ? undefined : value })} hourlyDisabled={hourlyDisabled} /></Suspense>
    <TrafficRankings report={report} scope={scope} onSelect={update} />
-   <TrafficConnections key={JSON.stringify([filters.node, filters.protocol, filters.from, filters.to])} node={filters.node} protocol={filters.protocol} from={filters.from} to={filters.to} />
+   <TrafficConnections key={JSON.stringify([filters.node, filters.protocol, filters.outbound, filters.from, filters.to])} node={filters.node} protocol={filters.protocol} outbound={filters.outbound} from={filters.from} to={filters.to} />
    {period && <details className="panel p-4 text-xs text-muted-foreground" open={report.periods.some(p => p.status === 'unavailable')}><summary className="cursor-pointer min-h-7">{report.periods.some(p => p.status !== 'complete') ? '该时段记录不完整 · 查看记录范围' : '该时段记录完整 · 查看记录范围'}</summary><div className="space-y-2 mt-2">{report.periods.map(p => <p key={p.node_id}>{report.nodes.find(n => n.id === p.node_id)?.name ?? p.node_id}：{p.status === 'unavailable' ? '该时段无日期明细，不能按零流量判断。' : p.status === 'partial' ? '当前显示已记录部分。' : '该时段记录完整。'} 明细起点：{formatTime(p.history_started_at, true)}。</p>)}<p>跨日用量按结束采样归档，正常日期边界最多偏移 3 分钟。</p></div></details>}
-   <div className="space-y-3"><h2 className="text-sm text-muted-foreground">用量明细</h2>{scope === 'inbounds' ? <ProtocolTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} /> : <LocalUserTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} />}</div>
+   <div className="space-y-3"><h2 className="text-sm text-muted-foreground">用量明细</h2>{scope === 'inbounds' ? <ProtocolTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} /> : scope === 'outbounds' ? <OutboundTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} /> : <LocalUserTraffic key={JSON.stringify(filters)} nodes={nodes} period={period} sort={search.sort} />}</div>
   </>}
  </div>
 }

@@ -1,10 +1,11 @@
 package sbctl
 
 import (
+	"fmt"
 	"net/netip"
-	"os"
-	"path/filepath"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -32,6 +33,7 @@ type NodeJobInput struct {
 	DesiredImage     string          `json:"desired_image,omitempty"`
 	Change           *ProtocolChange `json:"protocol_change,omitempty"`
 	ConfigChange     *ConfigChange   `json:"config_change,omitempty"`
+	Billing          *NodeBilling    `json:"billing,omitempty"`
 }
 
 func (d *NodeDraft) Validate() {
@@ -129,8 +131,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 			if i == nil || time.Since(stamp(str(i["updated_at"]))) > 15*time.Minute {
 				fail("INSPECTION_EXPIRED", "请重新检查节点后确认", 409)
 			}
-			var old NodeJobInput
-			decode([]byte(str(i["input_json"])), &old)
+			old := decodeNodeInput(c, str(i["input_json"]))
 			if digest(old.Draft.Connection) != digest(input.Draft.Connection) || old.Draft.Container != input.Draft.Container || old.Draft.ConfigDir != input.Draft.ConfigDir || old.Draft.PublicHost != input.Draft.PublicHost || old.Draft.ServerName != input.Draft.ServerName {
 				fail("INSPECTION_CHANGED", "连接或容器参数已变化，请重新检查", 409)
 			}
@@ -188,6 +189,7 @@ func (c *Control) SubmitNodeJob(actor, key string, input NodeJobInput) M {
 }
 func (c *Control) NodeConfig(id string) M {
 	var row M
+	billingCfg := defaultNodeBilling()
 	transaction(c.Settings.ControlDB, false, func(d *DB) {
 		row = d.One("SELECT n.*,m.version AS config_version,m.binding_json,m.checked_at,m.check_json FROM nodes n LEFT JOIN node_management m ON n.id=m.node_id WHERE n.id=?", id)
 		if row == nil {
@@ -196,6 +198,9 @@ func (c *Control) NodeConfig(id string) M {
 		g := d.One("SELECT g.id,g.name FROM groups g JOIN group_nodes gn ON gn.group_id=g.id WHERE gn.node_id=? ORDER BY g.id LIMIT 1", id)
 		row["group_id"] = g["id"]
 		row["group_name"] = g["name"]
+		if bm, ok := loadNodeBillingMap(d)[id]; ok {
+			billingCfg = bm
+		}
 	})
 	binding := M{}
 	if row["binding_json"] != nil {
@@ -230,13 +235,102 @@ func (c *Control) NodeConfig(id string) M {
 			catalog = view
 		}
 	})
-	return M{"protocol_catalog": catalog, "draft": draft, "version": integer(row["config_version"]), "binding": binding, "checked_at": row["checked_at"], "last_check": last}
+	return M{"protocol_catalog": catalog, "draft": draft, "billing": billingCfg, "version": integer(row["config_version"]), "binding": binding, "checked_at": row["checked_at"], "last_check": last}
 }
-func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft NodeDraft) M {
+
+func renderSingleContainerCompose(controlURL, nodeID, code string, draft NodeDraft) string {
+	container := draft.Container
+	if container == "" {
+		container = "sing-box"
+	}
+	return fmt.Sprintf(`services:
+  sing-box:
+    image: ${SING_BOX_IMAGE:?set an image with the embedded sbctl Agent}
+    container_name: %s
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      SBCTL_CONTROL_URL: %s
+      SBCTL_NODE_ID: %s
+      SBCTL_REGISTRATION_CODE: %s
+    volumes:
+      - type: bind
+        source: %s
+        target: /etc/sing-box
+      - /var/lib/sing-box/sbctl:/var/lib/sing-box/sbctl
+    command: ["-c", "/etc/sing-box/config.json", "run"]
+`, strconv.Quote(container), strconv.Quote(controlURL), strconv.Quote(nodeID), strconv.Quote(code), strconv.Quote(strings.ReplaceAll(draft.ConfigDir, "$", "$$")))
+}
+
+func (c *Control) EnrollNode(actor, key string, draft NodeDraft, billing *NodeBilling, controlURL string) M {
+	draft.Validate()
+	validateNodeLabels(draft)
+	if billing != nil {
+		billing.NormalizeAndValidate()
+	}
+	code := token(32)
+	nowUnix := timestamp()
+	path := "/nodes/enroll"
+	baseURL := strings.TrimRight(controlURL, "/")
+	if baseURL == "" && len(c.Settings.AllowedOrigins) > 0 {
+		baseURL = strings.TrimRight(c.Settings.AllowedOrigins[0], "/")
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || !match(`^[A-Za-z0-9.:-]+$`, u.Hostname()) || u.Path != "" || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" {
+		fail("INVALID_REQUEST", "请填写节点可访问的 HTTP 或 HTTPS 主控地址", 422)
+	}
+	reqBody := M{"draft": draft, "billing": billing, "control_url": baseURL}
+	var out M
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		if out = c.replay(d, actor, key, path, reqBody); out != nil {
+			return
+		}
+		if other := d.One("SELECT id FROM nodes WHERE management_address=? AND id<>?", draft.Connection.Address, draft.ID); other != nil {
+			fail("NODE_EXISTS", "该 Tailscale 地址已绑定其他节点", 409)
+		}
+		existing := d.One("SELECT id FROM nodes WHERE id=?", draft.ID)
+		if existing != nil {
+			fail("NODE_EXISTS", "该节点 ID 已登记，请在节点详情生成新注册码", 409)
+		}
+		zeros := strings.Repeat("0", 64)
+		d.Exec("INSERT INTO nodes(id,name,region,location,management_address,public_host,connection_json,endpoints_json,template_hash,image_digest,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+			draft.ID, draft.Name, draft.Region, draft.Location, draft.Connection.Address, draft.PublicHost, string(canonical(draft.Connection)), "[]", zeros, "sha256:"+zeros, now())
+		d.Exec("INSERT OR IGNORE INTO groups VALUES (?,?)", draft.GroupID, draft.GroupName)
+		d.Exec("INSERT INTO group_nodes VALUES (?,?)", draft.GroupID, draft.ID)
+		d.Exec("INSERT INTO node_management(node_id,version,binding_json) VALUES (?,0,'{}')", draft.ID)
+		if billing != nil {
+			saveNodeBilling(d, draft.ID, billing)
+		}
+		d.Exec("DELETE FROM agent_registrations WHERE node_id=? OR expires_at<?", draft.ID, nowUnix)
+		d.Exec("INSERT INTO agent_registrations(id,node_id,code_hash,expires_at,created_at) VALUES (?,?,?,?,?)",
+			identifier("areg"), draft.ID, hashToken(code), nowUnix+agentRegistrationLifetime.Seconds(), now())
+		out = M{
+			"node_id":           draft.ID,
+			"registration_code": code,
+			"expires_at":        time.Now().UTC().Add(agentRegistrationLifetime).Format(time.RFC3339Nano),
+			"compose_yaml":      renderSingleContainerCompose(baseURL, draft.ID, code, draft),
+		}
+		c.remember(d, actor, key, path, reqBody, out, 201, true)
+		audit(d, actor, "enroll_node", draft.ID, "登记单容器节点并签发注册码")
+	})
+	NewWorker(c, nil).ExportInventory()
+	return out
+}
+
+func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft NodeDraft, billing ...*NodeBilling) M {
 	draft.ID = id
 	validateNodeLabels(draft)
+	var bill *NodeBilling
+	if len(billing) > 0 && billing[0] != nil {
+		bCopy := *billing[0]
+		bCopy.NormalizeAndValidate()
+		bill = &bCopy
+	}
 	path := "/nodes/" + id + "/metadata"
 	body := M{"draft": draft, "version": version}
+	if bill != nil {
+		body["billing"] = bill
+	}
 	var out M
 	transaction(c.Settings.ControlDB, true, func(d *DB) {
 		if out = c.replay(d, actor, key, path, body); out != nil {
@@ -257,10 +351,13 @@ func (c *Control) UpdateNodeLabels(actor, key, id string, version int64, draft N
 		d.Exec("INSERT OR IGNORE INTO groups VALUES (?,?)", draft.GroupID, draft.GroupName)
 		d.Exec("DELETE FROM group_nodes WHERE node_id=?", id)
 		d.Exec("INSERT INTO group_nodes VALUES (?,?)", draft.GroupID, id)
+		if bill != nil {
+			saveNodeBilling(d, id, bill)
+		}
 		d.Exec("INSERT INTO node_management(node_id,version,binding_json) VALUES (?,?, '{}') ON CONFLICT(node_id) DO UPDATE SET version=excluded.version", id, version+1)
 		out = M{"saved": true, "version": version + 1}
 		c.remember(d, actor, key, path, body, out, 200, false)
-		audit(d, actor, "edit_node", id, "修改节点名称、地区与分组")
+		audit(d, actor, "edit_node", id, "修改节点资料与计费规则")
 	})
 	return out
 }
@@ -287,9 +384,10 @@ func (w *Worker) NodeStep() bool {
 }
 func (w *Worker) RunNodeJob(job M) {
 	c := w.Control
-	input := decodeNodeInput(c, str(job["input_json"]))
+	var input NodeJobInput
 	var result M
 	err := Attempt(func() {
+		input = decodeNodeInput(c, str(job["input_json"]))
 		draft := input.Draft
 		if mutatingNodeJob(input.Kind) {
 			unlock := w.nodeLock(draft.ID)
@@ -320,7 +418,7 @@ func (w *Worker) RunNodeJob(job M) {
 			result = w.Transport.Call(draft.Connection, M{"action": "inspect", "container": draft.Container, "config_dir": draft.ConfigDir, "public_host": draft.PublicHost, "server_name": draft.ServerName}, false)
 			stats := w.Transport.Call(draft.Connection, M{"action": "inspect"}, true)
 			if !boolean(stats["ready"]) {
-				fail("STATS_SETUP", "统计账号或采集工具未就绪，请完成安装指引", 409)
+				fail("STATS_SETUP", "节点 Agent 统计接口未就绪，请核对配套镜像和配置", 409)
 			}
 		case "check":
 			var node M
@@ -350,7 +448,7 @@ func (w *Worker) RunNodeJob(job M) {
 				result["ready"] = false
 				checks = append(checks, M{"name": "统计通道", "status": "failed", "ok": false, "message": PublicFault(statsError).Message})
 			} else {
-				checks = append(checks, M{"name": "统计通道", "status": "passed", "ok": true, "message": "独立统计账号可达且采样在 30 秒内更新"})
+				checks = append(checks, M{"name": "统计通道", "status": "passed", "ok": true, "message": "节点 Agent 已返回 30 秒内的采样"})
 			}
 			protocolStatus := "not_run"
 			if len(decodeEndpoints(node["endpoints_json"])) == 0 {
@@ -419,6 +517,9 @@ func (w *Worker) RunNodeJob(job M) {
 				d.Exec("DELETE FROM group_nodes WHERE node_id=?", draft.ID)
 				d.Exec("INSERT INTO group_nodes VALUES (?,?)", draft.GroupID, draft.ID)
 				d.Exec("INSERT INTO node_management(node_id,version,binding_json,checked_at,check_json) VALUES (?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET version=excluded.version,binding_json=excluded.binding_json,checked_at=excluded.checked_at,check_json=excluded.check_json", draft.ID, input.ExpectedVersion+1, string(canonical(result)), now(), string(canonical(result)))
+				if input.Billing != nil {
+					saveNodeBilling(d, draft.ID, input.Billing)
+				}
 				saveProbeVerification(d, draft.ID, result)
 				audit(d, "worker", "configure_node", draft.ID, "节点绑定已确认并保存")
 			})
@@ -436,9 +537,9 @@ func (w *Worker) RunNodeJob(job M) {
 	})
 	state, message, code := "completed", "操作已完成", ""
 	if input.Kind == "verify_inbounds" {
-		message = "当前配置的节点侧系统探针通过"
+		message = "当前配置的节点侧入口检查通过"
 		if result["protocol_status"] == "not_applicable" {
-			message = "没有订阅入口，协议拨测不适用"
+			message = "没有订阅入口，入口检查不适用"
 		}
 	}
 	nextAttempt := float64(0)
@@ -510,16 +611,15 @@ func (c *Control) Discovery() M {
 	return M{"available": fresh && snapshot["state"] == "Running", "sampled_at": sample, "hosts": hosts, "message": message}
 }
 func (c *Control) Onboarding() M {
-	keys := M{}
-	for _, role := range []string{"publish", "stats"} {
-		path := filepath.Join(c.Settings.SSHDir, role+"_ed25519.pub")
-		if b, e := os.ReadFile(path); e == nil {
-			keys[role] = strings.TrimSpace(string(b))
-		} else {
-			keys[role] = ""
-		}
+	return M{
+		"keys": M{"publish": "", "stats": ""},
+		"instructions": []string{
+			"在控制台填写节点信息并生成一次性注册码与单容器 compose.yaml 配置",
+			"在受管 VPS 准备 /etc/sing-box/config.json，设置 SING_BOX_IMAGE 为带内嵌 sbctl Agent 的镜像后启动单容器（无需安装 sbctl-node 二进制、SSH 账号或启动守卫）",
+			"容器启动后自动经 Tailscale 向主控完成 Token 注册、进程内热重载接管与实时流量上报",
+		},
+		"release": Version,
 	}
-	return M{"keys": keys, "instructions": []string{"将对应架构的同版本 Linux sbctl-node 程序安装到 /opt/sbctl/bin，完整 ops/controller/node 目录放到 /opt/sbctl/install/node", "以 root 运行 bash /opt/sbctl/install/node/bootstrap.sh，安装受限 SSH helper（不会改动代理容器）", "确认代理容器使用包含 sbctl 原生 Unix socket 的 sing-box 1.14.x 镜像，并确认 /opt/sbctl/data/sing-box/stats/collector.sock 的 UID/GID 权限", "把主控两把公钥分别加入 sbctl-publish 和 sbctl-stats 的 authorized_keys，使用 restrict,command=\"/usr/local/bin/sbctl-publish\" 或 restrict,command=\"/usr/local/bin/sbctl-stats\"", "通过可信维护通道读取 /etc/ssh/ssh_host_ed25519_key.pub，在高级设置中核对后填写"}, "release": Version}
 }
 
 func checkGroupChange(d *DB, node, group string) {

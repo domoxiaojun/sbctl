@@ -9,15 +9,20 @@ import (
 
 type Traffic struct{ Path, Export string }
 
-// SyncNodes pulls every node's ledger export once. Fetching runs in parallel so
-// an unreachable node costs only its own timeout; ingestion stays serialized
-// because every ingest rewrites the shared telemetry export.
+var connPruneCache = struct {
+	sync.Mutex
+	last map[string]time.Time
+}{last: map[string]time.Time{}}
+
+// SyncNodes pulls every node's ledger export once in parallel, then writes the
+// combined telemetry export once at the end to eliminate N-fold write amplification.
 func SyncNodes(ctx context.Context, t Traffic, transport Transport, nodes []any, parallel int) {
 	if parallel < 1 {
 		parallel = 1
 	}
 	var ingest sync.Mutex
 	var wg sync.WaitGroup
+	var anyRecorded bool
 	slots := make(chan struct{}, parallel)
 	for _, raw := range nodes {
 		if ctx.Err() != nil {
@@ -38,7 +43,8 @@ func SyncNodes(ctx context.Context, t Traffic, transport Transport, nodes []any,
 				func() {
 					ingest.Lock()
 					defer ingest.Unlock()
-					t.Ingest(id, snap)
+					t.ingest(id, snap, "", false)
+					anyRecorded = true
 				}()
 				if snap.ConnectionFeed {
 					t.syncConnectionPages(transport, link, id, snap)
@@ -47,16 +53,22 @@ func SyncNodes(ctx context.Context, t Traffic, transport Transport, nodes []any,
 			if err != nil {
 				ingest.Lock()
 				defer ingest.Unlock()
-				_ = Attempt(func() { t.Failed(id, PublicFault(err).Code) })
+				_ = Attempt(func() {
+					t.failed(id, PublicFault(err).Code, false)
+					anyRecorded = true
+				})
 			}
 		}()
 	}
 	wg.Wait()
+	if anyRecorded {
+		_ = Attempt(t.WriteExport)
+	}
 }
 
 func (t Traffic) Initialize() { initialize(t.Path, "traffic") }
 func (t Traffic) Ingest(node string, s Snapshot) bool {
-	return t.ingest(node, s, "")
+	return t.ingest(node, s, "", true)
 }
 
 func (t Traffic) RegisterReplacement(node, previousLedger string, s Snapshot) bool {
@@ -64,13 +76,13 @@ func (t Traffic) RegisterReplacement(node, previousLedger string, s Snapshot) bo
 	if previousLedger == s.LedgerID || s.SampledAt == nil || s.Quality.Integrity != "ok" {
 		fail("LEDGER_REPLACEMENT_INVALID", "新账本须使用新身份并提供有效采样")
 	}
-	return t.ingest(node, s, previousLedger)
+	return t.ingest(node, s, previousLedger, true)
 }
 
-func (t Traffic) ingest(node string, s Snapshot, previousLedger string) bool {
+func (t Traffic) ingest(node string, s Snapshot, previousLedger string, exportNow bool) bool {
 	s.Verify()
 	if s.NodeID != node {
-		fail("NODE_IDENTITY", "统计快照与 SSH 节点身份不匹配")
+		fail("NODE_IDENTITY", "统计快照与节点身份不匹配")
 	}
 	times := []string{s.StartedAt}
 	if s.SampledAt != nil {
@@ -78,6 +90,9 @@ func (t Traffic) ingest(node string, s Snapshot, previousLedger string) bool {
 	}
 	for _, in := range s.Inbounds {
 		times = append(times, in.StartedAt)
+	}
+	for _, out := range s.Outbounds {
+		times = append(times, out.StartedAt)
 	}
 	for _, u := range s.LocalUsers {
 		times = append(times, u.StartedAt)
@@ -142,6 +157,16 @@ func (t Traffic) ingest(node string, s Snapshot, previousLedger string) bool {
 					fail("HISTORY_REGRESSION", "入口统计身份或起点变化")
 				}
 			}
+			currentOutbounds := map[string]LedgerOutbound{}
+			for _, out := range s.Outbounds {
+				currentOutbounds[out.Tag] = out
+			}
+			for _, out := range old.Outbounds {
+				cur, ok := currentOutbounds[out.Tag]
+				if !ok || counter(cur.Upload) < counter(out.Upload) || counter(cur.Download) < counter(out.Download) || cur.StartedAt != out.StartedAt {
+					fail("TOTAL_REGRESSION", "出站累计回退或历史缺失")
+				}
+			}
 			currentLocal := map[string]LedgerLocalUser{}
 			for _, u := range s.LocalUsers {
 				currentLocal[u.Name] = u
@@ -161,7 +186,7 @@ func (t Traffic) ingest(node string, s Snapshot, previousLedger string) bool {
 		}
 		recordTrafficDay(d, node, prev, s)
 		if len(s.Connections) > 0 {
-			storeTrafficConnections(d, node, s.Connections)
+			storeTrafficConnections(d, t.Path, node, s.Connections)
 		}
 		if prev == nil || replaced || s.Seq > integer(prev["seq"]) {
 			d.Exec("INSERT INTO snapshots VALUES (?,?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET ledger_id=excluded.ledger_id,seq=excluded.seq,checksum=excluded.checksum,document=excluded.document,synced_at=excluded.synced_at", node, s.LedgerID, s.Seq, s.Checksum, string(canonical(s)), now())
@@ -169,11 +194,13 @@ func (t Traffic) ingest(node string, s Snapshot, previousLedger string) bool {
 		}
 		d.Exec("INSERT INTO observations VALUES (?,NULL,?) ON CONFLICT(node_id) DO UPDATE SET error_code=NULL,checked_at=excluded.checked_at", node, now())
 	})
-	t.WriteExport()
+	if exportNow {
+		t.WriteExport()
+	}
 	return changed
 }
 
-func storeTrafficConnections(d *DB, node string, connections []TrafficConnection) {
+func storeTrafficConnections(d *DB, dbPath, node string, connections []TrafficConnection) {
 	seen := map[string]bool{}
 	for _, c := range connections {
 		if c.ID == "" || len(c.ID) > 128 || strings.ContainsAny(c.ID, "\x00\r\n") || seen[c.ID] {
@@ -186,12 +213,26 @@ func storeTrafficConnections(d *DB, node string, connections []TrafficConnection
 		if c.ClosedAt != "" && stamp(c.ClosedAt).Before(started) {
 			fail("CONNECTION_INVALID", "连接关闭时间早于创建时间")
 		}
+		chain := c.Chain
+		if chain == nil {
+			chain = []string{}
+		}
 		d.Exec(`INSERT INTO connections(node_id,connection_id,inbound_id,inbound_tag,inbound_type,network,domain,destination,source,outbound,outbound_type,chain_json,rule,upload,download,started_at,closed_at,observed_at)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(node_id,connection_id) DO UPDATE SET inbound_id=excluded.inbound_id,inbound_tag=excluded.inbound_tag,inbound_type=excluded.inbound_type,network=excluded.network,domain=excluded.domain,destination=excluded.destination,source=excluded.source,outbound=excluded.outbound,outbound_type=excluded.outbound_type,chain_json=excluded.chain_json,rule=excluded.rule,upload=excluded.upload,download=excluded.download,started_at=excluded.started_at,closed_at=excluded.closed_at,observed_at=excluded.observed_at`, node, c.ID, c.InboundID, c.Inbound, c.InboundType, c.Network, c.Domain, c.Destination, c.Source, c.Outbound, c.OutboundType, string(canonical(c.Chain)), c.Rule, up, down, c.StartedAt, c.ClosedAt, now())
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(node_id,connection_id) DO UPDATE SET inbound_id=excluded.inbound_id,inbound_tag=excluded.inbound_tag,inbound_type=excluded.inbound_type,network=excluded.network,domain=excluded.domain,destination=excluded.destination,source=excluded.source,outbound=excluded.outbound,outbound_type=excluded.outbound_type,chain_json=excluded.chain_json,rule=excluded.rule,upload=excluded.upload,download=excluded.download,started_at=excluded.started_at,closed_at=excluded.closed_at,observed_at=excluded.observed_at`, node, c.ID, c.InboundID, c.Inbound, c.InboundType, c.Network, c.Domain, c.Destination, c.Source, c.Outbound, c.OutboundType, string(canonical(chain)), c.Rule, up, down, c.StartedAt, c.ClosedAt, now())
 	}
-	cutoff := connectionTime(time.Now().Add(-90 * 24 * time.Hour))
-	d.Exec("DELETE FROM connections WHERE started_at<?", cutoff)
+	shouldPrune := false
+	connPruneCache.Lock()
+	if last, ok := connPruneCache.last[dbPath]; !ok || time.Since(last) >= 60*time.Second {
+		connPruneCache.last[dbPath] = time.Now()
+		shouldPrune = true
+	}
+	connPruneCache.Unlock()
+	if shouldPrune {
+		cutoff := connectionTime(time.Now().Add(-90 * 24 * time.Hour))
+		d.Exec("DELETE FROM connections WHERE started_at<?", cutoff)
+	}
 }
+
 func (t Traffic) LedgerHistory(node string) []M {
 	validIdentity(node)
 	var rows []M
@@ -204,13 +245,24 @@ func (t Traffic) LedgerHistory(node string) []M {
 	}
 	return rows
 }
+
 func (t Traffic) Failed(node, code string) {
+	t.failed(node, code, true)
+}
+
+func (t Traffic) failed(node, code string, exportNow bool) {
 	transaction(t.Path, true, func(d *DB) {
 		d.Exec("INSERT INTO observations VALUES (?,?,?) ON CONFLICT(node_id) DO UPDATE SET error_code=excluded.error_code,checked_at=excluded.checked_at", node, code, now())
 	})
-	t.WriteExport()
+	if exportNow {
+		t.WriteExport()
+	}
 }
+
 func (t Traffic) WriteExport() {
+	// Serialize the read and rename across concurrent telemetry and CLI writers.
+	unlock := fileLock(t.Export+".lock", 5*time.Second)
+	defer unlock()
 	t.writeHistoryExport()
 	nodes := M{}
 	transaction(t.Path, false, func(d *DB) {

@@ -167,14 +167,27 @@ func (v Views) Quality(nodes []string, started string, t M) M {
 	}
 	return q
 }
+
 func (v Views) Nodes() []M {
 	return v.nodesFrom(v.Telemetry())
 }
+
 func (v Views) nodesFrom(t M) []M {
 	var rows []M
+	var billingMap map[string]NodeBilling
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		rows = d.Rows("SELECT n.*,(SELECT count(DISTINCT user_id) FROM credentials WHERE node_id=n.id AND revoked=0) AS users_count,COALESCE(cs.event_seq,0) AS config_event_seq,COALESCE(cs.semantic_hash,'') AS config_semantic_hash,COALESCE(cs.state,'unknown') AS config_sync_state,cs.updated_at AS config_sync_at,NULLIF(cs.error_code,'') AS config_sync_error FROM nodes n LEFT JOIN node_config_snapshots cs ON cs.node_id=n.id ORDER BY n.id LIMIT 1001")
+		rows = d.Rows("SELECT n.*,(SELECT count(DISTINCT user_id) FROM credentials WHERE node_id=n.id AND revoked=0) AS users_count,COALESCE(cs.event_seq,0) AS config_event_seq,COALESCE(cs.semantic_hash,'') AS config_semantic_hash,COALESCE(cs.state,'unknown') AS config_sync_state,cs.updated_at AS config_sync_at,NULLIF(cs.error_code,'') AS config_sync_error,COALESCE(a.state,'') AS agent_raw_state,COALESCE(a.version,'') AS agent_version,a.last_seen AS agent_last_seen FROM nodes n LEFT JOIN node_config_snapshots cs ON cs.node_id=n.id LEFT JOIN agents a ON a.node_id=n.id ORDER BY n.id LIMIT 1001")
+		billingMap = loadNodeBillingMap(d)
 	})
+	hub := hubFor(v.Settings.ControlDB)
+	liveByNode := map[string]M{}
+	if hub != nil {
+		for _, item := range array(hub.LiveSnapshot("")["nodes"]) {
+			m := mapping(item)
+			liveByNode[str(m["node_id"])] = m
+		}
+	}
+	nowTime := time.Now()
 	result := []M{}
 	for _, r := range rows {
 		id := str(r["id"])
@@ -198,7 +211,21 @@ func (v Views) nodesFrom(t M) []M {
 		}
 		row := pick(r, "id", "name", "region", "location", "management_address", "public_host", "revision", "users_count", "config_event_seq", "config_semantic_hash", "config_sync_state", "config_sync_at", "config_sync_error")
 		row["config_external_drift"] = str(r["config_sync_state"]) != "unknown" && str(r["config_sync_state"]) != "synced"
-		// The snapshot stores entrance counters under its inbounds field.
+		agentState := "unregistered"
+		if str(r["agent_raw_state"]) != "" {
+			agentState = "offline"
+			if str(r["agent_raw_state"]) == "online" {
+				_ = Attempt(func() {
+					if time.Since(stamp(str(r["agent_last_seen"]))) <= 60*time.Second {
+						agentState = "online"
+					}
+				})
+			}
+		}
+		row["agent_state"] = agentState
+		row["agent_version"] = str(r["agent_version"])
+		row["agent_last_seen"] = r["agent_last_seen"]
+
 		inbounds := []M{}
 		inboundUpload, inboundDownload := new(big.Int), new(big.Int)
 		snapshot := mapping(t[id])["snapshot"]
@@ -213,15 +240,50 @@ func (v Views) nodesFrom(t M) []M {
 				inboundDownload.Add(inboundDownload, value)
 			}
 		}
+		outbounds := []M{}
+		outboundUpload, outboundDownload := new(big.Int), new(big.Int)
+		for _, raw := range array(mapping(snapshot)["outbounds"]) {
+			m := mapping(raw)
+			outbounds = append(outbounds, m)
+			if value, ok := new(big.Int).SetString(str(m["upload_bytes"]), 10); ok {
+				outboundUpload.Add(outboundUpload, value)
+			}
+			if value, ok := new(big.Int).SetString(str(m["download_bytes"]), 10); ok {
+				outboundDownload.Add(outboundDownload, value)
+			}
+		}
 		localUsers := []M{}
 		for _, raw := range array(mapping(snapshot)["local_users"]) {
 			localUsers = append(localUsers, mapping(raw))
 		}
-		merge(row, M{"protocols": protocols, "status": status, "version": object([]byte(str(r["connection_json"])))["version"], "quality": q, "inbounds": inbounds, "local_users": localUsers, "total_inbounds": integer(mapping(snapshot)["total_inbounds"]), "inbound_upload_bytes": inboundUpload.String(), "inbound_download_bytes": inboundDownload.String()})
+		live := liveByNode[id]
+		ver := str(object([]byte(str(r["connection_json"])))["version"])
+		if str(r["agent_version"]) != "" && str(r["agent_version"]) != "unknown" {
+			ver = str(r["agent_version"])
+		}
+		merge(row, M{
+			"protocols":               protocols,
+			"status":                  status,
+			"version":                 ver,
+			"quality":                 q,
+			"inbounds":                inbounds,
+			"outbounds":               outbounds,
+			"local_users":             localUsers,
+			"total_inbounds":          integer(mapping(snapshot)["total_inbounds"]),
+			"inbound_upload_bytes":    inboundUpload.String(),
+			"inbound_download_bytes":  inboundDownload.String(),
+			"outbound_upload_bytes":   outboundUpload.String(),
+			"outbound_download_bytes": outboundDownload.String(),
+			"upload_bps":              integer(live["upload_bps"]),
+			"download_bps":            integer(live["download_bps"]),
+			"active_connections":      integer(live["active_connections"]),
+			"billing":                 computeNodeBillingView(v.Settings, id, billingMap[id], nowTime),
+		})
 		result = append(result, row)
 	}
 	return result
 }
+
 func (v Views) Users() []M {
 	t := v.Telemetry()
 	var users []M
@@ -251,12 +313,20 @@ func (v Views) Users() []M {
 	}
 	return users
 }
+
 func (v Views) Operations() []M {
+	return v.operationsLimit(10000)
+}
+
+func (v Views) operationsLimit(limit int) []M {
 	out := []M{}
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
-		rows := d.Rows("SELECT o.*,COALESCE(s.state,'pending') AS subscription_state FROM operations o LEFT JOIN subscriptions s ON s.user_id=o.user_id WHERE o.kind<>'retire_inbound' ORDER BY created_at DESC LIMIT 10000")
+		rows := d.Rows("SELECT o.*,COALESCE(s.state,'pending') AS subscription_state FROM operations o LEFT JOIN subscriptions s ON s.user_id=o.user_id WHERE o.kind<>'retire_inbound' ORDER BY created_at DESC LIMIT ?", limit)
+		if len(rows) == 0 {
+			return
+		}
 		targets := map[string][]M{}
-		for _, r := range d.Rows("SELECT t.operation_id,t.node_id,n.name,t.state,t.message FROM operation_targets t JOIN nodes n ON n.id=t.node_id") {
+		for _, r := range d.Rows("SELECT t.operation_id,t.node_id,n.name,t.state,t.message FROM operation_targets t JOIN nodes n ON n.id=t.node_id WHERE t.operation_id IN (SELECT id FROM operations WHERE kind<>'retire_inbound' ORDER BY created_at DESC LIMIT ?)", limit) {
 			id := str(r["operation_id"])
 			targets[id] = append(targets[id], pick(r, "node_id", "name", "state", "message"))
 		}
@@ -278,6 +348,7 @@ func (v Views) Operations() []M {
 	})
 	return out
 }
+
 func (v Views) Groups() []M {
 	out := []M{}
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
@@ -291,6 +362,7 @@ func (v Views) Groups() []M {
 	})
 	return out
 }
+
 func (v Views) Alerts() []M {
 	var rows []M
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
@@ -298,6 +370,7 @@ func (v Views) Alerts() []M {
 	})
 	return rows
 }
+
 func one(rows []M, id string) M {
 	for _, r := range rows {
 		if str(r["id"]) == id {
@@ -307,6 +380,7 @@ func one(rows []M, id string) M {
 	fail("NOT_FOUND", "对象不存在", 404)
 	return nil
 }
+
 func (v Views) Subscription(id string) M {
 	var out M
 	transaction(v.Settings.ControlDB, false, func(d *DB) {
@@ -323,13 +397,38 @@ func (v Views) Subscription(id string) M {
 	})
 	return out
 }
+
 func (v Views) Overview() M {
-	nodes, users, ops, alerts := v.Nodes(), v.Users(), v.Operations(), v.Alerts()
-	r := M{"node_count": len(nodes), "online_count": 0, "offline_count": 0, "degraded_count": 0, "user_count": 0, "pending_count": 0, "as_of": now()}
+	nodes := v.Nodes()
+	var userCount, pendingCount int64
+	var openAlerts []M
+	transaction(v.Settings.ControlDB, false, func(d *DB) {
+		userCount = integer(d.Value("SELECT count(*) FROM users WHERE status='active'"))
+		pendingCount = integer(d.Value("SELECT count(*) FROM operations WHERE kind<>'retire_inbound' AND state NOT IN ('completed','failed','superseded')"))
+		openAlerts = d.Rows("SELECT id,title,description,severity,state,node_id,created_at FROM alerts WHERE state='open' ORDER BY created_at DESC LIMIT 5")
+	})
+	recentOps := v.operationsLimit(5)
+
+	var upBps, downBps, activeConns int64
+	r := M{
+		"node_count":         len(nodes),
+		"online_count":       0,
+		"offline_count":      0,
+		"degraded_count":     0,
+		"user_count":         userCount,
+		"pending_count":      pendingCount,
+		"upload_bps":         int64(0),
+		"download_bps":       int64(0),
+		"active_connections": int64(0),
+		"as_of":              now(),
+	}
 	regions := map[string]M{}
 	for _, n := range nodes {
 		status := str(n["status"])
 		r[status+"_count"] = integer(r[status+"_count"]) + 1
+		upBps += integer(n["upload_bps"])
+		downBps += integer(n["download_bps"])
+		activeConns += integer(n["active_connections"])
 		region := str(n["region"])
 		if regions[region] == nil {
 			regions[region] = M{"id": region, "name": region, "node_count": 0, "online_count": 0}
@@ -340,29 +439,20 @@ func (v Views) Overview() M {
 			rr["online_count"] = integer(rr["online_count"]) + 1
 		}
 	}
-	for _, u := range users {
-		if u["status"] == "active" {
-			r["user_count"] = integer(r["user_count"]) + 1
-		}
-	}
-	for _, o := range ops {
-		if !contains([]string{"completed", "failed", "superseded"}, str(o["state"])) {
-			r["pending_count"] = integer(r["pending_count"]) + 1
-		}
-	}
+	r["upload_bps"] = upBps
+	r["download_bps"] = downBps
+	r["active_connections"] = activeConns
+
 	rs := []M{}
 	for _, rr := range regions {
 		rs = append(rs, rr)
 	}
-	sort.Slice(rs, func(i, j int) bool { return str(rs[i]["id"]) < str(rs[j]["id"]) })
-	as := []M{}
-	for _, a := range alerts {
-		if a["state"] == "open" && len(as) < 5 {
-			as = append(as, a)
-		}
+	sort.Slice(rs, func(i, j int) bool { return str(rs[i]["id"]) < str(rs[i]["id"]) })
+	if openAlerts == nil {
+		openAlerts = []M{}
 	}
 	r["regions"] = rs
-	r["operations"] = ops[:min(5, len(ops))]
-	r["alerts"] = as
+	r["operations"] = recentOps
+	r["alerts"] = openAlerts
 	return r
 }

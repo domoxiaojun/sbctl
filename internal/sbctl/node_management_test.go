@@ -242,7 +242,10 @@ func TestDiscoverySnapshotAndCustomNames(t *testing.T) {
 		}
 	}
 	expectFault(t, "CONFIG_PATH", func() { validateConfigDir("/opt/sbctl/managed/../../etc") })
-	expectFault(t, "HOST_KEY_INVALID", func() { parseConnection(M{"address": "100.70.0.10", "host_key": "ssh-ed25519 not-a-key\nanything"}) })
+	expectFault(t, "CONNECTION_INVALID", func() { parseConnection(M{"address": "203.0.113.10"}) })
+	if got := parseConnection(M{"address": "100.70.0.10", "host_key": "legacy-ignored"}); got.Address != "100.70.0.10" {
+		t.Fatalf("unexpected parsed connection: %+v", got)
+	}
 }
 func TestGroupChangeCannotImplicitlyMoveGrants(t *testing.T) {
 	c := testControl(t)

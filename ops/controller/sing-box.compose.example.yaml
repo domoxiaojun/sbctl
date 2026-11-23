@@ -1,0 +1,16 @@
+# 受管 VPS 单容器接入模板（零 SSH、零宿主机二进制、进程内热重载与实时统计）
+services:
+  sing-box:
+    image: ${SING_BOX_IMAGE:?set an image with the embedded sbctl Agent}
+    container_name: sing-box
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      SBCTL_CONTROL_URL: http://100.70.0.9:18100
+      SBCTL_NODE_ID: node_hk
+      # 首次启动填写控制台签发的 15 分钟一次性注册码；注册成功后持久令牌自动保存在 /var/lib/sing-box/sbctl/agent.json
+      SBCTL_REGISTRATION_CODE: replace_with_registration_code
+    volumes:
+      - /etc/sing-box:/etc/sing-box
+      - /var/lib/sing-box/sbctl:/var/lib/sing-box/sbctl
+    command: ["-c", "/etc/sing-box/config.json", "run"]

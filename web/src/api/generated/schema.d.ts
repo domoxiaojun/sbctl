@@ -562,6 +562,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{id}/agent-registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__agent_registration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__agent_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__agent_poll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/receipt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__agent_receipt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__agent_telemetry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post__nodes_enroll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/traffic/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__traffic_live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/traffic/live/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get__traffic_live_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -681,6 +809,13 @@ export interface components {
             inbounds: components["schemas"]["NodeInbound"][];
             inbound_upload_bytes: string;
             inbound_download_bytes: string;
+            outbounds: components["schemas"]["NodeOutbound"][];
+            outbound_upload_bytes: string;
+            outbound_download_bytes: string;
+            upload_bps: number;
+            download_bps: number;
+            active_connections: number;
+            billing: components["schemas"]["NodeBillingView"];
             local_users: components["schemas"]["NodeLocalUser"][];
             total_inbounds: number;
             config_event_seq: number;
@@ -690,6 +825,10 @@ export interface components {
             config_sync_at: string | null;
             config_sync_error: string | null;
             config_external_drift: boolean;
+            /** @enum {string} */
+            agent_state: "online" | "offline" | "unregistered";
+            agent_version: string;
+            agent_last_seen: string | null;
         };
         /** NodePage */
         NodePage: {
@@ -772,6 +911,12 @@ export interface components {
             user_count: number;
             /** Pending Count */
             pending_count: number;
+            /** Upload Bps */
+            upload_bps: number;
+            /** Download Bps */
+            download_bps: number;
+            /** Active Connections */
+            active_connections: number;
             /** Regions */
             regions: components["schemas"]["Region"][];
             /** Operations */
@@ -897,13 +1042,7 @@ export interface components {
         };
         NodeConnection: {
             address: string;
-            port: number;
-            publish_user: string;
-            stats_user: string;
-            publish_key: string;
-            stats_key: string;
-            version: string;
-            host_key?: string;
+            version?: string;
         };
         NodeDraft: {
             id: string;
@@ -928,6 +1067,7 @@ export interface components {
             desired_image?: string;
             protocol_change?: components["schemas"]["ProtocolChange"];
             config_change?: components["schemas"]["ConfigChange"];
+            billing?: components["schemas"]["NodeBilling"];
         };
         NodeJobAccepted: {
             job_id: string;
@@ -948,6 +1088,7 @@ export interface components {
         };
         NodeConfiguration: {
             draft: components["schemas"]["NodeDraft"];
+            billing: components["schemas"]["NodeBilling"];
             version: number;
             binding: {
                 [key: string]: unknown;
@@ -961,6 +1102,7 @@ export interface components {
         NodeMetadata: {
             draft: components["schemas"]["NodeDraft"];
             version: number;
+            billing?: components["schemas"]["NodeBilling"];
         };
         NodeSaved: {
             saved: boolean;
@@ -1006,7 +1148,7 @@ export interface components {
         };
         TrafficReport: {
             /** @enum {string} */
-            scope: "inbounds" | "local";
+            scope: "inbounds" | "local" | "outbounds";
             /** @enum {string} */
             granularity: "hour" | "day" | "month";
             trend: components["schemas"]["TrafficDay"][];
@@ -1223,6 +1365,144 @@ export interface components {
             connections: number;
             upload_bytes: string;
             download_bytes: string;
+        };
+        AgentRegistration: {
+            node_id: string;
+            registration_code: string;
+            expires_at: string;
+        };
+        AgentRegisterRequest: {
+            node_id: string;
+            registration_code: string;
+            public_key: string;
+            version?: string;
+            capabilities?: {
+                [key: string]: unknown;
+            };
+        };
+        AgentRegistered: {
+            node_id: string;
+            agent_token: string;
+            control_path: string;
+        };
+        AgentPoll: {
+            node_id: string;
+            poll_after_seconds: number;
+            command: {
+                [key: string]: unknown;
+            } | null;
+        };
+        AgentReceiptRequest: {
+            command_id: string;
+            result?: {
+                [key: string]: unknown;
+            };
+            error?: {
+                [key: string]: unknown;
+            };
+        };
+        AgentReceipt: {
+            accepted: boolean;
+            command_id: string;
+        };
+        NodeOutbound: {
+            tag: string;
+            upload_bytes: string;
+            download_bytes: string;
+            started_at: string;
+            active: boolean;
+        };
+        NodeBilling: {
+            quota_bytes: string;
+            reset_day: number;
+            /** @enum {string} */
+            accounting_mode: "both" | "download_only" | "upload_only" | "max_direction";
+            warn_percent: number;
+        };
+        NodeBillingView: {
+            quota_bytes: string;
+            used_bytes: string;
+            upload_bytes: string;
+            download_bytes: string;
+            used_percent: number;
+            reset_day: number;
+            /** @enum {string} */
+            accounting_mode: "both" | "download_only" | "upload_only" | "max_direction";
+            warn_percent: number;
+            cycle_from: string;
+            cycle_to: string;
+            /** @enum {string} */
+            state: "unconfigured" | "normal" | "warning" | "exceeded";
+            /** @enum {string} */
+            completeness: "complete" | "partial" | "unavailable";
+        };
+        NodeEnrollInput: {
+            draft: components["schemas"]["NodeDraft"];
+            billing?: components["schemas"]["NodeBilling"];
+            control_url?: string;
+        };
+        NodeEnrollResult: {
+            node_id: string;
+            registration_code: string;
+            expires_at: string;
+            compose_yaml: string;
+        };
+        LiveRateItem: {
+            tag: string;
+            upload_bps: number;
+            download_bps: number;
+        };
+        LivePoint: {
+            timestamp: string;
+            upload_bps: number;
+            download_bps: number;
+            active_connections: number;
+        };
+        LiveNode: {
+            node_id: string;
+            sampled_at: string;
+            fresh: boolean;
+            upload_bps: number;
+            download_bps: number;
+            active_connections: number;
+            inbounds: components["schemas"]["LiveRateItem"][];
+            outbounds: components["schemas"]["LiveRateItem"][];
+            history: components["schemas"]["LivePoint"][];
+        };
+        LiveTraffic: {
+            as_of: string;
+            upload_bps: number;
+            download_bps: number;
+            active_connections: number;
+            nodes: components["schemas"]["LiveNode"][];
+            history: components["schemas"]["LivePoint"][];
+            active_items: components["schemas"]["TrafficConnection"][];
+        };
+        AgentTelemetryRequest: {
+            version?: string;
+            snapshot?: {
+                [key: string]: unknown;
+            };
+            connections?: {
+                [key: string]: unknown;
+            }[];
+            connection_after?: number;
+            connection_next?: number;
+            connection_gap?: boolean;
+            live?: {
+                [key: string]: unknown;
+            };
+            config_event_seq?: number;
+            semantic_hash?: string;
+            config_external?: boolean;
+        } & {
+            [key: string]: unknown;
+        };
+        AgentTelemetryResponse: {
+            accepted: boolean;
+            acked_connection_seq: number;
+            live_subscribers: number;
+            next_interval_ms: number;
         };
     };
     responses: never;
@@ -2836,8 +3116,10 @@ export interface operations {
                 q?: string;
                 /** @description 统计筛选 */
                 local_user?: string;
-                /** @description 统计筛选 */
-                scope?: string;
+                /** @description 出站分流标签筛选 */
+                outbound?: string;
+                /** @description 统计维度：入口、节点内建用户或出站分流 */
+                scope?: "inbounds" | "local" | "outbounds";
                 /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
                 from?: string;
                 /** @description UTC+8 日期 YYYY-MM-DD，首尾包含；两者同时提供，最多 366 天 */
@@ -3472,6 +3754,8 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 protocol?: string;
+                /** @description Top 聚合排序方式，默认按字节总量 */
+                rank_by?: "bytes" | "connections";
             };
             header?: never;
             path?: never;
@@ -3486,6 +3770,406 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrafficConnectionReport"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__agent_registration: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRegistration"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__agent_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRegistered"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__agent_poll: {
+        parameters: {
+            query?: {
+                wait?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentPoll"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__agent_receipt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentReceiptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentReceipt"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__agent_telemetry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentTelemetryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentTelemetryResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    post__nodes_enroll: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeEnrollInput"];
+            };
+        };
+        responses: {
+            /** @description Successful response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeEnrollResult"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description State conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__traffic_live: {
+        parameters: {
+            query?: {
+                /** @description 按节点 ID 筛选实时速率与活跃连接 */
+                node?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveTraffic"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Origin or CSRF rejected */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get__traffic_live_stream: {
+        parameters: {
+            query?: {
+                /** @description 按节点 ID 订阅 SSE 实时速率与活跃连接流 */
+                node?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream of LiveTraffic snapshots */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description Authentication required */

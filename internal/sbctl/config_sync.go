@@ -146,7 +146,7 @@ func snapshotConfig(s NodeSettings, engine Engine) NodeConfigSnapshot {
 	return NodeConfigSnapshot{s.NodeID, seq, h, hash(raw), before.Epoch(), rev, s.TemplateHash, applied, external, config, configProjection(s, config)}
 }
 
-func nodeConfigSnapshot(s NodeSettings) M {
+func nodeConfigSnapshotWithEngine(s NodeSettings, engine Engine) M {
 	unlock := fileLock(filepath.Join(s.StateDir, "management.lock"), 20*time.Second)
 	defer unlock()
 	executor := fileLock(filepath.Join(s.StateDir, "executor.lock"), 0)
@@ -156,7 +156,7 @@ func nodeConfigSnapshot(s NodeSettings) M {
 	if exists(filepath.Join(s.StateDir, "maintenance-pending.json")) {
 		fail("NODE_BUSY", "节点维护中，稍后同步配置", 409)
 	}
-	snap := snapshotConfig(s, DockerEngine{s})
+	snap := snapshotConfig(s, engine)
 	return object(canonical(snap))
 }
 
@@ -177,7 +177,6 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 		byTag[tag] = in
 	}
 	s.Endpoints = normalizeEndpoints(s.Endpoints)
-	probes := []Credential{}
 	claimed := map[string]bool{}
 	for n := range s.Endpoints {
 		e := &s.Endpoints[n]
@@ -212,22 +211,13 @@ func projectedConfig(s NodeSettings, config M) (NodeSettings, M, []Credential) {
 		for _, rawUser := range array(in["users"]) {
 			u := mapping(rawUser)
 			name := str(u["name"])
-			if name == "sys_probe" {
-				p := Credential{UserID: name, Protocol: e.Protocol, InboundID: e.InboundID, CredentialID: "sys_" + e.InboundID, Generation: 1, Password: str(u["password"]), UUID: nullable(str(u["uuid"]))}
-				p.Validate()
-				probes = append(probes, p)
-			} else if !strings.HasPrefix(name, "usr_") {
+			if !strings.HasPrefix(name, "usr_") && name != "sys_probe" {
 				kept = append(kept, rawUser)
 			}
 		}
 		in["users"] = kept
 	}
-	// Missing system probes remain local state for future controlled writes. They
-	// are not injected into the administrator's active file by adoption.
-	if len(probes) != len(s.Endpoints) && exists(s.ProbeFile) {
-		decode(read(s.ProbeFile), &probes)
-	}
-	return s, template, probes
+	return s, template, nil
 }
 
 func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption ConfigAdoption) M {
@@ -245,7 +235,7 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 	if !snap.Applied || snap.EventSeq != adoption.EventSeq || snap.SemanticHash != adoption.SemanticHash || snap.RuntimeEpoch != adoption.RuntimeEpoch {
 		fail("CONFIG_CHANGED", "节点配置或运行周期已变化，重新同步", 409)
 	}
-	next, template, probes := projectedConfig(s, snap.Config)
+	next, template, _ := projectedConfig(s, snap.Config)
 	templateBytes := append(canonical(template), '\n')
 	next.TemplateHash = hash(templateBytes)
 	r := adoption.Request
@@ -297,23 +287,11 @@ func adoptConfig(s NodeSettings, settingsPath string, engine Engine, adoption Co
 	if old != nil && old["payload_hash"] != r.PayloadHash {
 		fail("REQUEST_CONFLICT", "配置接管回执冲突", 409)
 	}
-	if old == nil {
-		if _, docker := engine.(DockerEngine); docker {
-			for _, u := range append(append([]Credential{}, r.Users...), probes...) {
-				if !(DockerEngine{next}).Probe(u, true) {
-					fail("PROBE_FAILED", "手工配置凭据的实际协议探测未通过", 503)
-				}
-			}
-		} else {
-			engine.Verify(r, nil)
-		}
-	}
 	// Durable, replayable before-images are not needed: adoption never writes the
 	// active config. Its journal repairs template/settings after an interruption.
 	journal := filepath.Join(s.StateDir, "config-adoption.json")
-	atomicWrite(journal, canonical(M{"adoption": adoption, "settings": next, "template": string(templateBytes), "probes": probes}), 0600)
+	atomicWrite(journal, canonical(M{"adoption": adoption, "settings": next, "template": string(templateBytes)}), 0600)
 	atomicWrite(next.TemplateFile, templateBytes, 0600)
-	atomicWrite(next.ProbeFile, canonical(probes), 0600)
 	settings, err := toml.Marshal(next)
 	check(err)
 	atomicWrite(settingsPath, settings, 0600)
@@ -349,20 +327,8 @@ func checkRemove(path string) {
 	}
 }
 
-func writeSafety(s NodeSettings, path string, data []byte) {
+func writeSafety(_ NodeSettings, path string, data []byte) {
 	atomicWrite(path, data, 0640)
-	if os.Geteuid() == 0 {
-		check(os.Chown(path, 0, s.GID))
-		check(os.Chown(s.SafetyDir, 0, s.GID))
-	}
-	check(os.Chmod(s.SafetyDir, 0750))
-	guard := filepath.Join(s.SafetyDir, "guard.sh")
-	if exists(guard) {
-		check(os.Chmod(guard, 0640))
-		if os.Geteuid() == 0 {
-			check(os.Chown(guard, 0, s.GID))
-		}
-	}
 }
 
 func parseNodeSnapshot(v M) NodeConfigSnapshot {
@@ -380,14 +346,20 @@ func (w *Worker) nodeLock(id string) func() {
 }
 func (w *Worker) SyncConfigSnapshots() {
 	var nodes []M
-	transaction(w.Control.Settings.ControlDB, false, func(d *DB) { nodes = d.Rows("SELECT id,connection_json FROM nodes ORDER BY id") })
-	// One unreachable node must not stop authorization processing in Run. This
-	// method is scheduled in a dispatcher slot, never on its scheduling loop.
+	transaction(w.Control.Settings.ControlDB, false, func(d *DB) {
+		nodes = d.Rows("SELECT n.id,n.connection_json,cs.event_seq,cs.semantic_hash,cs.state FROM nodes n LEFT JOIN node_config_snapshots cs ON cs.node_id=n.id ORDER BY n.id")
+	})
+	// Skip full config RPC when telemetry already confirms the same synced event sequence.
 	for _, n := range nodes {
-		if err := Attempt(func() { w.syncNodeConfig(str(n["id"]), parseConnection(object([]byte(str(n["connection_json"]))))) }); err != nil {
+		id := str(n["id"])
+		obsSeq, obsHash, obsExt := w.Control.hub().ObservedConfigEvent(id)
+		if obsSeq > 0 && !obsExt && str(n["state"]) == "synced" && integer(n["event_seq"]) == obsSeq && str(n["semantic_hash"]) == obsHash {
+			continue
+		}
+		if err := Attempt(func() { w.syncNodeConfig(id, parseConnection(object([]byte(str(n["connection_json"]))))) }); err != nil {
 			code := PublicFault(err).Code
-			if code != "LOCK_BUSY" && code != "NODE_BUSY" {
-				transaction(w.Control.Settings.ControlDB, true, func(d *DB) { d.Exec("UPDATE node_config_snapshots SET error_code=? WHERE node_id=?", code, n["id"]) })
+			if code != "LOCK_BUSY" && code != "NODE_BUSY" && code != "NODE_UNREACHABLE" {
+				transaction(w.Control.Settings.ControlDB, true, func(d *DB) { d.Exec("UPDATE node_config_snapshots SET error_code=? WHERE node_id=?", code, id) })
 			}
 		}
 	}

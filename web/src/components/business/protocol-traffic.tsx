@@ -32,6 +32,18 @@ export function ProtocolTraffic({ nodes, period = false, sort }: { nodes: Schema
   </section>
  })}</div>
 }
+export function OutboundTraffic({ nodes, period = false, sort }: { nodes: Schema['Node'][]; period?: boolean; sort?: string }) {
+ const visible = nodes.filter(node => node.outbounds.length)
+ if (!visible.length) return <DataState title="没有可显示的出站分流记录"/>
+ return <div className="space-y-5">{visible.map(node => {
+  const outbounds = sortTraffic(node.outbounds, sort, row => row.tag)
+  return <section className="panel overflow-hidden" key={node.id}>
+   <div className="p-5 space-y-3"><div className="flex flex-wrap justify-between gap-3"><div><h2><Link to="/nodes/$nodeId" params={{nodeId:node.id}} search={{}} className="hover:text-primary">{node.name}</Link></h2><p className="text-xs text-muted-foreground mt-2">匹配 {outbounds.length} 个出站标签 · 统计各路由出站（直连、WARP、链式落地等）的真实转发字节</p></div><DataFreshness quality={node.quality}/></div></div>
+   <TrafficRows rows={outbounds.map(row => ({...row,id:`${node.id}:${row.tag}`,name:row.tag,description:row.active ? '当前出站' : '已移除，保留历史'}))}/>
+   <p className="p-5 border-t text-xs text-muted-foreground">{period ? '区间' : '累计'}出站用量按 sing-box outbound 标签独立归档，便于核对直连与链式落地分流占比。</p>
+  </section>
+ })}</div>
+}
 export function LocalUserTraffic({ nodes, period = false, sort }: { nodes: Schema['Node'][]; period?: boolean; sort?: string }) {
  const rows: Row[] = nodes.flatMap(node => node.local_users.map(user => ({...user,id:`${node.id}:${user.name}`,name:user.name,description:`${node.name} · ${user.active ? '当前用户' : '已移除，保留历史'}`,quality:node.quality})))
  if (!rows.length) return <DataState title="没有匹配的本地命名用户"/>

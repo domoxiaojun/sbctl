@@ -100,3 +100,26 @@ it('按月趋势由每日数据折叠，点击月份定位到整月且不超过�
  expect(recent.trend.at(-1)!.date).toBe('2026-03')
  expect(recent.trend[0]).toMatchObject({ date: '2025-04', status: 'unavailable', upload_bytes: null })
 })
+
+import { formatRate } from '../src/lib/format'
+import { demoTrafficConnections } from '../src/demo/traffic'
+it('支持出站分流排行、CSV 导出与按字节排序的热门连接摘要', () => {
+ expect(formatRate(0)).toBe('0 B/s')
+ expect(formatRate(1536)).toBe('1.50 KiB/s')
+ const now = Date.now(), seed = fixtures(now), node = seed.nodes[0]
+ for (const other of seed.nodes.slice(1)) other.outbounds = []
+ node.outbounds = [
+  { tag: 'direct', active: true, started_at: '2026-01-01T00:00:00Z', upload_bytes: '100', download_bytes: '200' },
+  { tag: 'warp-out', active: true, started_at: '2026-01-01T00:00:00Z', upload_bytes: '1000', download_bytes: '9000' },
+ ]
+ expect(trafficSearch({ scope: 'outbounds', outbound: 'warp-out' })).toMatchObject({ scope: 'outbounds', outbound: 'warp-out' })
+ const report = demoTraffic(seed, new URLSearchParams({ scope: 'outbounds' }), now)
+ const ranking = trafficRankings(report, 'outbounds')
+ expect(ranking.identities[0]).toMatchObject({ id: 'warp-out', upload_bytes: '1000', download_bytes: '9000', filter: { outbound: 'warp-out' } })
+ const csv = trafficCsv(report, 'outbounds')
+ expect(csv.startsWith('\uFEFF节点,节点 ID,出站标签,记录状态,上传字节,下载字节,合计字节,首次纳入采集,统计范围\r\n')).toBe(true)
+ expect(csv).toContain('warp-out,当前,1000,9000,10000')
+
+ const connReport = demoTrafficConnections(seed, new URLSearchParams({ node: node.id }), now)
+ expect(connReport.summary.domains[0].name).toBe('example-1.com')
+})

@@ -1,7 +1,9 @@
 package sbctl
 
 import (
+	"bytes"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,8 +68,9 @@ func TestRetireManagedInboundThroughController(t *testing.T) {
 		w.NodeStep()
 		status := c.NodeJob(str(job["job_id"]))
 		evidence := mapping(mapping(status["result"])["retirement"])
+		cfg, _ := currentConfig(bridge.a.Settings)
 		if status["state"] != "completed" || evidence["tag"] != tag || evidence["request_id"] != job["job_id"] ||
-			len(bridge.a.Settings.Endpoints) != 1-i || len(bridge.a.Probes()) != 1-i {
+			len(bridge.a.Settings.Endpoints) != 1-i || bytes.Contains(canonical(cfg), []byte("sys_probe")) {
 			t.Fatalf("target must be retired with a versioned receipt: %v", status)
 		}
 	}
@@ -93,8 +96,6 @@ func TestCredentialsAreIsolatedByInboundID(t *testing.T) {
 		"group_id": "grp_same", "group_name": "同协议",
 	})
 	request := CreateUser{DisplayName: "同协议用户", GroupIDs: []string{"grp_same"}}
-	expectFault(t, "GRANT_EMPTY", func() { c.CreateUser("admin", "same-inbound-user-01", request, nil) })
-	markTestEndpointsVerified(c)
 	c.CreateUser("admin", "same-inbound-user-01", request, nil)
 	transaction(c.Settings.ControlDB, false, func(d *DB) {
 		rows := d.Rows("SELECT inbound_id,protocol,generation FROM credentials WHERE node_id='node_same'")
@@ -102,4 +103,32 @@ func TestCredentialsAreIsolatedByInboundID(t *testing.T) {
 			t.Fatalf("credentials must remain isolated by inbound ID: %#v", rows)
 		}
 	})
+}
+
+func TestOnDemandVerifyInboundsUpdatesProbeState(t *testing.T) {
+	c, w, b, _ := syncFixture(t)
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("DELETE FROM meta WHERE key=?", "inbound-probe:node_hk")
+	})
+	draft := draftFor(c)
+	draft.ConfigDir = "/etc/sing-box"
+	c.SubmitNodeJob("admin", "read-catalog-before-verify", NodeJobInput{Kind: "protocols", Draft: draft})
+	w.NodeStep()
+	items := array(mapping(c.NodeConfig(draft.ID)["protocol_catalog"])["items"])
+	if len(items) == 0 || mapping(items[0])["probe_state"] != "not_run" {
+		t.Fatalf("expected not_run before on-demand verify: %#v", items)
+	}
+	b.e.binding["config_hash"] = hash(read(filepath.Join(b.a.Settings.ConfigDir, "config.json")))
+	verifyJob := c.SubmitNodeJob("admin", "verify-inbounds-on-demand", NodeJobInput{Kind: "verify_inbounds", Draft: draft})
+	w.NodeStep()
+	if status := c.NodeJob(str(verifyJob["job_id"])); status["state"] != "completed" {
+		t.Fatalf("on-demand verify failed: %+v", status)
+	}
+	items = array(mapping(c.NodeConfig(draft.ID)["protocol_catalog"])["items"])
+	for _, raw := range items {
+		item := mapping(raw)
+		if boolean(item["managed"]) && item["probe_state"] != "passed" {
+			t.Fatalf("managed inbound probe_state not updated: %#v", item)
+		}
+	}
 }

@@ -10,10 +10,13 @@ type Control struct {
 	Settings Settings
 	Vault    *Vault
 	Public   PublicStore
+	Hub      *AgentHub
 }
 
 func NewControl(s Settings) *Control {
-	return &Control{s, NewVault(s.KeyFile), PublicStore{s.PublicDir}}
+	h := NewAgentHub()
+	registerHub(s.ControlDB, h)
+	return &Control{s, NewVault(s.KeyFile), PublicStore{s.PublicDir}, h}
 }
 func (c *Control) Initialize() { initialize(c.Settings.ControlDB, "control") }
 func (c *Control) replay(d *DB, actor, key, path string, body any) M {
@@ -301,7 +304,7 @@ func (c *Control) EnableUser(actor, key, user string, req EnableUser) M {
 	return result
 }
 func alert(d *DB, key, title, description, severity string, node any) {
-	d.Exec("INSERT INTO alerts(id,dedupe_key,title,description,severity,state,node_id,created_at) VALUES (?,?,?,?,?,'open',?,?) ON CONFLICT(dedupe_key) DO UPDATE SET description=excluded.description,state=CASE WHEN alerts.state='resolved' THEN 'open' ELSE alerts.state END", identifier("alert"), key, title, description, severity, node, now())
+	d.Exec("INSERT INTO alerts(id,dedupe_key,title,description,severity,state,node_id,created_at) VALUES (?,?,?,?,?,'open',?,?) ON CONFLICT(dedupe_key) DO UPDATE SET title=excluded.title,description=excluded.description,severity=excluded.severity,state=CASE WHEN alerts.state='resolved' OR alerts.severity<>excluded.severity THEN 'open' ELSE alerts.state END", identifier("alert"), key, title, description, severity, node, now())
 }
 func (c *Control) SubscriptionLink(actor, key, user string) M {
 	var result M

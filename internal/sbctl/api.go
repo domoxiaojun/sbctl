@@ -2,6 +2,7 @@ package sbctl
 
 import (
 	"crypto/hmac"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -40,7 +42,6 @@ func protect(next http.Handler) http.Handler {
 	})
 }
 
-// requestBody reads at most 32 KiB unless the route sets a larger limit.
 func requestBody(w http.ResponseWriter, r *http.Request, limit ...int64) []byte {
 	size := int64(32768)
 	if len(limit) > 0 {
@@ -105,9 +106,6 @@ func origin(s Settings, r *http.Request) {
 	}
 }
 
-// clientAddress identifies the caller for login throttling. Forwarding headers
-// count only when the TCP peer is a configured proxy, and only the part of the
-// chain those proxies appended: anything further left was supplied by the client.
 func clientAddress(s Settings, r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -129,6 +127,7 @@ func clientAddress(s Settings, r *http.Request) string {
 	}
 	return host
 }
+
 func API(c *Control) http.Handler {
 	mux := http.NewServeMux()
 	s := c.Settings
@@ -181,11 +180,83 @@ func API(c *Control) http.Handler {
 	auth("GET /api/v1/traffic/connections", func(w http.ResponseWriter, r *http.Request, a M) {
 		jsonResponse(w, 200, v.TrafficConnections(r.URL.Query()))
 	})
+	auth("GET /api/v1/traffic/live", func(w http.ResponseWriter, r *http.Request, a M) {
+		nodeFilter := strings.TrimSpace(r.URL.Query().Get("node"))
+		if nodeFilter != "" {
+			validIdentity(nodeFilter)
+		}
+		jsonResponse(w, 200, c.hub().LiveSnapshot(nodeFilter))
+	})
+	auth("GET /api/v1/traffic/live/stream", func(w http.ResponseWriter, r *http.Request, a M) {
+		nodeFilter := strings.TrimSpace(r.URL.Query().Get("node"))
+		if nodeFilter != "" {
+			validIdentity(nodeFilter)
+		}
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			fail("STREAM_UNSUPPORTED", "当前连接不支持流式响应", 503)
+		}
+		rc := http.NewResponseController(w)
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(200)
+
+		ch, unsub := c.hub().SubscribeLive()
+		defer unsub()
+
+		send := func() bool {
+			_ = rc.SetWriteDeadline(time.Now().Add(15 * time.Second))
+			payload := canonical(c.hub().LiveSnapshot(nodeFilter))
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+				return false
+			}
+			flusher.Flush()
+			return true
+		}
+		if !send() {
+			return
+		}
+		heartbeat := time.NewTicker(10 * time.Second)
+		defer heartbeat.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ch:
+				if !send() {
+					return
+				}
+			case <-heartbeat.C:
+				if Attempt(func() { Authenticate(s, cookie(r)) }) != nil {
+					return
+				}
+				if !send() {
+					return
+				}
+			}
+		}
+	})
 	auth("GET /api/v1/node-discovery", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Discovery()) })
 	auth("GET /api/v1/node-onboarding", func(w http.ResponseWriter, r *http.Request, a M) { jsonResponse(w, 200, c.Onboarding()) })
+	auth("POST /api/v1/nodes/enroll", func(w http.ResponseWriter, r *http.Request, a M) {
+		var input struct {
+			Draft      NodeDraft    `json:"draft"`
+			Billing    *NodeBilling `json:"billing,omitempty"`
+			ControlURL string       `json:"control_url,omitempty"`
+		}
+		decode(requestBody(w, r), &input)
+		baseURL := input.ControlURL
+		if baseURL == "" {
+			baseURL = r.Header.Get("Origin")
+		}
+		jsonResponse(w, 201, c.EnrollNode(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input.Draft, input.Billing, baseURL))
+	})
+	auth("POST /api/v1/nodes/{id}/agent-registration", func(w http.ResponseWriter, r *http.Request, a M) {
+		jsonResponse(w, 201, c.CreateAgentRegistration(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id")))
+	})
 	auth("POST /api/v1/node-jobs", func(w http.ResponseWriter, r *http.Request, a M) {
 		var input NodeJobInput
-		// A configuration section such as the routing rules exceeds the default.
 		decode(requestBody(w, r, 2*maxConfigSection), &input)
 		jsonResponse(w, 202, c.SubmitNodeJob(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), input))
 	})
@@ -208,13 +279,52 @@ func API(c *Control) http.Handler {
 	auth("GET /api/v1/nodes/{id}/config", func(w http.ResponseWriter, r *http.Request, a M) {
 		jsonResponse(w, 200, c.NodeConfig(r.PathValue("id")))
 	})
+	agentPeer := func(r *http.Request) string {
+		client := clientAddress(s, r)
+		if !s.allowsAgentPeer(client) {
+			fail("AGENT_ORIGIN_REJECTED", "仅允许受控管理网络接入 Agent", 403)
+		}
+		return client
+	}
+	mux.HandleFunc("POST /api/v1/agent/register", func(w http.ResponseWriter, r *http.Request) {
+		client := agentPeer(r)
+		var input M
+		decode(requestBody(w, r), &input)
+		jsonResponse(w, 201, c.AgentRegister(input, client))
+	})
+	mux.HandleFunc("GET /api/v1/agent/poll", func(w http.ResponseWriter, r *http.Request) {
+		agentPeer(r)
+		wait := 20
+		if raw := r.URL.Query().Get("wait"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 0 || n > 25 {
+				fail("INVALID_REQUEST", "轮询等待时间无效", 422)
+			}
+			wait = n
+		}
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(time.Duration(wait+10) * time.Second))
+		jsonResponse(w, 200, c.AgentPollWait(r.Context(), bearer(r), time.Duration(wait)*time.Second))
+	})
+	mux.HandleFunc("POST /api/v1/agent/receipt", func(w http.ResponseWriter, r *http.Request) {
+		agentPeer(r)
+		var input M
+		decode(requestBody(w, r, MaxDocument), &input)
+		jsonResponse(w, 200, c.AgentReceipt(bearer(r), input))
+	})
+	mux.HandleFunc("POST /api/v1/agent/telemetry", func(w http.ResponseWriter, r *http.Request) {
+		agentPeer(r)
+		var input M
+		decode(requestBody(w, r, MaxDocument), &input)
+		jsonResponse(w, 200, c.AgentTelemetry(bearer(r), input))
+	})
 	auth("POST /api/v1/nodes/{id}/metadata", func(w http.ResponseWriter, r *http.Request, a M) {
 		var input struct {
-			Draft   NodeDraft `json:"draft"`
-			Version int64     `json:"version"`
+			Draft   NodeDraft    `json:"draft"`
+			Version int64        `json:"version"`
+			Billing *NodeBilling `json:"billing,omitempty"`
 		}
 		decode(requestBody(w, r), &input)
-		jsonResponse(w, 200, c.UpdateNodeLabels(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id"), input.Version, input.Draft))
+		jsonResponse(w, 200, c.UpdateNodeLabels(str(a["admin_id"]), r.Header.Get("Idempotency-Key"), r.PathValue("id"), input.Version, input.Draft, input.Billing))
 	})
 	for _, route := range []struct {
 		path string
@@ -315,6 +425,7 @@ func API(c *Control) http.Handler {
 	})
 	return protect(mux)
 }
+
 func PublicAPI(root string) http.Handler {
 	store := PublicStore{root}
 	mux := http.NewServeMux()

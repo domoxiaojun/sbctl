@@ -3,7 +3,7 @@ import { fixtures } from '../src/demo/fixtures'
 import { calendarDate } from '../src/lib/traffic'
 import { demoTraffic, demoTrafficConnections } from '../src/demo/traffic'
 
-for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地用户 ${width}px`, async ({page},testInfo) => {
+for (const width of [375,1440]) test(`统计分类切换入口、出站与节点本地用户 ${width}px`, async ({page},testInfo) => {
  await page.setViewportSize({width,height:1000})
  const seed=fixtures(Date.now()), node=seed.nodes[0], today=calendarDate()
  node.local_users=[{name:'local-existing',active:true,started_at:new Date().toISOString(),upload_bytes:'10240',download_bytes:'20480'}]
@@ -19,13 +19,16 @@ for (const width of [375,1440]) test(`统计分类仅保留入口和节点本地
  })
  await page.goto(`http://127.0.0.1:14186/usage?node=${node.id}&from=${today}&to=${today}`)
  const scopes=page.getByRole('group',{name:'统计范围'})
- await expect(scopes.getByRole('button')).toHaveCount(2)
+ await expect(scopes.getByRole('button')).toHaveCount(3)
  await expect(scopes.getByRole('button',{name:'sbctl 用户',exact:true})).toHaveCount(0)
  await expect(scopes.getByRole('button',{name:'协议入口',exact:true})).toHaveAttribute('aria-pressed','true')
  await expect(page.getByRole('button',{name:'选择统计日期：今天'})).toBeVisible()
  await expect(page.getByRole('combobox',{name:'筛选流量节点'})).toContainText(node.name)
  await expect(page.getByRole('button',{name:/已定位用户/})).toHaveCount(0)
  await expect(page.getByRole('link',{name:'管理所选用户',exact:true})).toHaveCount(0)
+ await scopes.getByRole('button',{name:'出站分流',exact:true}).click()
+ await expect(page).toHaveURL(/scope=outbounds/)
+ await expect(scopes.getByRole('button',{name:'出站分流',exact:true})).toHaveAttribute('aria-pressed','true')
  await scopes.getByRole('button',{name:'节点本地用户',exact:true}).click()
  await expect(page.getByText('local-existing',{exact:true}).filter({visible:true})).toBeVisible()
  await page.getByRole('region',{name:'本地用户用量排行'}).getByRole('button').first().click()

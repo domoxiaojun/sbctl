@@ -1,13 +1,120 @@
 package sbctl
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
+
+type NodeSettings struct {
+	NodeID        string     `toml:"node_id" json:"node_id"`
+	StateDir      string     `toml:"state_dir" json:"state_dir"`
+	SafetyDir     string     `toml:"safety_dir" json:"safety_dir"`
+	ConfigDir     string     `toml:"config_dir" json:"config_dir"`
+	TemplateFile  string     `toml:"template_file" json:"template_file"`
+	ProbeFile     string     `toml:"probe_file" json:"probe_file"`
+	TemplateHash  string     `toml:"template_hash" json:"template_hash"`
+	Image         string     `toml:"image" json:"image"`
+	EngineBuildID string     `toml:"engine_build_id" json:"engine_build_id"`
+	Container     string     `toml:"container" json:"container"`
+	UID           int        `toml:"uid" json:"uid"`
+	GID           int        `toml:"gid" json:"gid"`
+	RevokeFailure string     `toml:"revoke_failure" json:"revoke_failure"`
+	Endpoints     []Endpoint `toml:"endpoints" json:"endpoints"`
+	ProbePort     int        `toml:"probe_port" json:"probe_port"`
+	ProbeUDPPort  int        `toml:"probe_udp_port" json:"probe_udp_port"`
+}
+
+func containerName(s string) bool { return match(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`, s) }
+func imageReference(s string) bool {
+	return match(`^[a-zA-Z0-9][a-zA-Z0-9._:/@-]{0,254}$`, s) && !strings.Contains(s, "..")
+}
+
+func LoadNodeSettings() NodeSettings {
+	s := NodeSettings{StateDir: "/opt/sbctl/data/node", SafetyDir: "/opt/sbctl/data/safety", ConfigDir: "/etc/sing-box", TemplateFile: "/opt/sbctl/config/template.json", ProbeFile: "/opt/sbctl/config/probe-credentials.json", ProbePort: 31840, ProbeUDPPort: 53190}
+	check(toml.NewDecoder(bytes.NewReader(read(env("SBCTL_NODE_CONFIG", "/opt/sbctl/config/node.toml")))).DisallowUnknownFields().Decode(&s))
+	s.Validate()
+	return s
+}
+
+func (s *NodeSettings) Validate() {
+	validIdentity(s.NodeID)
+	if !hashRE.MatchString(s.TemplateHash) || !hashRE.MatchString(s.EngineBuildID) || !imageReference(s.Image) || !containerName(s.Container) || s.UID < 1 || s.GID < 1 || !contains([]string{"stop", "preserve"}, s.RevokeFailure) || s.ProbePort < 1024 || s.ProbePort > 65000 || s.ProbeUDPPort < 1024 || s.ProbeUDPPort > 65000 || len(s.Endpoints) > 4096 {
+		fail("CONFIG_INVALID", "节点配置无效")
+	}
+	s.Endpoints = normalizeEndpoints(s.Endpoints)
+}
+
+func verifyConfigCredentials(settings NodeSettings, req NodeRequest, previous *NodeRequest) {
+	active, _ := currentConfig(settings)
+	endpoints := normalizeEndpoints(settings.Endpoints)
+	current := map[string]Credential{}
+	expectedAuth := map[string]string{}
+	for _, c := range req.Users {
+		current[c.CredentialID] = c
+		ep, ok := credentialEndpoint(endpoints, c)
+		if !ok {
+			fail("CREDENTIAL_BINDING", "凭据未绑定到有效入口", 409)
+		}
+		inbound := findInbound(active, ep.Tag)
+		if inbound == nil || str(inbound["type"]) != ep.Protocol {
+			fail("VERIFY_FAILED", "活动配置缺少受管入口", 503)
+		}
+		matched := false
+		for _, entry := range array(inbound["users"]) {
+			user := mapping(entry)
+			if str(user["name"]) != c.UserID || str(user["password"]) != c.Password {
+				continue
+			}
+			if c.Protocol == "tuic" && (c.UUID == nil || !strings.EqualFold(str(user["uuid"]), *c.UUID)) {
+				continue
+			}
+			matched = true
+			break
+		}
+		if !matched {
+			fail("VERIFY_FAILED", "活动配置缺少已授权的用户凭据", 503)
+		}
+		expectedAuth[ep.Tag+"\x00"+c.authenticationFingerprint()] = c.UserID
+	}
+	removedAuth := map[string]bool{}
+	if previous != nil {
+		for _, c := range previous.Users {
+			if _, ok := current[c.CredentialID]; !ok {
+				removedAuth[c.authenticationFingerprint()] = true
+			}
+		}
+	}
+	revokedPrints := map[string]bool{}
+	for _, fp := range req.Revoked {
+		revokedPrints[fp] = true
+	}
+	for _, raw := range array(active["inbounds"]) {
+		inbound := mapping(raw)
+		proto := str(inbound["type"])
+		if proto != "anytls" && proto != "tuic" {
+			continue
+		}
+		tag := str(inbound["tag"])
+		for _, entry := range array(inbound["users"]) {
+			user := mapping(entry)
+			candidate := Credential{Protocol: proto, Password: str(user["password"]), UUID: nullable(str(user["uuid"]))}
+			fp := candidate.authenticationFingerprint()
+			if name := str(user["name"]); name != "" && expectedAuth[tag+"\x00"+fp] == name {
+				continue
+			}
+			if removedAuth[fp] || revokedPrints[fp] {
+				fail("REVOKE_FAILED", "活动配置仍包含已撤销的认证材料")
+			}
+		}
+	}
+}
 
 type Engine interface {
 	Check(string)
@@ -16,6 +123,7 @@ type Engine interface {
 	Runtime() Runtime
 	Verify(NodeRequest, *NodeRequest)
 }
+
 type Agent struct {
 	Settings NodeSettings
 	Engine   Engine
@@ -33,8 +141,6 @@ func (a *Agent) Initialize() {
 	check(os.MkdirAll(a.Settings.StateDir, 0700))
 	a.migrateGuardManifest()
 	initialize(a.DBPath, "node")
-	// Repair historical nonterminal requests left behind by older executors.
-	// Only the highest revision can still be applied.
 	transaction(a.DBPath, true, func(d *DB) {
 		d.Exec("UPDATE requests SET state='superseded' WHERE revision<(SELECT max(revision) FROM requests) AND state NOT IN ('verified','superseded')")
 	})
@@ -60,50 +166,21 @@ func (a *Agent) migrateGuardManifest() {
 	if rev, err := strconv.ParseInt(lines[2], 10, 64); err != nil || rev < 0 {
 		return
 	}
-	pathData := []byte(fmt.Sprintf("%s\n2\n%s\n", lines[0], lines[2]))
-	writeSafety(a.Settings, path, pathData)
+	writeSafety(a.Settings, path, []byte(fmt.Sprintf("%s\n2\n%s\n", lines[0], lines[2])))
 }
 func (a *Agent) Lock() func() {
 	return fileLock(filepath.Join(a.Settings.StateDir, "security.lock"), 60*time.Second)
 }
-func (a *Agent) Guard(allow bool, configHash string, revision int64) {
+func (a *Agent) Guard(allow bool, _ string, revision int64) {
 	state := "blocked"
 	if allow {
 		state = "allowed"
 	}
-	// Format 2 deliberately carries no configuration digest. The sing-box
-	// container must be able to start after an administrator reformats or edits
-	// an unmanaged part of config.json; the helper observes that change after
-	// startup and synchronizes it with the control plane.
 	path := filepath.Join(a.Settings.SafetyDir, "manifest")
 	writeSafety(a.Settings, path, []byte(fmt.Sprintf("%s\n2\n%d\n", state, revision)))
 }
 func (a *Agent) Probes() []Credential {
-	if len(a.Settings.Endpoints) == 0 {
-		return []Credential{}
-	}
-	var probes []Credential
-	decode(read(a.Settings.ProbeFile), &probes)
-	return bindProbes(a.Settings.Endpoints, probes)
-}
-
-func bindProbes(endpoints []Endpoint, probes []Credential) []Credential {
-	active := make([]Credential, 0, len(endpoints))
-	seen := map[string]bool{}
-	for _, probe := range probes {
-		probe.Validate()
-		endpoint, ok := credentialEndpoint(endpoints, probe)
-		if !ok || seen[endpoint.InboundID] || probe.UserID != "sys_probe" {
-			fail("PROBE_IDENTITY", "系统探针无法唯一绑定到已登记入口")
-		}
-		probe.InboundID = endpoint.InboundID
-		seen[endpoint.InboundID] = true
-		active = append(active, probe)
-	}
-	if len(active) != len(endpoints) {
-		fail("PROBE_IDENTITY", "已登记入口缺少系统探针")
-	}
-	return active
+	return []Credential{}
 }
 
 func (a *Agent) Render(r NodeRequest) []byte {
@@ -116,9 +193,8 @@ func (a *Agent) Render(r NodeRequest) []byte {
 	for _, e := range a.Settings.Endpoints {
 		tags[e.Tag] = e
 	}
-	probes := a.Probes()
 	usersByTag := map[string][]Credential{}
-	for _, c := range append(append([]Credential{}, r.Users...), probes...) {
+	for _, c := range r.Users {
 		ep, ok := credentialEndpoint(a.Settings.Endpoints, c)
 		if !ok {
 			fail("CREDENTIAL_BINDING", "凭据未绑定到有效入口", 409)
@@ -139,7 +215,11 @@ func (a *Agent) Render(r NodeRequest) []byte {
 		found[tag] = true
 		users := []M{}
 		for _, fixed := range array(i["users"]) {
-			users = append(users, mapping(fixed))
+			m := mapping(fixed)
+			if str(m["name"]) == "sys_probe" {
+				continue
+			}
+			users = append(users, m)
 		}
 		for _, c := range usersByTag[tag] {
 			for _, fixed := range users {
@@ -247,8 +327,6 @@ func (a *Agent) Accept(r NodeRequest) M {
 			}
 		}
 		a.Guard(false, "", 0)
-		// Older accepted or failed work can no longer become the latest intent.
-		// Keep its document and applied_at for the next verification comparison.
 		d.Exec("UPDATE requests SET state='superseded' WHERE revision<? AND state NOT IN ('verified','superseded')", r.NodeRevision)
 		d.Exec("INSERT INTO requests(id,revision,payload_hash,document,state,accepted_at) VALUES (?,?,?,?,'accepted',?)", r.RequestID, r.NodeRevision, r.PayloadHash, string(canonical(r)), now())
 		if r.Retirement != "" {
@@ -288,8 +366,6 @@ func (a *Agent) ApplyOnce() bool {
 		if prev == nil {
 			prev = &NodeRequest{}
 		}
-		// Earlier applied requests can have exposed credentials before a valid
-		// receipt was obtained. Keep removed ones in the negative test set.
 		for _, credential := range p.Users {
 			if contains(r.Revoked, credential.Fingerprint()) {
 				prev.Users = append(prev.Users, credential)
@@ -334,21 +410,13 @@ func (a *Agent) ApplyOnce() bool {
 				a.Guard(false, "", 0)
 				path := filepath.Join(a.Settings.ConfigDir, "config.json")
 				atomicWrite(path, content, 0640)
-				if os.Geteuid() == 0 {
-					check(os.Chown(path, 0, a.Settings.GID))
-				}
 				users := []string{}
 				for _, c := range r.Users {
 					users = append(users, c.UserID)
 				}
 				runtimePath := filepath.Join(a.Settings.SafetyDir, "runtime.json")
 				atomicWrite(runtimePath, canonical(M{"node_revision": r.NodeRevision, "config_hash": ch, "users": unique(users)}), 0640)
-				if os.Geteuid() == 0 {
-					check(os.Chown(runtimePath, 0, a.Settings.GID))
-				}
 				a.Guard(true, ch, r.NodeRevision)
-				// Controlled writes are already part of the node request and do
-				// not need a second external-change adoption cycle.
 				recordControlledConfig(a.Settings, content)
 				rt := a.Engine.Runtime()
 				if !(rt.Running && rt.Epoch() != oldEpoch && rt.ConfigHash == ch && rt.NodeRevision == r.NodeRevision) {

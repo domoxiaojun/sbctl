@@ -672,3 +672,47 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 停止条件：新版镜像均已发布，可通过固定 digest 拉取，sbctl Release 程序包校验通过。生产 VPS 升级及客户端实机验收单列。
 
 完成记录：sbctl 源码 `4269b3a` 和标签 `v0.11.1` 已推送，主分支 CI、双架构发布、24 项前端单测和 46 项 Chromium 回归通过。sing-box 源码 `96e66e7` 和标签 `v1.14.4-sbctl.1` 已推送，双架构构建及容器 socket 检查通过。两个项目的版本标签与各自的 `latest` 均指向经匿名验证的双架构镜像清单。两份 sbctl 安装包 SHA-256 校验通过。生产节点升级与客户端实测仍待执行。[发行回执](docs/qa/release-v0.11.1-20261118/report.md)
+
+## 2026-11-19 yxvmhk 统计内核升级
+
+范围：按用户授权，将 yxvmhk 从旧的 sing-box 1.12.9 镜像切换到 v0.11.1 配套的 v1.14.4-sbctl.1 固定 digest，恢复自研统计 socket 和主控节点检查。先备份节点配置与 sbctl 状态，再进行一次受控重启。
+
+- [x] ✅ 已备份 yxvmhk 配置、Compose、启动守卫、节点状态和账本，并核对归档。ovhus 的控制库与流量库备份通过 SQLite 快检。
+- [x] ✅ 已切换固定内核镜像，登记节点侧实际镜像并挂载统计 socket。容器内实测版本为 1.14.4-sbctl.1，采集账号可读取原生接口，节点账本已产生新采样。
+- [x] ✅ 主控已通过独立的 `inspect` 和 `check` 任务确认实际运行绑定；检查结果为 `ready:true`，入口、本地用户快照及连接明细通过原统计通道回传。
+- [x] ✅ 已记录升级回执、旧管理登记与协议拨测边界。
+
+升级前检查：yxvmhk 已拉取发行摘要 `sha256:5882295c7b3e3646f2d7bf84702a066e00614986fe5f627dd6265a9426a179b1`。原配置通过候选内核预检，隔离容器启动后监听 AnyTLS 并通过 Unix socket 返回节点身份。两台主机的本次备份目录均为 `/opt/sbctl/backups/release-v0.11.1-yxvmhk-20261119T064746Z`。
+
+旧快照兼容：主控库中 yxvmhk 的上一份快照仍有已下线的 `users` 统计字段，v0.11.1 严格解码时返回 `INVALID_REQUEST`。核对原始校验和、备份并归档完整原件后，仅转换了该行的存储格式和校验和。主控正常同步已推进到节点原有样本（11 月 19 日 14:02:54，新加坡时间）。
+
+生产回执（新加坡时间）：以固定镜像重建 yxvmhk 的 sing-box 容器一次。节点侧登记已切换镜像，原配置文件 SHA-256 与切换前一致。采集服务通过原账本继续记账。15:04:14 主控已收到新内核 15:04:12 的样本，统计同步错误为空。主控检查任务 `njob_ce73dbc60fb1372116f1eb2bf66b4b3a`（inspect）和 `njob_6cd2b6af282a3c9ac36e2429693d171b`（check）完成，管理、运行绑定与统计均通过。登录后的连接明细接口返回 38 条记录。
+
+管理登记边界：现有 AnyTLS 活动配置缺少系统探针身份。完整 configure 会把保存在节点上的旧身份重新加入活动配置，故本次采用节点侧镜像登记与 Compose 切换，保留实际业务配置及账号。主控保留上一次完整接管的旧镜像登记，外部配置同步状态为 `pending_sync`。本次仅验证了管理与统计，协议拨测、订阅与客户端互通均未执行。
+
+## 2026-11-19 接入与统计重构首批实施
+
+- [x] ✅ 配置接管和授权入口解耦。配置同步不再自动创建或恢复 `sys_probe`，订阅授权不再把代理拨测证明作为生成前置条件；代理拨测结果保留为独立诊断状态。
+- [x] ✅ 增加 Agent 注册码、Agent token、长轮询控制命令、回执和节点在线状态表。Worker 优先使用在线 Agent，Agent 不在线时回退受限 SSH。
+- [x] ✅ 增加节点侧 Agent systemd 服务、控制循环和安装脚本，并把 Agent 能力加入节点接入说明。
+- [x] ✅ 为 Agent API、注册、轮询和回执补充 OpenAPI schema 与前端生成类型。
+- [x] ✅ 增加 Agent 注册／命令回执回归测试。
+
+## 2026-11-20 Phase 0 收口：去 `sys_probe` 统一与主动 Agent 通道修复
+
+- [x] ✅ 彻底清除 `agent.go`、`config_sync.go`、`maintenance.go`、`protocol_management.go`、`node_inspection.go`、`engine.go` 与 `inbound_verification.go` 中半途残留的 `ProbeFile` / `sys_probe` 注入与冲突，保留 `NodeSettings.ProbeFile` 字段反序列化兼容；`DockerEngine.Verify` 改为校验活动配置中的授权与撤销状态，将 `verify_inbounds` 收口为独立按需入口检查并更新 `probe_state`。
+- [x] ✅ 恢复 `sync` 服务纯统计 SSH 权限隔离，不再构造控制端或访问控制库；`agent_commands` 命令与回执改为 `Vault` 加密存储，补齐 `AgentAllowedCIDRs`（默认仅 Tailscale 与回环）来源校验、注册限流、`CreateAgentRegistration` 幂等与审计、`2 MiB` 回执上限、与动作匹配的 20s/300s 超时及超时取消机制，并将 `AgentPollWait` 改为最长 20 秒长轮询与 15 秒心跳写节流。
+- [x] ✅ 补齐节点侧 `register-agent` 命令、`agent_client.go` 统计动作分发与指数退避重试，将 `agent` / `register-agent` 置于 `LoadNodeSettings()` 之前，并修复 `sbctl-agent.service` `ReadWritePaths`。
+- [x] ✅ 节点视图与 `contracts/openapi.json` 新增 `agent_state`、`agent_version`、`agent_last_seen`，补齐前端通道状态展示、一键注册命令提示及演示模式 `/agent-registration` 接口。
+- [x] ✅ 修复并扩充 `config_sync_test.go`、`inbound_decoupling_test.go`、`agent_test.go`、`control_agent_test.go` 回归覆盖。
+
+当前边界：本机 Node 26（`~/.local/node-v26.12.1`）位于标准沙箱外，`web/src/api/generated/schema.d.ts` 生成（`pnpm api:generate`）与前端检查（`api:check` / `test` / `lint` / `typecheck` / `build`）、以及需本地环回 TCP 连接的 `TestAcceptanceLifecycleAgainstActualAPI` / `TestRegisterAgentClientAndNodeView` 需在获得确认后执行或交由 CI 验证。未部署至真实服务器，未运行本机 Docker。
+
+## 2026-11-24 主控改动验收与发版
+
+- [x] ✅ 确认发布范围为 70 个已跟踪文件的改动和 5 个新增文件，核对主分支与发行流程。
+- [x] ✅ 验收节点接入、旧数据兼容、流量统计、前端契约和发行配置，修复跨进程回执、账本换代、并发导出和流量展示等问题。
+- [ ] 运行必要验证并更新版本，提交并推送主分支与版本标签。
+- [ ] 跟进 GitHub Actions，核对双架构产物及校验回执。
+
+配套 sing-box 的内嵌 Agent 仅在独立仓库的本地改动中。主控按 `v0.12.0-rc.1` 构建，候选版单独发布，稳定 `latest` 保留。已通过 Go vet、Go 全量竞争检测、前端契约、25 项前端单测、类型检查、手机与桌面接管浏览器回归、发行工作流与 Dockerfile 静态检查。

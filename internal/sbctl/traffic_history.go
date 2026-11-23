@@ -12,12 +12,8 @@ import (
 	"time"
 )
 
-// Calendar days match the console's displayed timezone. Deltas belong to the
-// sample's ending day and ending hour; normal boundary attribution is bounded
-// by 180 seconds.
 var trafficZone = time.FixedZone("Asia/Singapore", 8*60*60)
 
-// Daily history is kept indefinitely; hourly detail only for recent weeks.
 const hourlyRetentionDays = 62
 const hourKey = "2006-01-02T15"
 
@@ -25,14 +21,10 @@ func historyPath(export, node, day string) string {
 	return filepath.Join(filepath.Dir(export), "history", node, day+".json")
 }
 
-// hoursPath is one file per node and day holding that day's hourly buckets.
 func hoursPath(export, node, day string) string {
 	return filepath.Join(filepath.Dir(export), "history", node, day+".hours.json")
 }
 
-// Exports of past days never change. Parsed documents are reused until the
-// file does, so long date ranges do not re-read hundreds of files per request.
-// Callers must treat the returned document as read-only.
 var historyCache = struct {
 	sync.Mutex
 	entries map[string]historyEntry
@@ -48,8 +40,6 @@ type historyEntry struct {
 
 const historyCacheBytes = 32 << 20
 
-// Exports are replaced by rename, so a rewritten file always has a new inode
-// even when its size and a coarse modification time happen to match.
 func inode(info os.FileInfo) uint64 {
 	if st, ok := info.Sys().(*syscall.Stat_t); ok {
 		return uint64(st.Ino)
@@ -57,7 +47,6 @@ func inode(info os.FileInfo) uint64 {
 	return 0
 }
 
-// historyDocument returns the export at path, or nil when it does not exist.
 func historyDocument(path string) M {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -89,16 +78,21 @@ func historyDocument(path string) M {
 	historyCache.bytes += info.Size()
 	return document
 }
+
 func snapshotSeries(s Snapshot) M {
-	groups := M{"inbounds": M{}, "local_users": M{}}
+	groups := M{"inbounds": M{}, "outbounds": M{}, "local_users": M{}}
 	for _, r := range s.Inbounds {
 		mapping(groups["inbounds"])[r.historyKey()] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
+	}
+	for _, r := range s.Outbounds {
+		mapping(groups["outbounds"])[r.Tag] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
 	}
 	for _, r := range s.LocalUsers {
 		mapping(groups["local_users"])[r.Name] = M{"upload_bytes": r.Upload, "download_bytes": r.Download}
 	}
 	return groups
 }
+
 func recordTrafficDay(d *DB, node string, prev M, s Snapshot) {
 	if s.SampledAt == nil {
 		return
@@ -132,19 +126,23 @@ func recordTrafficDay(d *DB, node string, prev M, s Snapshot) {
 		{"history_hours", "hour", local.Format(hourKey)},
 	} {
 		row := d.One("SELECT document FROM "+bucket.table+" WHERE node_id=? AND "+bucket.column+"=?", node, bucket.key)
-		doc := M{"from": from.Format(time.RFC3339Nano), "to": *s.SampledAt, "incomplete": false, "inbounds": M{}, "local_users": M{}}
+		doc := M{"from": from.Format(time.RFC3339Nano), "to": *s.SampledAt, "incomplete": false, "inbounds": M{}, "outbounds": M{}, "local_users": M{}}
 		if row != nil {
-			doc = pick(object([]byte(str(row["document"]))), "from", "to", "incomplete", "inbounds", "local_users")
+			doc = pick(object([]byte(str(row["document"]))), "from", "to", "incomplete", "inbounds", "outbounds", "local_users")
+			for _, g := range []string{"inbounds", "outbounds", "local_users"} {
+				if doc[g] == nil {
+					doc[g] = M{}
+				}
+			}
 			doc["to"] = *s.SampledAt
 		} else if bucket.table == "history_hours" {
 			d.Exec("DELETE FROM history_hours WHERE node_id=? AND hour<?", node, local.AddDate(0, 0, -hourlyRetentionDays).Format(hourKey))
 		}
 		doc["incomplete"] = boolean(doc["incomplete"]) || gap
 		if measured {
-			for _, group := range []string{"inbounds", "local_users"} {
+			for _, group := range []string{"inbounds", "outbounds", "local_users"} {
 				for key, raw := range mapping(after[group]) {
 					current, prior := mapping(raw), mapping(mapping(before[group])[key])
-					// A newly observed identity already contains a cumulative value. Baseline it.
 					if len(prior) == 0 {
 						if bytesInt(current["upload_bytes"]).Sign() > 0 || bytesInt(current["download_bytes"]).Sign() > 0 {
 							doc["incomplete"] = true
@@ -166,6 +164,7 @@ func recordTrafficDay(d *DB, node string, prev M, s Snapshot) {
 		d.Exec("INSERT INTO "+bucket.table+" VALUES (?,?,?,1) ON CONFLICT(node_id,"+bucket.column+") DO UPDATE SET document=excluded.document,dirty=1", node, bucket.key, string(canonical(doc)))
 	}
 }
+
 func bytesInt(v any) *big.Int {
 	n := new(big.Int)
 	if v != nil {
@@ -175,6 +174,7 @@ func bytesInt(v any) *big.Int {
 	}
 	return n
 }
+
 func (t Traffic) writeHistoryExport() {
 	var rows, days []M
 	transaction(t.Path, false, func(d *DB) {
@@ -206,7 +206,6 @@ func (t Traffic) writeHistoryExport() {
 			}
 		})
 		if firstOfDay {
-			// Retention follows the data's own clock, like the ledger rows above.
 			if written, err := time.Parse(time.DateOnly, day); err == nil {
 				pruneHourlyExports(filepath.Dir(path), written.AddDate(0, 0, -hourlyRetentionDays).Format(time.DateOnly))
 			}
@@ -214,7 +213,6 @@ func (t Traffic) writeHistoryExport() {
 	}
 }
 
-// pruneHourlyExports removes hourly files older than the retained window.
 func pruneHourlyExports(dir, cutoff string) {
 	entries, err := os.ReadDir(dir)
 	check(err)
@@ -224,6 +222,7 @@ func pruneHourlyExports(dir, cutoff string) {
 		}
 	}
 }
+
 func trafficDates(q url.Values) (time.Time, time.Time) {
 	from, to := q.Get("from"), q.Get("to")
 	if from == "" && to == "" {
@@ -237,13 +236,14 @@ func trafficDates(q url.Values) (time.Time, time.Time) {
 	}
 	return start, finish.AddDate(0, 0, 1)
 }
+
 func (v Views) TrafficReport(q url.Values) M {
 	start, end := trafficDates(q)
 	scope := q.Get("scope")
 	if scope == "" {
 		scope = "inbounds"
 	}
-	group := map[string]string{"inbounds": "inbounds", "local": "local_users"}[scope]
+	group := map[string]string{"inbounds": "inbounds", "outbounds": "outbounds", "local": "local_users"}[scope]
 	if group == "" {
 		fail("SCOPE_INVALID", "统计范围无效", 422)
 	}
@@ -266,7 +266,6 @@ func (v Views) TrafficReport(q url.Values) M {
 			trendStart = trendEnd.AddDate(0, 0, -2)
 		}
 		if granularity == "month" {
-			// The current month and the eleven before it: at most 366 days.
 			trendStart = time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, trafficZone).AddDate(0, -11, 0)
 		}
 	}
@@ -288,7 +287,7 @@ func (v Views) TrafficReport(q url.Values) M {
 		selectedNodes++
 		entry := mapping(telemetry[id])
 		period := M{"node_id": id, "history_started_at": entry["history_started_at"], "status": "cumulative"}
-		aggregates := M{"inbounds": M{}, "local_users": M{}}
+		aggregates := M{"inbounds": M{}, "outbounds": M{}, "local_users": M{}}
 		documents := map[string]M{}
 		seen, incomplete := false, false
 		for day := trendStart; day.Before(trendEnd); day = day.AddDate(0, 0, 1) {
@@ -309,13 +308,13 @@ func (v Views) TrafficReport(q url.Values) M {
 			daily[key]["known"] = integer(daily[key]["known"]) + 1
 			daily[key]["partial"] = boolean(daily[key]["partial"]) || partial
 			if !start.IsZero() {
-				for _, category := range []string{"inbounds", "local_users"} {
-					for key, raw := range mapping(doc[category]) {
-						agg := mapping(mapping(aggregates[category])[key])
+				for _, category := range []string{"inbounds", "outbounds", "local_users"} {
+					for k, raw := range mapping(doc[category]) {
+						agg := mapping(mapping(aggregates[category])[k])
 						for _, direction := range []string{"upload_bytes", "download_bytes"} {
 							agg[direction] = new(big.Int).Add(bytesInt(agg[direction]), bytesInt(mapping(raw)[direction])).String()
 						}
-						mapping(aggregates[category])[key] = agg
+						mapping(aggregates[category])[k] = agg
 					}
 				}
 			}
@@ -330,18 +329,21 @@ func (v Views) TrafficReport(q url.Values) M {
 			}
 		}
 		periods = append(periods, period)
-		for _, group := range []string{"inbounds", "local_users"} {
+		for _, g := range []string{"inbounds", "outbounds", "local_users"} {
 			filtered := []M{}
 			keyName := "tag"
-			if group == "local_users" {
+			if g == "local_users" {
 				keyName = "name"
 			}
-			for _, raw := range array(node[group]) {
+			for _, raw := range array(node[g]) {
 				row := mapping(raw)
-				if group == "local_users" && q.Get("local_user") != "" && str(row["name"]) != q.Get("local_user") {
+				if g == "local_users" && q.Get("local_user") != "" && str(row["name"]) != q.Get("local_user") {
 					continue
 				}
-				if q.Get("protocol") != "" && group == "inbounds" && str(row["protocol"]) != q.Get("protocol") {
+				if g == "outbounds" && q.Get("outbound") != "" && str(row["tag"]) != q.Get("outbound") {
+					continue
+				}
+				if q.Get("protocol") != "" && g == "inbounds" && str(row["protocol"]) != q.Get("protocol") {
 					continue
 				}
 				if q.Get("activity") == "active" && !boolean(row["active"]) || q.Get("activity") == "removed" && boolean(row["active"]) {
@@ -352,17 +354,17 @@ func (v Views) TrafficReport(q url.Values) M {
 				}
 				if !start.IsZero() {
 					key := str(row[keyName])
-					if group == "inbounds" {
+					if g == "inbounds" {
 						key = inboundHistoryKey(key, str(row["inbound_id"]), str(row["history_tag"]))
 					}
-					agg := mapping(mapping(aggregates[group])[key])
+					agg := mapping(mapping(aggregates[g])[key])
 					for _, direction := range []string{"upload_bytes", "download_bytes"} {
 						row[direction] = bytesInt(agg[direction]).String()
 					}
 				}
 				filtered = append(filtered, row)
 			}
-			node[group] = filtered
+			node[g] = filtered
 		}
 		for _, direction := range []string{"upload_bytes", "download_bytes"} {
 			sum := new(big.Int)
@@ -370,6 +372,11 @@ func (v Views) TrafficReport(q url.Values) M {
 				sum.Add(sum, bytesInt(mapping(raw)[direction]))
 			}
 			node["inbound_"+direction] = sum.String()
+			outSum := new(big.Int)
+			for _, raw := range array(node["outbounds"]) {
+				outSum.Add(outSum, bytesInt(mapping(raw)[direction]))
+			}
+			node["outbound_"+direction] = outSum.String()
 		}
 		keys := []string{}
 		identity := "tag"
@@ -419,10 +426,6 @@ func (v Views) TrafficReport(q url.Values) M {
 	return M{"nodes": result, "periods": periods, "from": q.Get("from"), "to": q.Get("to"), "timezone": "Asia/Singapore", "scope": scope, "granularity": granularity, "trend": trend, "trend_from": trendStart.Format(time.DateOnly), "trend_to": trendEnd.AddDate(0, 0, -1).Format(time.DateOnly), "as_of": now()}
 }
 
-// TrafficConnections exposes the recent routing ledger used by the traffic
-// dashboard. It is deliberately a separate endpoint so the regular usage
-// report remains small and aggregate-only. The node ledger retains the same
-// bounded 90-day window.
 func (v Views) TrafficConnections(q url.Values) M {
 	start, end := trafficDates(q)
 	if start.IsZero() {
@@ -443,6 +446,14 @@ func (v Views) TrafficConnections(q url.Values) M {
 			fail("PAGE_INVALID", "每页数量无效", 422)
 		}
 	}
+	rankBy := q.Get("rank_by")
+	if rankBy == "" {
+		rankBy = "bytes"
+	}
+	if rankBy != "bytes" && rankBy != "connections" {
+		fail("INVALID_REQUEST", "热门统计排序方式无效", 422)
+	}
+
 	filters := []string{"started_at>=?", "started_at<?"}
 	args := []any{connectionTime(start), connectionTime(end)}
 	for _, filter := range []struct{ key, column string }{{"node", "node_id"}, {"inbound", "inbound_tag"}, {"protocol", "inbound_type"}, {"outbound", "outbound"}, {"domain", "domain"}, {"rule", "rule"}} {
@@ -458,31 +469,46 @@ func (v Views) TrafficConnections(q url.Values) M {
 	}
 	where := strings.Join(filters, " AND ")
 	result := M{"items": []M{}, "page": page, "page_size": pageSize, "retention_days": 90, "from": start.UTC().Format(time.RFC3339Nano), "to": end.UTC().Format(time.RFC3339Nano), "as_of": now()}
-	readTrafficDB(v.Settings.TrafficDB, func(d *DB) {
-		gapWhere, gapArgs := "", []any{}
-		if node := q.Get("node"); node != "" {
-			gapWhere, gapArgs = " WHERE node_id=?", []any{node}
-		}
-		result["history_gap"] = integer(d.Value("SELECT COALESCE(max(history_gap),0) FROM connection_cursors"+gapWhere, gapArgs...)) != 0
-		result["total"] = integer(d.Value("SELECT count(*) FROM connections WHERE "+where, args...))
-		result["summary"] = M{"domains": connectionSummary(d, where, args, "domain"), "destinations": connectionSummary(d, where, args, "destination"), "rules": connectionSummary(d, where, args, "rule"), "outbounds": connectionSummary(d, where, args, "outbound")}
-		rows := d.Rows("SELECT * FROM connections WHERE "+where+" ORDER BY started_at DESC,connection_id DESC LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
-		items := []M{}
-		for _, row := range rows {
-			var chain []string
-			decode([]byte(str(row["chain_json"])), &chain)
-			if chain == nil {
-				chain = []string{}
+	if exists(v.Settings.TrafficDB) {
+		readTrafficDB(v.Settings.TrafficDB, func(d *DB) {
+			gapWhere, gapArgs := "", []any{}
+			if node := q.Get("node"); node != "" {
+				gapWhere, gapArgs = " WHERE node_id=?", []any{node}
 			}
-			items = append(items, M{"node_id": row["node_id"], "connection_id": row["connection_id"], "inbound_id": row["inbound_id"], "inbound": row["inbound_tag"], "inbound_type": row["inbound_type"], "network": row["network"], "domain": row["domain"], "destination": row["destination"], "source": row["source"], "outbound": row["outbound"], "outbound_type": row["outbound_type"], "chain": chain, "rule": row["rule"], "upload_bytes": fmt.Sprint(row["upload"]), "download_bytes": fmt.Sprint(row["download"]), "started_at": row["started_at"], "closed_at": row["closed_at"]})
-		}
-		result["items"] = items
-	})
+			result["history_gap"] = integer(d.Value("SELECT COALESCE(max(history_gap),0) FROM connection_cursors"+gapWhere, gapArgs...)) != 0
+			result["total"] = integer(d.Value("SELECT count(*) FROM connections WHERE "+where, args...))
+			result["summary"] = M{
+				"domains":      connectionSummary(d, where, args, "domain", rankBy),
+				"destinations": connectionSummary(d, where, args, "destination", rankBy),
+				"rules":        connectionSummary(d, where, args, "rule", rankBy),
+				"outbounds":    connectionSummary(d, where, args, "outbound", rankBy),
+			}
+			rows := d.Rows("SELECT * FROM connections WHERE "+where+" ORDER BY started_at DESC,connection_id DESC LIMIT ? OFFSET ?", append(args, pageSize, (page-1)*pageSize)...)
+			items := []M{}
+			for _, row := range rows {
+				var chain []string
+				decode([]byte(str(row["chain_json"])), &chain)
+				if chain == nil {
+					chain = []string{}
+				}
+				items = append(items, M{"node_id": row["node_id"], "connection_id": row["connection_id"], "inbound_id": row["inbound_id"], "inbound": row["inbound_tag"], "inbound_type": row["inbound_type"], "network": row["network"], "domain": row["domain"], "destination": row["destination"], "source": row["source"], "outbound": row["outbound"], "outbound_type": row["outbound_type"], "chain": chain, "rule": row["rule"], "upload_bytes": fmt.Sprint(row["upload"]), "download_bytes": fmt.Sprint(row["download"]), "started_at": row["started_at"], "closed_at": row["closed_at"]})
+			}
+			result["items"] = items
+		})
+	} else {
+		result["history_gap"] = false
+		result["total"] = int64(0)
+		result["summary"] = M{"domains": []M{}, "destinations": []M{}, "rules": []M{}, "outbounds": []M{}}
+	}
 	return result
 }
 
-func connectionSummary(d *DB, where string, args []any, column string) []M {
-	rows := d.Rows("SELECT "+column+" AS name,count(*) AS connections,COALESCE(sum(upload),0) AS upload,COALESCE(sum(download),0) AS download FROM connections WHERE "+where+" AND "+column+"<>'' GROUP BY "+column+" ORDER BY connections DESC,name LIMIT 20", args...)
+func connectionSummary(d *DB, where string, args []any, column, rankBy string) []M {
+	orderClause := "(COALESCE(sum(upload),0)+COALESCE(sum(download),0)) DESC,connections DESC,name"
+	if rankBy == "connections" {
+		orderClause = "connections DESC,(COALESCE(sum(upload),0)+COALESCE(sum(download),0)) DESC,name"
+	}
+	rows := d.Rows("SELECT "+column+" AS name,count(*) AS connections,COALESCE(sum(upload),0) AS upload,COALESCE(sum(download),0) AS download FROM connections WHERE "+where+" AND "+column+"<>'' GROUP BY "+column+" ORDER BY "+orderClause+" LIMIT 20", args...)
 	result := make([]M, 0, len(rows))
 	for _, row := range rows {
 		result = append(result, M{"name": row["name"], "connections": integer(row["connections"]), "upload_bytes": fmt.Sprint(row["upload"]), "download_bytes": fmt.Sprint(row["download"])})
@@ -490,9 +516,6 @@ func connectionSummary(d *DB, where string, args []any, column string) []M {
 	return result
 }
 
-// monthlyTrend folds daily points into calendar months. A month is complete
-// only when each of its days in the range is; days without detail make it
-// partial, and a month with no detail at all stays unavailable.
 func monthlyTrend(days []M) []M {
 	months := []M{}
 	sums := map[string][2]*big.Int{}
@@ -516,8 +539,6 @@ func monthlyTrend(days []M) []M {
 	return months
 }
 
-// hourlyTrend sums the selected series of each node per hour. Hours are filed
-// the same way as days, so the same completeness rules apply.
 func (v Views) hourlyTrend(start, end time.Time, group string, nodes []string, keys map[string][]string) []M {
 	current := time.Now()
 	if limit := current.In(trafficZone).Truncate(time.Hour).Add(time.Hour); end.After(limit) {

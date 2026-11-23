@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"embed"
-	_ "modernc.org/sqlite"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 //go:embed schema/*.sql
@@ -62,21 +64,109 @@ func (d *DB) Value(query string, args ...any) any {
 	}
 	return nil
 }
-func connect(path string, create bool) (*sql.DB, *sql.Conn) {
-	mode := "rw"
-	if create {
-		mode = "rwc"
-	}
-	return connectMode(path, mode)
+
+type pooledHandle struct {
+	path     string
+	inode    uint64
+	verified bool
+	lastUsed time.Time
+	db       *sql.DB
 }
 
-func connectMode(path, mode string) (*sql.DB, *sql.Conn) {
+const maxPooledDatabases = 16
+
+var dbPool = struct {
+	sync.Mutex
+	entries map[string]*pooledHandle
+}{entries: map[string]*pooledHandle{}}
+
+func openRawDB(path, mode string, maxConns int) *sql.DB {
 	u := url.URL{Scheme: "file", Path: path}
-	q := url.Values{"mode": {mode}, "_pragma": {"foreign_keys(1)", "busy_timeout(5000)", "synchronous(FULL)"}}
+	pragmas := []string{"foreign_keys(1)", "busy_timeout(5000)"}
+	if mode != "ro" {
+		pragmas = append(pragmas, "synchronous(FULL)", "wal_autocheckpoint(1)")
+	}
+	q := url.Values{"mode": {mode}, "_pragma": pragmas}
 	u.RawQuery = q.Encode()
 	db, e := sql.Open("sqlite", u.String())
 	check(e)
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
+	return db
+}
+
+func pooledDB(path string, write bool) (*pooledHandle, *sql.Conn) {
+	info, err := os.Stat(path)
+	if err != nil {
+		check(err)
+	}
+	ino := inode(info)
+	nowTime := time.Now()
+	key := path
+	mode := "rw"
+	if !write {
+		if f, err := os.OpenFile(path, os.O_RDWR, 0); err != nil {
+			mode = "ro"
+			key = path + "#ro"
+		} else {
+			_ = f.Close()
+		}
+	}
+
+	dbPool.Lock()
+	h, ok := dbPool.entries[key]
+	if ok && h.inode != ino {
+		_ = h.db.Close()
+		delete(dbPool.entries, key)
+		ok = false
+	}
+	if !ok {
+		for len(dbPool.entries) >= maxPooledDatabases {
+			var oldestKey string
+			var oldestTime time.Time
+			for k, cand := range dbPool.entries {
+				if oldestKey == "" || cand.lastUsed.Before(oldestTime) {
+					oldestKey, oldestTime = k, cand.lastUsed
+				}
+			}
+			if oldestKey == "" {
+				break
+			}
+			evicted := dbPool.entries[oldestKey]
+			delete(dbPool.entries, oldestKey)
+			_ = evicted.db.Close()
+		}
+		h = &pooledHandle{
+			path:     path,
+			inode:    ino,
+			lastUsed: nowTime,
+			db:       openRawDB(path, mode, 4),
+		}
+		dbPool.entries[key] = h
+	} else {
+		h.lastUsed = nowTime
+	}
+	db := h.db
+	dbPool.Unlock()
+
+	conn, e := db.Conn(context.Background())
+	check(e)
+	return h, conn
+}
+
+func invalidatePooledDB(path string) {
+	dbPool.Lock()
+	for _, k := range []string{path, path + "#ro"} {
+		if h, ok := dbPool.entries[k]; ok {
+			delete(dbPool.entries, k)
+			_ = h.db.Close()
+		}
+	}
+	dbPool.Unlock()
+}
+
+func connectMode(path, mode string) (*sql.DB, *sql.Conn) {
+	db := openRawDB(path, mode, 1)
 	conn, e := db.Conn(context.Background())
 	if e != nil {
 		db.Close()
@@ -84,36 +174,61 @@ func connectMode(path, mode string) (*sql.DB, *sql.Conn) {
 	}
 	return db, conn
 }
+
 func transaction(path string, write bool, fn func(*DB)) {
-	db, conn := connect(path, false)
-	defer db.Close()
+	h, conn := pooledDB(path, write)
 	defer conn.Close()
 	d := &DB{conn}
-	if str(d.Value("SELECT value FROM meta WHERE key='schema_version'")) != schemaVersion {
-		fail("SCHEMA_MISMATCH", "数据库版本不兼容", 503)
+
+	dbPool.Lock()
+	verified := h.verified
+	dbPool.Unlock()
+	if !verified {
+		if str(d.Value("SELECT value FROM meta WHERE key='schema_version'")) != schemaVersion {
+			conn.Close()
+			invalidatePooledDB(path)
+			fail("SCHEMA_MISMATCH", "数据库版本不兼容", 503)
+		}
+		dbPool.Lock()
+		h.verified = true
+		dbPool.Unlock()
 	}
-	begin := "BEGIN"
+
 	if write {
-		begin = "BEGIN IMMEDIATE"
+		d.Exec("PRAGMA query_only=OFF")
+		d.Exec("BEGIN IMMEDIATE")
 	} else {
 		d.Exec("PRAGMA query_only=ON")
+		d.Exec("BEGIN")
 	}
-	d.Exec(begin)
-	defer conn.ExecContext(context.Background(), "ROLLBACK")
+	committed := false
+	defer func() {
+		if !committed {
+			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
+		}
+		if !write {
+			_, _ = conn.ExecContext(context.Background(), "PRAGMA query_only=OFF")
+		}
+	}()
 	fn(d)
 	d.Exec("COMMIT")
+	committed = true
 }
+
 func initialize(path, kind string) {
 	check(os.MkdirAll(filepath.Dir(path), 0755))
 	unlock := fileLock(path+".migration.lock", 5*time.Second)
 	defer unlock()
-	db, conn := connect(path, true)
+	invalidatePooledDB(path)
+	db, conn := connectMode(path, "rwc")
 	defer db.Close()
 	defer conn.Close()
 	d := &DB{conn}
-	if str(d.Value("PRAGMA journal_mode=DELETE")) != "delete" {
-		fail("JOURNAL_MODE", "无法设置持久日志模式", 503)
+	modeStr := str(d.Value("PRAGMA journal_mode=WAL"))
+	if modeStr != "wal" && modeStr != "memory" {
+		fail("JOURNAL_MODE", "无法设置 WAL 日志模式", 503)
 	}
+	d.Exec("PRAGMA wal_autocheckpoint=1")
 	d.Exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY,value TEXT NOT NULL)")
 	existing := d.Value("SELECT value FROM meta WHERE key='schema_version'")
 	if existing != nil && str(existing) != schemaVersion && str(existing) != "2" {
@@ -145,6 +260,7 @@ func initialize(path, kind string) {
 		d.Exec("UPDATE meta SET value=? WHERE key='schema_version'", schemaVersion)
 	}
 	d.Exec("COMMIT")
+	_, _ = conn.ExecContext(context.Background(), "PRAGMA wal_checkpoint(TRUNCATE)")
 	mode := os.FileMode(0600)
 	if kind == "traffic" {
 		mode = 0640

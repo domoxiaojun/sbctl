@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.11.1",
+    "version": "0.12.0-rc.1",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -2048,12 +2048,25 @@
             "description": "统计筛选"
           },
           {
-            "name": "scope",
+            "name": "outbound",
             "in": "query",
             "schema": {
               "type": "string"
             },
-            "description": "统计筛选"
+            "description": "出站分流标签筛选"
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inbounds",
+                "local",
+                "outbounds"
+              ]
+            },
+            "description": "统计维度：入口、节点内建用户或出站分流"
           },
           {
             "name": "from",
@@ -2792,6 +2805,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "rank_by",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "bytes",
+                "connections"
+              ],
+              "default": "bytes"
+            },
+            "description": "Top 聚合排序方式，默认按字节总量"
           }
         ],
         "responses": {
@@ -2801,6 +2827,335 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrafficConnectionReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/nodes/{id}/agent-registration": {
+      "post": {
+        "operationId": "post__agent_registration",
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRegistration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/agent/register": {
+      "post": {
+        "operationId": "post__agent_register",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRegistered"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/poll": {
+      "get": {
+        "operationId": "get__agent_poll",
+        "parameters": [
+          {
+            "name": "wait",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPoll"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/receipt": {
+      "post": {
+        "operationId": "post__agent_receipt",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentReceiptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentReceipt"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/agent/telemetry": {
+      "post": {
+        "operationId": "post__agent_telemetry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentTelemetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentTelemetryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/nodes/enroll": {
+      "post": {
+        "operationId": "post__nodes_enroll",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeEnrollInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeEnrollResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "409": {
+            "description": "State conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/live": {
+      "get": {
+        "operationId": "get__traffic_live",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "按节点 ID 筛选实时速率与活跃连接"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveTraffic"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Origin or CSRF rejected"
+          },
+          "422": {
+            "description": "Invalid request"
+          }
+        }
+      }
+    },
+    "/api/v1/traffic/live/stream": {
+      "get": {
+        "operationId": "get__traffic_live_stream",
+        "parameters": [
+          {
+            "name": "node",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "按节点 ID 订阅 SSE 实时速率与活跃连接流"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream of LiveTraffic snapshots",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -3133,6 +3488,35 @@
             "type": "string",
             "pattern": "^(0|[1-9][0-9]*)$"
           },
+          "outbounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeOutbound"
+            }
+          },
+          "outbound_upload_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "outbound_download_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_connections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "billing": {
+            "$ref": "#/components/schemas/NodeBillingView"
+          },
           "local_users": {
             "type": "array",
             "items": {
@@ -3180,6 +3564,27 @@
           },
           "config_external_drift": {
             "type": "boolean"
+          },
+          "agent_state": {
+            "type": "string",
+            "enum": [
+              "online",
+              "offline",
+              "unregistered"
+            ]
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "agent_last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3200,6 +3605,13 @@
           "inbounds",
           "inbound_upload_bytes",
           "inbound_download_bytes",
+          "outbounds",
+          "outbound_upload_bytes",
+          "outbound_download_bytes",
+          "upload_bps",
+          "download_bps",
+          "active_connections",
+          "billing",
           "local_users",
           "total_inbounds",
           "config_event_seq",
@@ -3207,7 +3619,10 @@
           "config_sync_state",
           "config_sync_at",
           "config_sync_error",
-          "config_external_drift"
+          "config_external_drift",
+          "agent_state",
+          "agent_version",
+          "agent_last_seen"
         ],
         "title": "Node"
       },
@@ -3435,6 +3850,21 @@
             "minimum": 0,
             "title": "Pending Count"
           },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Upload Bps"
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Download Bps"
+          },
+          "active_connections": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Active Connections"
+          },
           "regions": {
             "items": {
               "$ref": "#/components/schemas/Region"
@@ -3471,6 +3901,9 @@
           "offline_count",
           "user_count",
           "pending_count",
+          "upload_bps",
+          "download_bps",
+          "active_connections",
           "regions",
           "operations",
           "alerts",
@@ -3802,36 +4235,12 @@
           "address": {
             "type": "string"
           },
-          "port": {
-            "type": "integer"
-          },
-          "publish_user": {
-            "type": "string"
-          },
-          "stats_user": {
-            "type": "string"
-          },
-          "publish_key": {
-            "type": "string"
-          },
-          "stats_key": {
-            "type": "string"
-          },
           "version": {
-            "type": "string"
-          },
-          "host_key": {
             "type": "string"
           }
         },
         "required": [
-          "address",
-          "port",
-          "publish_user",
-          "stats_user",
-          "publish_key",
-          "stats_key",
-          "version"
+          "address"
         ],
         "additionalProperties": false
       },
@@ -3923,6 +4332,9 @@
           },
           "config_change": {
             "$ref": "#/components/schemas/ConfigChange"
+          },
+          "billing": {
+            "$ref": "#/components/schemas/NodeBilling"
           }
         },
         "required": [
@@ -4023,6 +4435,9 @@
           "draft": {
             "$ref": "#/components/schemas/NodeDraft"
           },
+          "billing": {
+            "$ref": "#/components/schemas/NodeBilling"
+          },
           "version": {
             "type": "integer"
           },
@@ -4064,6 +4479,7 @@
         },
         "required": [
           "draft",
+          "billing",
           "version",
           "binding",
           "checked_at",
@@ -4080,6 +4496,9 @@
           },
           "version": {
             "type": "integer"
+          },
+          "billing": {
+            "$ref": "#/components/schemas/NodeBilling"
           }
         },
         "required": [
@@ -4276,7 +4695,8 @@
             "type": "string",
             "enum": [
               "inbounds",
-              "local"
+              "local",
+              "outbounds"
             ]
           },
           "granularity": {
@@ -5196,6 +5616,543 @@
           "connections",
           "upload_bytes",
           "download_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRegistration": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "registration_code": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "registration_code",
+          "expires_at"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRegisterRequest": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "registration_code": {
+            "type": "string"
+          },
+          "public_key": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "node_id",
+          "registration_code",
+          "public_key"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRegistered": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "agent_token": {
+            "type": "string"
+          },
+          "control_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "agent_token",
+          "control_path"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPoll": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "poll_after_seconds": {
+            "type": "integer"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "node_id",
+          "poll_after_seconds",
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "AgentReceiptRequest": {
+        "type": "object",
+        "properties": {
+          "command_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "command_id"
+        ],
+        "additionalProperties": false
+      },
+      "AgentReceipt": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "command_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accepted",
+          "command_id"
+        ],
+        "additionalProperties": false
+      },
+      "NodeOutbound": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "upload_bytes": {
+            "type": "string"
+          },
+          "download_bytes": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tag",
+          "upload_bytes",
+          "download_bytes",
+          "started_at",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "NodeBilling": {
+        "type": "object",
+        "properties": {
+          "quota_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "reset_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "accounting_mode": {
+            "type": "string",
+            "enum": [
+              "both",
+              "download_only",
+              "upload_only",
+              "max_direction"
+            ]
+          },
+          "warn_percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "quota_bytes",
+          "reset_day",
+          "accounting_mode",
+          "warn_percent"
+        ],
+        "additionalProperties": false
+      },
+      "NodeBillingView": {
+        "type": "object",
+        "properties": {
+          "quota_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "used_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "upload_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "download_bytes": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "used_percent": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reset_day": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31
+          },
+          "accounting_mode": {
+            "type": "string",
+            "enum": [
+              "both",
+              "download_only",
+              "upload_only",
+              "max_direction"
+            ]
+          },
+          "warn_percent": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "cycle_from": {
+            "type": "string"
+          },
+          "cycle_to": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unconfigured",
+              "normal",
+              "warning",
+              "exceeded"
+            ]
+          },
+          "completeness": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unavailable"
+            ]
+          }
+        },
+        "required": [
+          "quota_bytes",
+          "used_bytes",
+          "upload_bytes",
+          "download_bytes",
+          "used_percent",
+          "reset_day",
+          "accounting_mode",
+          "warn_percent",
+          "cycle_from",
+          "cycle_to",
+          "state",
+          "completeness"
+        ],
+        "additionalProperties": false
+      },
+      "NodeEnrollInput": {
+        "type": "object",
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/NodeDraft"
+          },
+          "billing": {
+            "$ref": "#/components/schemas/NodeBilling"
+          },
+          "control_url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "draft"
+        ],
+        "additionalProperties": false
+      },
+      "NodeEnrollResult": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "registration_code": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "compose_yaml": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "registration_code",
+          "expires_at",
+          "compose_yaml"
+        ],
+        "additionalProperties": false
+      },
+      "LiveRateItem": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string"
+          },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "tag",
+          "upload_bps",
+          "download_bps"
+        ],
+        "additionalProperties": false
+      },
+      "LivePoint": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string"
+          },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_connections": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "timestamp",
+          "upload_bps",
+          "download_bps",
+          "active_connections"
+        ],
+        "additionalProperties": false
+      },
+      "LiveNode": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "sampled_at": {
+            "type": "string"
+          },
+          "fresh": {
+            "type": "boolean"
+          },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_connections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inbounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveRateItem"
+            }
+          },
+          "outbounds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveRateItem"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LivePoint"
+            }
+          }
+        },
+        "required": [
+          "node_id",
+          "sampled_at",
+          "fresh",
+          "upload_bps",
+          "download_bps",
+          "active_connections",
+          "inbounds",
+          "outbounds",
+          "history"
+        ],
+        "additionalProperties": false
+      },
+      "LiveTraffic": {
+        "type": "object",
+        "properties": {
+          "as_of": {
+            "type": "string"
+          },
+          "upload_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "download_bps": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "active_connections": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LiveNode"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LivePoint"
+            }
+          },
+          "active_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrafficConnection"
+            }
+          }
+        },
+        "required": [
+          "as_of",
+          "upload_bps",
+          "download_bps",
+          "active_connections",
+          "nodes",
+          "history",
+          "active_items"
+        ],
+        "additionalProperties": false
+      },
+      "AgentTelemetryRequest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "snapshot": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "connection_after": {
+            "type": "integer"
+          },
+          "connection_next": {
+            "type": "integer"
+          },
+          "connection_gap": {
+            "type": "boolean"
+          },
+          "live": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "config_event_seq": {
+            "type": "integer"
+          },
+          "semantic_hash": {
+            "type": "string"
+          },
+          "config_external": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "AgentTelemetryResponse": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean"
+          },
+          "acked_connection_seq": {
+            "type": "integer"
+          },
+          "live_subscribers": {
+            "type": "integer"
+          },
+          "next_interval_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "accepted",
+          "acked_connection_seq",
+          "live_subscribers",
+          "next_interval_ms"
         ],
         "additionalProperties": false
       }

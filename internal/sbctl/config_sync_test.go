@@ -24,6 +24,13 @@ func (b *configBridge) Call(_ NodeConnection, body M, _ bool) M {
 	case "protocols":
 		config, _ := currentConfig(b.a.Settings)
 		return object(canonical(catalogFor(b.a.Settings, config, protocolState(b.a.Settings))))
+	case "verify_inbounds":
+		_, raw := currentConfig(b.a.Settings)
+		if len(b.a.Settings.Endpoints) == 0 {
+			rt := b.e.Runtime()
+			return M{"node_id": b.a.Settings.NodeID, "template_hash": b.a.Settings.TemplateHash, "endpoints": b.a.Settings.Endpoints, "protocol_status": "not_applicable", "probe_verification": M{"status": "not_applicable", "template_hash": b.a.Settings.TemplateHash, "endpoints_hash": digest(normalizeEndpoints(b.a.Settings.Endpoints)), "runtime_epoch": rt.Epoch(), "config_hash": hash(raw), "checked_at": now()}}
+		}
+		return M{"node_id": b.a.Settings.NodeID, "template_hash": b.a.Settings.TemplateHash, "endpoints": b.a.Settings.Endpoints, "protocol_status": "passed", "probe_verification": verifyManagedEndpoints(b.a.Settings, b.e, hash(raw))}
 	case "protocol_change":
 		var change ProtocolChange
 		decode(canonical(body["change"]), &change)

@@ -34,4 +34,25 @@ it('演示后端的配置片段读取与修改遵循版本和摘要保护', asyn
  const outdated = await call('/node-jobs', { kind: 'config_change', draft: (await node()).draft, expected_version: version, inspection_id: '', config_change: { base_hash: second.hash, section: 'log', content: {} } }, 'config-change-key-0003')
  expect(outdated.status).toBe(409)
  expect(((await read('config-read-key-00003')).result as Schema['NodeConfigView']).sections.log).toEqual(first.sections.log)
+
+ const enrolled = await call<Schema['NodeEnrollResult']>('/nodes/enroll', {
+  draft: {
+   id: 'node_tw',
+   name: '台湾台北',
+   region: 'tw',
+   location: '台北',
+   group_id: 'apac',
+   group_name: '亚太优选',
+   connection: { address: '100.70.0.88' },
+   container: 'sing-box',
+   config_dir: '/etc/sing-box',
+   public_host: 'tw.example.invalid',
+  },
+  billing: { quota_bytes: '1099511627776', reset_day: 15, accounting_mode: 'both', warn_percent: 85 },
+  control_url: 'http://100.64.0.1:8080',
+ }, 'enroll-tw-key-00001')
+ expect(enrolled.status).toBe(201)
+ expect(enrolled.body.compose_yaml).toContain('SBCTL_REGISTRATION_CODE:')
+ expect(state.nodes[0].id).toBe('node_tw')
+ expect(state.nodes[0].billing.reset_day).toBe(15)
 })

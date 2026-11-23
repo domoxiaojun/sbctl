@@ -79,7 +79,7 @@ test('批量归档仅选择已撤销用户', async ({ page }) => {
 test('生产管理页面显示版本冲突并重试原节点任务', async ({ page }) => {
   const data = fixtures(Date.now()), node = data.nodes[0], management = createNodeManagementDemo(() => data)
   let retries = 0, changes = 0
-  const job = { id: 'njob_test_retry', node_id: node.id, kind: 'check', state: 'failed', result: null, error_code: 'SSH_FAILED', message: '节点连接失败，请恢复后重试', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+  const job = { id: 'njob_test_retry', node_id: node.id, kind: 'check', state: 'failed', result: null, error_code: 'NODE_UNREACHABLE', message: '节点连接失败，请恢复后重试', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   await page.route('**/api/v1/**', async route => {
     const r = route.request(), path = new URL(r.url()).pathname.replace('/api/v1', '')
     if (path === '/session') return route.fulfill({ json: { admin_id: 'test', display_name: '测试', csrf_token: 'test-csrf' } })

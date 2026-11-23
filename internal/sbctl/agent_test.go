@@ -39,10 +39,7 @@ func testAgent(t *testing.T) (*Agent, *fakeEngine) {
 	dir := t.TempDir()
 	template := filepath.Join(dir, "template.json")
 	atomicWrite(template, canonical(M{"inbounds": []M{{"type": "anytls", "tag": "anytls-in", "users": []M{}}, {"type": "tuic", "tag": "tuic-in", "users": []M{}}, {"type": "direct", "tag": "legacy", "listen_port": 8080}}}), 0600)
-	probes := filepath.Join(dir, "probes.json")
-	u := "d754b796-4d5c-4b91-83e9-5f2951e85c97"
-	atomicWrite(probes, canonical([]Credential{{"sys_probe", "anytls", "cred_probe_anytls", 1, "probe-password", nil, 0, ""}, {"sys_probe", "tuic", "cred_probe_tuic", 1, "probe-password", &u, 0, ""}}), 0600)
-	s := NodeSettings{NodeID: "node_hk", StateDir: filepath.Join(dir, "state"), SafetyDir: filepath.Join(dir, "safety"), ConfigDir: filepath.Join(dir, "config"), TemplateFile: template, ProbeFile: probes, TemplateHash: hash(read(template)), Image: "ghcr.io/owner/image@sha256:" + strings.Repeat("a", 64), EngineBuildID: strings.Repeat("a", 64), Container: "sbctl-test", UID: os.Getuid(), GID: os.Getgid(), RevokeFailure: "stop", Endpoints: []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}}, ProbePort: 31840, ProbeUDPPort: 53190}
+	s := NodeSettings{NodeID: "node_hk", StateDir: filepath.Join(dir, "state"), SafetyDir: filepath.Join(dir, "safety"), ConfigDir: filepath.Join(dir, "config"), TemplateFile: template, ProbeFile: filepath.Join(dir, "missing-probes.json"), TemplateHash: hash(read(template)), Image: "ghcr.io/owner/image@sha256:" + strings.Repeat("a", 64), EngineBuildID: strings.Repeat("a", 64), Container: "sbctl-test", UID: os.Getuid(), GID: os.Getgid(), RevokeFailure: "stop", Endpoints: []Endpoint{{"anytls", "anytls-in", "example.test", 443, "example.test", []string{"h3"}, ""}, {"tuic", "tuic-in", "example.test", 443, "example.test", []string{"h3"}, ""}}, ProbePort: 31840, ProbeUDPPort: 53190}
 	f := &fakeEngine{s: s, binding: M{"config_hash": "old", "node_revision": 0, "users": []string{}}}
 	a := NewAgent(s, f)
 	a.Initialize()
@@ -199,4 +196,43 @@ func TestNodeMigratesLegacyGuardManifest(t *testing.T) {
 	if got := string(read(path)); got != "allowed\n2\n7\n" {
 		t.Fatalf("legacy manifest was not migrated: %q", got)
 	}
+}
+
+func TestVerifyConfigCredentialsChecksActiveAndRevocations(t *testing.T) {
+	a, _ := testAgent(t)
+	activePath := filepath.Join(a.Settings.ConfigDir, "config.json")
+	tuicUUID := "d754b796-4d5c-4b91-83e9-5f2951e85c97"
+	aliceAny := Credential{UserID: "usr_alice", Protocol: "anytls", CredentialID: "cred_any_1", Generation: 1, Password: "alice-any-password"}
+	aliceTuic := Credential{UserID: "usr_alice", Protocol: "tuic", CredentialID: "cred_tuic_1", Generation: 1, Password: "alice-tuic-password", UUID: &tuicUUID}
+	req := agentRequest(a, 1, []Credential{aliceAny, aliceTuic}, nil)
+
+	writeActive := func(anyUsers, tuicUsers []M) {
+		atomicWrite(activePath, canonical(M{"inbounds": []M{
+			{"type": "anytls", "tag": "anytls-in", "users": anyUsers},
+			{"type": "tuic", "tag": "tuic-in", "users": tuicUsers},
+		}}), 0640)
+	}
+
+	// Valid active config passes.
+	writeActive([]M{{"name": "usr_alice", "password": "alice-any-password"}}, []M{{"name": "usr_alice", "password": "alice-tuic-password", "uuid": tuicUUID}})
+	verifyConfigCredentials(a.Settings, req, nil)
+
+	// Missing authorized credential fails.
+	writeActive([]M{}, []M{{"name": "usr_alice", "password": "alice-tuic-password", "uuid": tuicUUID}})
+	expectFault(t, "VERIFY_FAILED", func() { verifyConfigCredentials(a.Settings, req, nil) })
+
+	// Lingering revoked credential from previous request or revoked list fails.
+	revokeReq := agentRequest(a, 2, nil, []string{aliceAny.Fingerprint()})
+	writeActive([]M{{"name": "usr_alice", "password": "alice-any-password"}}, []M{})
+	expectFault(t, "REVOKE_FAILED", func() { verifyConfigCredentials(a.Settings, revokeReq, &req) })
+	expectFault(t, "REVOKE_FAILED", func() { verifyConfigCredentials(a.Settings, revokeReq, nil) })
+
+	// Externally reintroduced credential (same secret, ExternalSeq > 0) passes even with historical revocation fingerprint.
+	reintro := aliceAny
+	reintro.CredentialID = "cred_any_2"
+	reintro.Generation = 2
+	reintro.ExternalSeq = 5
+	reintroReq := agentRequest(a, 3, []Credential{reintro}, []string{aliceAny.Fingerprint()})
+	writeActive([]M{{"name": "usr_alice", "password": "alice-any-password"}}, []M{})
+	verifyConfigCredentials(a.Settings, reintroReq, &revokeReq)
 }

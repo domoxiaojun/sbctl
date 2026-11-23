@@ -104,3 +104,24 @@ CREATE TABLE IF NOT EXISTS node_config_snapshots (
  config_ciphertext TEXT NOT NULL, projection_ciphertext TEXT NOT NULL,
  state TEXT NOT NULL, error_code TEXT, checked_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS agent_registrations (
+ id TEXT PRIMARY KEY, node_id TEXT NOT NULL UNIQUE, code_hash TEXT NOT NULL UNIQUE,
+ expires_at REAL NOT NULL, used_at TEXT, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agents (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id), token_hash TEXT NOT NULL UNIQUE,
+ public_key TEXT NOT NULL, version TEXT NOT NULL, capabilities_json TEXT NOT NULL DEFAULT '{}',
+ last_seen TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'online'
+);
+CREATE TABLE IF NOT EXISTS agent_commands (
+ id TEXT PRIMARY KEY, node_id TEXT NOT NULL REFERENCES nodes(id), action TEXT NOT NULL,
+ body_ciphertext TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'queued', response_ciphertext TEXT,
+ error_code TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ lease_until REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS agent_commands_ready ON agent_commands(node_id,state,created_at);
+CREATE TABLE IF NOT EXISTS node_billing (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id), quota_bytes INTEGER NOT NULL DEFAULT 0,
+ reset_day INTEGER NOT NULL DEFAULT 1, accounting_mode TEXT NOT NULL DEFAULT 'both',
+ warn_percent INTEGER NOT NULL DEFAULT 80, updated_at TEXT NOT NULL
+);

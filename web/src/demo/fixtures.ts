@@ -9,7 +9,69 @@ export function fixtures(now: number) {
     index++
     const id = `${region.id}-${String(i + 1).padStart(2, '0')}`
     const status = ['us-03', 'hk-04'].includes(id) ? 'offline' : id === 'jp-05' ? 'degraded' : 'online'
-    return { id, name: `${region.name} ${String(i + 1).padStart(2, '0')}`, region: region.id, location: region.name, management_address: `100.64.10.${index}`, public_host: `${id}.example.invalid`, protocols: ['AnyTLS', 'TUIC v5'], status, version: '1.14.4', revision: 24 + i, users_count: 0, local_users: [], total_inbounds: 2, inbound_upload_bytes: '0', inbound_download_bytes: '0', config_event_seq: 1, config_semantic_hash: '0'.repeat(64), config_sync_state: 'synced', config_sync_error: null, config_external_drift: false, config_sync_at: new Date(now).toISOString(), inbounds: [{ tag: 'anytls-in', protocol: 'anytls', port: 5443, active: true, started_at: new Date(now).toISOString(),  upload_bytes: '0', download_bytes: '0' }, { tag: 'tuic-in', protocol: 'tuic', port: 4443, active: true, started_at: new Date(now).toISOString(),  upload_bytes: '0', download_bytes: '0' }], quality: quality(status !== 'online', id === 'jp-05') }
+    const agent_state = status === 'offline' ? 'offline' : index % 5 === 0 ? 'unregistered' : 'online'
+    const online = status === 'online'
+    const upBps = online ? (index * 42_000) : 0
+    const downBps = online ? (index * 310_000) : 0
+    const activeConns = online ? (3 + (index % 9)) : 0
+    const quotaBytes = (1099511627776n).toString() // 1 TiB
+    const usedBytes = (BigInt(index * 45) * 1073741824n).toString()
+    const usedPercent = Math.round(Number(BigInt(usedBytes) * 10000n / BigInt(quotaBytes))) / 100
+    const billingState: Schema['NodeBillingView']['state'] = usedPercent >= 100 ? 'exceeded' : usedPercent >= 80 ? 'warning' : 'normal'
+    return {
+      id,
+      name: `${region.name} ${String(i + 1).padStart(2, '0')}`,
+      region: region.id,
+      location: region.name,
+      management_address: `100.64.10.${index}`,
+      public_host: `${id}.example.invalid`,
+      protocols: ['AnyTLS', 'TUIC v5'],
+      status,
+      version: '1.14.4-sbctl.2',
+      revision: 24 + i,
+      users_count: 0,
+      local_users: [],
+      total_inbounds: 2,
+      inbound_upload_bytes: '0',
+      inbound_download_bytes: '0',
+      outbounds: [
+        { tag: 'direct', active: true, started_at: new Date(now).toISOString(), upload_bytes: '0', download_bytes: '0' },
+        { tag: 'warp-out', active: true, started_at: new Date(now).toISOString(), upload_bytes: '0', download_bytes: '0' },
+      ],
+      outbound_upload_bytes: '0',
+      outbound_download_bytes: '0',
+      upload_bps: upBps,
+      download_bps: downBps,
+      active_connections: activeConns,
+      billing: {
+        quota_bytes: quotaBytes,
+        used_bytes: usedBytes,
+        upload_bytes: (BigInt(usedBytes) / 4n).toString(),
+        download_bytes: (BigInt(usedBytes) * 3n / 4n).toString(),
+        used_percent: usedPercent,
+        reset_day: 1,
+        accounting_mode: 'both',
+        warn_percent: 80,
+        cycle_from: '2026-11-01',
+        cycle_to: '2026-11-30',
+        state: billingState,
+        completeness: 'complete',
+      },
+      config_event_seq: 1,
+      config_semantic_hash: '0'.repeat(64),
+      config_sync_state: 'synced',
+      config_sync_error: null,
+      config_external_drift: false,
+      config_sync_at: new Date(now).toISOString(),
+      agent_state,
+      agent_version: agent_state === 'unregistered' ? '' : '1.14.4-sbctl.2',
+      agent_last_seen: agent_state === 'unregistered' ? null : time(status === 'offline' ? 600 : 5),
+      inbounds: [
+        { tag: 'anytls-in', protocol: 'anytls', port: 5443, active: true, started_at: new Date(now).toISOString(), upload_bytes: '0', download_bytes: '0' },
+        { tag: 'tuic-in', protocol: 'tuic', port: 4443, active: true, started_at: new Date(now).toISOString(), upload_bytes: '0', download_bytes: '0' },
+      ],
+      quality: quality(status !== 'online', id === 'jp-05'),
+    }
   }))
   const groups: Schema['Group'][] = [{ id: 'apac', name: '亚太优选', node_ids: nodes.filter(n => ['sg', 'jp', 'hk'].includes(n.region)).map(n => n.id) }, { id: 'global', name: '全部节点', node_ids: nodes.map(n => n.id) }, { id: 'sg', name: '新加坡', node_ids: nodes.filter(n => n.region === 'sg').map(n => n.id) }]
   const names = ['阿川', '小林', 'Mia', '陈同学', 'Alex', '一木', '小舟', '何先生', 'Nora', '晚风', '周同学', '远山']

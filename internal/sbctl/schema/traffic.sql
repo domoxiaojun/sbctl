@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS connections (
  PRIMARY KEY(node_id, connection_id)
 );
 CREATE INDEX IF NOT EXISTS traffic_connections_started ON connections(started_at);
+CREATE INDEX IF NOT EXISTS traffic_connections_node_started ON connections(node_id,started_at DESC);
+CREATE INDEX IF NOT EXISTS traffic_connections_domain ON connections(started_at,domain);
+CREATE INDEX IF NOT EXISTS traffic_connections_outbound ON connections(started_at,outbound);
+CREATE INDEX IF NOT EXISTS traffic_connections_rule ON connections(started_at,rule);
 CREATE TABLE IF NOT EXISTS connection_cursors (
  node_id TEXT PRIMARY KEY, ledger_id TEXT NOT NULL, seq INTEGER NOT NULL,
  history_gap INTEGER NOT NULL DEFAULT 0

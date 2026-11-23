@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
 	"sbctl/contracts"
 	"strconv"
@@ -64,6 +63,7 @@ func serving(ctx context.Context, address string, handler http.Handler) {
 		check(err)
 	}
 }
+
 func ControllerMain(args []string) int {
 	return mainBoundary(func(ctx context.Context) {
 		if len(args) == 0 {
@@ -81,7 +81,7 @@ func ControllerMain(args []string) int {
 			emit(M{"version": Version, "go": runtime.Version()})
 			return
 		case "help", "--help", "-h":
-			fmt.Println("sbctl serve [--listen :8080] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | reset-password --password-stdin | reset-password --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker [--parallel N] | sync [--parallel N] | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
+			fmt.Println("sbctl serve [--listen :8080] [--parallel 4] | subscriptions [--listen :8080] | initialize --password-stdin | initialize --password-file PATH | reset-password --password-stdin | reset-password --password-file PATH | register | import-user NAME GROUP REQUEST_KEY | create-user NAME GROUP | disable-user ID REVISION REASON | enable-user ID REVISION REASON REQUEST_KEY | preview-grants ID REVISION GROUPS | update-grants ID REVISION GROUPS REASON PREVIEW_HASH REQUEST_KEY | worker [--parallel N] | sync [--parallel N] | doctor | export-openapi PATH | acceptance --base-url URL --password-file PATH --group GROUP")
 			return
 		case "export-openapi":
 			if len(rest) != 1 {
@@ -115,6 +115,8 @@ func ControllerMain(args []string) int {
 			}
 			c := NewControl(s)
 			c.Initialize()
+			t := Traffic{s.TrafficDB, s.TrafficSnapshot}
+			t.Initialize()
 			password := ""
 			if *fromStdin {
 				password = strings.TrimSuffix(string(stdin(8192)), "\n")
@@ -165,6 +167,8 @@ func ControllerMain(args []string) int {
 			validIdentity(nodeID)
 			validIdentity(previousID)
 			validIdentity(expectedID)
+			c := NewControl(s)
+			c.Initialize()
 			var connection NodeConnection
 			transaction(s.ControlDB, false, func(d *DB) {
 				node := d.One("SELECT connection_json FROM nodes WHERE id=?", nodeID)
@@ -174,30 +178,12 @@ func ControllerMain(args []string) int {
 				connection = parseConnection(object([]byte(str(node["connection_json"]))))
 			})
 			var snapshot Snapshot
-			decode(canonical((SSH{s.SSHDir}).Call(connection, nil, true)), &snapshot)
+			decode(canonical((AgentTransport{Control: c}).Call(connection, nil, true)), &snapshot)
 			if snapshot.LedgerID != expectedID {
-				fail("LEDGER_CHANGED", "节点统计通道返回的账本身份与指定的新身份不一致")
+				fail("LEDGER_CHANGED", "节点控制通道返回的账本身份与指定的新身份不一致")
 			}
 			t.RegisterReplacement(nodeID, previousID, snapshot)
 			emit(M{"node_id": nodeID, "previous_ledger_id": previousID, "ledger_id": expectedID})
-		case "sync":
-			f := argsFor(cmd, rest)
-			parallel := f.Int("parallel", 4, "")
-			parsed(f, rest, 0)
-			if *parallel < 1 || *parallel > 32 {
-				fail("CLI_USAGE", "并行数必须在 1 到 32 之间")
-			}
-			t := Traffic{s.TrafficDB, s.TrafficSnapshot}
-			t.Initialize()
-			ssh := SSH{s.SSHDir}
-			for {
-				var nodes []any
-				_ = Attempt(func() { nodes = array(object(read(s.InventoryFile))["nodes"]) })
-				SyncNodes(ctx, t, ssh, nodes, *parallel)
-				if stopped(ctx, time.Duration(s.SyncSeconds)*time.Second) {
-					return
-				}
-			}
 		default:
 			c := NewControl(s)
 			c.Initialize()
@@ -205,9 +191,39 @@ func ControllerMain(args []string) int {
 			case "serve":
 				f := argsFor(cmd, rest)
 				listen := f.String("listen", ":8080", "")
+				parallel := f.Int("parallel", 4, "")
+				embeddedWorker := f.Bool("embedded-worker", true, "")
 				parsed(f, rest, 0)
+				if *parallel < 1 || *parallel > 32 {
+					fail("CLI_USAGE", "并行数必须在 1 到 32 之间")
+				}
+				t := Traffic{s.TrafficDB, s.TrafficSnapshot}
+				t.Initialize()
 				_ = c.Doctor()
+				if *embeddedWorker {
+					w := NewWorker(c, nil)
+					w.ExportInventory()
+					go w.Run(ctx, *parallel)
+				}
 				serving(ctx, *listen, API(c))
+			case "sync":
+				f := argsFor(cmd, rest)
+				parallel := f.Int("parallel", 4, "")
+				parsed(f, rest, 0)
+				if *parallel < 1 || *parallel > 32 {
+					fail("CLI_USAGE", "并行数必须在 1 到 32 之间")
+				}
+				t := Traffic{s.TrafficDB, s.TrafficSnapshot}
+				t.Initialize()
+				tr := AgentTransport{Control: c}
+				for {
+					var nodes []any
+					_ = Attempt(func() { nodes = array(object(read(s.InventoryFile))["nodes"]) })
+					SyncNodes(ctx, t, tr, nodes, *parallel)
+					if stopped(ctx, time.Duration(s.SyncSeconds)*time.Second) {
+						return
+					}
+				}
 			case "doctor":
 				emit(c.Doctor())
 			case "register":
@@ -269,149 +285,6 @@ func ControllerMain(args []string) int {
 			default:
 				fail("CLI_USAGE", "未知命令，请运行 help")
 			}
-		}
-	})
-}
-func NodeMain(args []string) int {
-	return mainBoundary(func(ctx context.Context) {
-		if len(args) == 0 {
-			args = []string{"help"}
-		}
-		cmd, rest := args[0], args[1:]
-		if cmd == "help" || cmd == "--help" {
-			fmt.Println("sbctl-node initialize | rpc | runtime | worker | retry | collect [--initialize-ledger] NODE_ID | prepare | install-guard | probe [--udp] | version")
-			return
-		}
-		if cmd == "version" {
-			emit(M{"version": Version, "go": runtime.Version()})
-			return
-		}
-		if cmd == "prepare" {
-			PrepareNode(object(stdin(65536)))
-			return
-		}
-		if cmd == "stats-rpc" {
-			body := stdin(1024)
-			if len(body) == 0 {
-				fmt.Print(string(read("/opt/sbctl/data/ledger/export.json")))
-				return
-			}
-			v := object(body)
-			if len(v) == 2 && v["action"] == "connections" {
-				after := integer(v["after"])
-				if after < 0 {
-					fail("ACTION_REJECTED", "连接明细游标无效")
-				}
-				emit((Ledger{Path: "/opt/sbctl/data/ledger/ledger.db"}).connectionPage(after))
-				return
-			}
-			if len(v) != 1 || v["action"] != "inspect" {
-				fail("ACTION_REJECTED", "统计动作无效")
-			}
-			response := readNativeStats("capabilities")
-			emit(M{"ready": true, "version": Version, "schema_version": response.SchemaVersion, "node_id": response.NodeID, "runtime_epoch": response.RuntimeEpoch})
-			return
-		}
-		if cmd == "collect" {
-			f := argsFor(cmd, rest)
-			init := f.Bool("initialize-ledger", false, "")
-			parsed(f, rest, 1)
-			root := env("SBCTL_LEDGER_DIR", "/opt/sbctl/data/ledger")
-			l := Ledger{filepath.Join(root, "ledger.db"), filepath.Join(root, "export.json"), f.Arg(0)}
-			if *init {
-				l.Create()
-				return
-			}
-			if !exists(l.Path) {
-				fail("NODE_STATE_LOST", "节点账本缺失，拒绝自动重建")
-			}
-			initialize(l.Path, "ledger")
-			for {
-				delay := 5 * time.Second
-				err := Attempt(func() {
-					var before, after Runtime
-					decode(runCommand([]string{"/usr/bin/sudo", "-n", "/usr/local/sbin/sbctl-runtime"}, nil, 15*time.Second), &before)
-					epoch, afterSeq := l.connectionCursor()
-					native := readNativeStatsSince("snapshot", epoch, afterSeq)
-					decode(runCommand([]string{"/usr/bin/sudo", "-n", "/usr/local/sbin/sbctl-runtime"}, nil, 15*time.Second), &after)
-					if native.NodeID != l.NodeID || before.Statistics == nil || native.Counters == nil {
-						fail("STATS_PROTOCOL", "自研统计接口与节点运行清单不一致")
-					}
-					l.IngestWithConnections(before, after, nativeStatsRows(native, before.Statistics), nativeStatsConnections(native), native.RuntimeEpoch, native.ConnectionSequence, native.ConnectionsTruncated, false)
-					if native.More {
-						delay = 0
-					}
-				})
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "collector:", PublicFault(err).Code)
-					_ = Attempt(l.WriteExport)
-				}
-				if stopped(ctx, delay) {
-					return
-				}
-			}
-		}
-		if cmd == "rpc" {
-			var result M
-			err := Attempt(func() { result = NodeRPC(object(stdin(MaxDocument))) })
-			if err != nil {
-				emit(M{"error": PublicFault(err)})
-			} else {
-				emit(result)
-			}
-			return
-		}
-
-		s := LoadNodeSettings()
-		engine := DockerEngine{s}
-		a := NewAgent(s, engine)
-		switch cmd {
-		case "initialize":
-			a.Initialize()
-		case "runtime":
-			emit(engine.Runtime())
-		case "retry":
-			a.Retry()
-		case "install-guard":
-			InstallGuard(s)
-		case "probe":
-			f := argsFor(cmd, rest)
-			udp := f.Bool("udp", false, "")
-			parsed(f, rest, 0)
-			var creds []Credential
-			decode(stdin(65536), &creds)
-			for _, c := range creds {
-				c.Validate()
-				if !engine.Probe(c, *udp) {
-					fail("PROBE_FAILED", "代理请求未通过")
-				}
-			}
-			emit(M{"probe": "passed", "protocols": len(creds), "udp": *udp})
-		case "worker":
-			a.Initialize()
-			for {
-				delay := 250 * time.Millisecond
-				err := Attempt(func() {
-					unlock := fileLock(filepath.Join(s.StateDir, "executor.lock"), 0)
-					defer unlock()
-					fresh := LoadNodeSettings()
-					a = NewAgent(fresh, DockerEngine{fresh})
-					a.ApplyOnce()
-					r := mapping(a.Status()["latest"])
-					if r["state"] == "applied" && r["error_code"] != nil {
-						delay = 10 * time.Second
-					}
-				})
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "node_worker:", PublicFault(err).Code)
-					delay = 5 * time.Second
-				}
-				if stopped(ctx, delay) {
-					return
-				}
-			}
-		default:
-			fail("CLI_USAGE", "未知节点命令")
 		}
 	})
 }

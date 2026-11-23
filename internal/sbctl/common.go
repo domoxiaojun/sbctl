@@ -24,7 +24,7 @@ import (
 type M = map[string]any
 
 const MaxDocument = 2 * 1024 * 1024
-const Version = "0.11.1"
+const Version = "0.12.0-rc.1"
 
 type Fault struct {
 	Code    string `json:"code"`

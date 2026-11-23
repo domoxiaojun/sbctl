@@ -14,42 +14,16 @@ x-common: &common
 services:
   api:
     <<: *common
-    group_add: ["10002"]
     ports: [127.0.0.1:18100:8080, 100.70.0.9:18100:8080]
     volumes:
       - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
       - /opt/sbctl/config/master.key:/run/secrets/master.key:ro
-      - /opt/sbctl/data/traffic:/data/traffic:ro
-      - /opt/sbctl/data/control:/data/control
-      - /opt/sbctl/data/publication:/data/publication
-      - /opt/sbctl/data/telemetry:/data/telemetry:ro
-      - /opt/sbctl/data/discovery:/data/discovery:ro
-      - /opt/sbctl/config/ssh/publish_ed25519.pub:/run/secrets/ssh/publish_ed25519.pub:ro
-      - /opt/sbctl/config/ssh/stats_ed25519.pub:/run/secrets/ssh/stats_ed25519.pub:ro
-  worker:
-    <<: *common
-    command: [worker]
-    volumes:
-      - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
-      - /opt/sbctl/config/master.key:/run/secrets/master.key:ro
-      - /opt/sbctl/config/ssh/publish_ed25519:/run/secrets/ssh/publish_ed25519:ro
-      - /opt/sbctl/config/ssh/worker_stats_ed25519:/run/secrets/ssh/stats_ed25519:ro
-      - /opt/sbctl/config/ssh/known_hosts:/run/secrets/ssh/known_hosts:ro
-      - /opt/sbctl/data/control:/data/control
-      - /opt/sbctl/data/publication:/data/publication
-      - /opt/sbctl/data/telemetry:/data/telemetry:ro
-      - /opt/sbctl/data/inventory:/data/inventory
-  sync:
-    <<: *common
-    user: 10002:10002
-    command: [sync]
-    volumes:
-      - /opt/sbctl/config/server.toml:/opt/sbctl/config/server.toml:ro
-      - /opt/sbctl/config/ssh/stats_ed25519:/run/secrets/ssh/stats_ed25519:ro
-      - /opt/sbctl/config/ssh/known_hosts:/run/secrets/ssh/known_hosts:ro
       - /opt/sbctl/data/traffic:/data/traffic
+      - /opt/sbctl/data/control:/data/control
+      - /opt/sbctl/data/publication:/data/publication
       - /opt/sbctl/data/telemetry:/data/telemetry
-      - /opt/sbctl/data/inventory:/data/inventory:ro
+      - /opt/sbctl/data/inventory:/data/inventory
+      - /opt/sbctl/data/discovery:/data/discovery:ro
   subscriptions:
     <<: *common
     user: 10003:10003

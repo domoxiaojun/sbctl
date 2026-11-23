@@ -179,7 +179,13 @@ func encodeNodeInput(c *Control, input NodeJobInput) string {
 }
 func decodeNodeInput(c *Control, raw string) NodeJobInput {
 	var input NodeJobInput
-	decode([]byte(raw), &input)
+	stored := object([]byte(raw))
+	draft := mapping(stored["draft"])
+	if draft["connection"] != nil {
+		// Jobs saved before the embedded Agent may carry retired SSH fields.
+		draft["connection"] = parseConnection(draft["connection"])
+	}
+	decode(canonical(stored), &input)
 	if input.Change != nil {
 		for _, secret := range []*string{&input.Change.Password, &input.Change.UUID} {
 			if strings.HasPrefix(*secret, "enc:") {

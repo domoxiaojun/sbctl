@@ -56,24 +56,21 @@ jobs:
           pnpm --dir web build
           mkdir -p "dist/linux-$ARCH"
           CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "dist/linux-$ARCH/sbctl" ./cmd/sbctl
-          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "dist/linux-$ARCH/sbctl-node" ./cmd/sbctl-node
-          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]
           test "v$("dist/linux-$ARCH/sbctl" version | jq -r .version)" = "$GITHUB_REF_NAME"
-          test "v$("dist/linux-$ARCH/sbctl-node" version | jq -r .version)" = "$GITHUB_REF_NAME"
       - name: Verify browser lifecycle
         if: matrix.arch == 'amd64'
         working-directory: web
         run: |
           pnpm exec playwright install --with-deps chromium
-          pnpm exec playwright test e2e/console.spec.ts e2e/user-grants.spec.ts e2e/traffic.spec.ts e2e/workspace.spec.ts e2e/management.spec.ts e2e/node-config.spec.ts e2e/node-batch.spec.ts --grep '配置片段|批量|轮询到全部结束|全选本页|键盘勾选|按小时趋势|按月趋势|重新启用|授权调整|授权预览|响应丢失后恢复原操作|流量筛选|统计分类仅保留|连接明细|生产页面自动|协议入口和用户|统计日趋势|板块职责|尚未同步的节点|发现主机|已有节点绑定|用户资料、订阅重置|协议配置增改|批量归档|删除已归档用户|详情删除|生产管理页面'
+          pnpm exec playwright test e2e/console.spec.ts e2e/user-grants.spec.ts e2e/traffic.spec.ts e2e/workspace.spec.ts e2e/management.spec.ts e2e/node-config.spec.ts e2e/node-batch.spec.ts --grep '配置片段|批量|轮询到全部结束|全选本页|键盘勾选|按小时趋势|按月趋势|重新启用|授权调整|授权预览|响应丢失后恢复原操作|流量筛选|统计分类切换|连接明细|生产页面自动|协议入口和用户|统计日趋势|板块职责|尚未同步的节点|发现主机|已有节点绑定|用户资料、订阅重置|协议配置增改|批量归档|删除已归档用户|详情删除|生产管理页面'
       - name: Package native executables
         env:
           ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p release
           archive="sbctl-$GITHUB_REF_NAME-linux-$ARCH.tar.gz"
-          cp ops/controller/node/guard.sh "dist/linux-$ARCH/guard.sh"
-          tar -C "dist/linux-$ARCH" -czf "release/$archive" sbctl sbctl-node guard.sh
+          tar -C "dist/linux-$ARCH" -czf "release/$archive" sbctl
           (cd release && sha256sum "$archive" > "$archive.sha256")
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build candidate image
@@ -91,7 +88,6 @@ jobs:
       - name: Smoke-test candidate runtime
         run: |
           test "v$(docker run --rm --network none sbctl:candidate version | jq -r .version)" = "$GITHUB_REF_NAME"
-          test "v$(docker run --rm --network none --entrypoint /opt/sbctl/bin/sbctl-node sbctl:candidate version | jq -r .version)" = "$GITHUB_REF_NAME"
           docker run -d --name sbctl-smoke --read-only --cap-drop ALL -p 127.0.0.1:18081:8080 sbctl:candidate subscriptions --listen :8080
           trap 'docker rm -f sbctl-smoke >/dev/null' EXIT
           curl --retry 10 --retry-delay 1 --retry-connrefused --fail --silent http://127.0.0.1:18081/healthz | jq -e --arg version "${GITHUB_REF_NAME#v}" '.status == "ok" and .version == $version'
@@ -141,7 +137,14 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           (cd release && sha256sum -c ./*.sha256)
-          docker buildx imagetools create --tag "$IMAGE:$GITHUB_REF_NAME" --tag "$IMAGE:latest" "$(cat release/image-amd64.txt)" "$(cat release/image-arm64.txt)"
+          image_tags=(--tag "$IMAGE:$GITHUB_REF_NAME")
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-rc.* ]]; then
+            release_flags+=(--prerelease --latest=false)
+          else
+            image_tags+=(--tag "$IMAGE:latest")
+          fi
+          docker buildx imagetools create "${image_tags[@]}" "$(cat release/image-amd64.txt)" "$(cat release/image-arm64.txt)"
           docker buildx imagetools inspect "$IMAGE:$GITHUB_REF_NAME" --raw > release/manifest.json
           jq -e '[.manifests[].platform | .os + "/" + .architecture] | sort == ["linux/amd64", "linux/arm64"]' release/manifest.json
           digest="$(docker buildx imagetools inspect "$IMAGE:$GITHUB_REF_NAME" | awk '$1 == "Digest:" {print $2; exit}')"
@@ -149,10 +152,10 @@ jobs:
           jq -n --arg version "$GITHUB_REF_NAME" --arg commit "$GITHUB_SHA" --arg image "$IMAGE@$digest" '{version:$version,commit:$commit,image:$image,platforms:["linux/amd64","linux/arm64"]}' > release/release.json
           {
             printf '# sbctl %s\n\n' "$GITHUB_REF_NAME"
-            printf 'Go 主控、节点工具及 React 控制台。管理节点允许零个、一个或多个授权入口。入口按稳定 ID 绑定凭据并通过退役流程撤销。采集改用 sing-box 1.14.4-sbctl.1 自研 Unix socket，连接明细支持分页、90 天保留和域名、目标、规则及出站排行。\n\n'
+            printf 'Go 主控及 React 控制台。主控通过 Agent 通道管理单容器节点，提供实时速率流、出站流量趋势与月度流量配额。\n\n'
             # shellcheck disable=SC2016
             printf '镜像：`%s:%s`\n\n固定引用：`%s@%s`\n\n' "$IMAGE" "$GITHUB_REF_NAME" "$IMAGE" "$digest"
-            printf '提供 Linux amd64/arm64 程序、guard.sh 和 SHA-256 校验文件。升级前备份主控和节点，并按仓库升级文档安装新内核和节点工具。主控与节点账本会迁移。生产部署与真实客户端验收独立执行。\n'
+            printf '提供主控 Linux amd64/arm64 静态程序与 SHA-256 校验文件。节点需要含内嵌 sbctl Agent 的配套镜像。v1.14.4-sbctl.1 仅提供旧版统计接口。升级旧主控前请阅读 ops/controller/release.md。\n'
           } > release/notes.md
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "sbctl $GITHUB_REF_NAME" --notes-file release/notes.md release/*.tar.gz release/*.sha256 release/release.json release/manifest.json
+          gh release create "$GITHUB_REF_NAME" "${release_flags[@]}" --verify-tag --title "sbctl $GITHUB_REF_NAME" --notes-file release/notes.md release/*.tar.gz release/*.sha256 release/release.json release/manifest.json
           cat release/notes.md >> "$GITHUB_STEP_SUMMARY"

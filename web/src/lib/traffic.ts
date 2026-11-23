@@ -2,12 +2,22 @@ import type { Schema } from '@/api/types'
 import { totalBytes } from './format'
 
 export type TrafficFilters = {
- q?: string; node?: string; protocol?: string; activity?: string; local_user?: string;
- from?: string; to?: string; scope?: 'inbounds' | 'local'; sort?: 'name' | 'bytes' | 'created'; granularity?: 'hour' | 'month'
+ q?: string; node?: string; protocol?: string; outbound?: string; activity?: string; local_user?: string;
+ from?: string; to?: string; scope?: 'inbounds' | 'local' | 'outbounds'; sort?: 'name' | 'bytes' | 'created'; granularity?: 'hour' | 'month'
 }
 export function trafficSearch(raw: Record<string, unknown>): TrafficFilters {
  const text = (key: string) => typeof raw[key] === 'string' ? raw[key].slice(0, 100) : undefined
- return { local_user: text('local_user'), node: text('node'), protocol: text('protocol'), activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined, from: text('from'), to: text('to'), scope: ['inbounds', 'local'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined, granularity: raw.granularity === 'hour' || raw.granularity === 'month' ? raw.granularity : undefined }
+ return {
+  local_user: text('local_user'),
+  outbound: text('outbound'),
+  node: text('node'),
+  protocol: text('protocol'),
+  activity: ['active', 'removed'].includes(String(raw.activity)) ? String(raw.activity) : undefined,
+  from: text('from'),
+  to: text('to'),
+  scope: ['inbounds', 'local', 'outbounds'].includes(String(raw.scope)) ? raw.scope as TrafficFilters['scope'] : undefined,
+  granularity: raw.granularity === 'hour' || raw.granularity === 'month' ? raw.granularity : undefined,
+ }
 }
 export function calendarDate(value = Date.now()) { return new Date(value + 8 * 3600_000).toISOString().slice(0, 10) }
 export function presetDates(preset: string, now = Date.now()) {
@@ -56,9 +66,10 @@ export function trafficRankings(report: Schema['TrafficReport'], scope: TrafficF
   map.set(id, { id, name, ...trafficTotals(old ? [old, row] : [row]), filter })
  }
  for (const node of nodes) {
-  const rows = scope === 'local' ? node.local_users : node.inbounds
+  const rows = scope === 'local' ? node.local_users : scope === 'outbounds' ? node.outbounds : node.inbounds
   add(byNode, node.id, node.name, trafficTotals(rows), { node: node.id })
   if (scope === 'inbounds') for (const row of node.inbounds) add(byIdentity, row.protocol, row.protocol.toUpperCase(), row, { protocol: row.protocol })
+  else if (scope === 'outbounds') for (const row of node.outbounds) add(byIdentity, row.tag, row.tag, row, { outbound: row.tag })
   else for (const row of node.local_users) add(byIdentity, JSON.stringify([node.id, row.name]), `${row.name} · ${node.name}`, row, { node: node.id, local_user: row.name })
  }
  return { nodes: sortTraffic([...byNode.values()], 'bytes', r => r.name), identities: sortTraffic([...byIdentity.values()], 'bytes', r => r.name) }
@@ -75,6 +86,8 @@ export function trafficCsv(report: Schema['TrafficReport'], scope: TrafficFilter
  const nodes = knownTrafficNodes(report)
  const table = scope === 'local'
   ? [['节点', '节点 ID', '本地用户', '记录状态', '上传字节', '下载字节', '合计字节', '首次纳入采集', '统计范围'], ...nodes.flatMap(n => n.local_users.map(u => [n.name, n.id, u.name, state(u.active), u.upload_bytes, u.download_bytes, totalBytes(u), u.started_at, range]))]
+  : scope === 'outbounds'
+  ? [['节点', '节点 ID', '出站标签', '记录状态', '上传字节', '下载字节', '合计字节', '首次纳入采集', '统计范围'], ...nodes.flatMap(n => n.outbounds.map(o => [n.name, n.id, o.tag, state(o.active), o.upload_bytes, o.download_bytes, totalBytes(o), o.started_at, range]))]
   : [['节点', '节点 ID', '入口', '协议', '端口', '记录状态', '上传字节', '下载字节', '合计字节', '首次纳入采集', '统计范围'], ...nodes.flatMap(n => n.inbounds.map(i => [n.name, n.id, i.tag, i.protocol, i.port, state(i.active), i.upload_bytes, i.download_bytes, totalBytes(i), i.started_at, range]))]
  return '\uFEFF' + table.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n'
 }

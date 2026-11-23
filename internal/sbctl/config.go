@@ -2,12 +2,14 @@ package sbctl
 
 import (
 	"bytes"
-	"github.com/pelletier/go-toml/v2"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 var identityRE = regexp.MustCompile(`^[a-z][a-z0-9_-]{2,79}$`)
@@ -21,27 +23,43 @@ func validIdentity(s string) {
 func match(pattern, s string) bool { return regexp.MustCompile(pattern).MatchString(s) }
 
 type Settings struct {
-	ControlDB       string   `toml:"control_db"`
-	TrafficDB       string   `toml:"traffic_db"`
-	TrafficSnapshot string   `toml:"traffic_snapshot"`
-	PublicDir       string   `toml:"public_dir"`
-	KeyFile         string   `toml:"key_file"`
-	PublicBaseURL   string   `toml:"public_base_url"`
-	AllowedOrigins  []string `toml:"allowed_origins"`
-	SessionSeconds  int      `toml:"session_seconds"`
-	SecureCookie    bool     `toml:"secure_cookie"`
-	MaxUsers        int      `toml:"max_users"`
-	StaleSeconds    int      `toml:"stale_seconds"`
-	SyncSeconds     int      `toml:"sync_seconds"`
-	SSHDir          string   `toml:"ssh_dir"`
-	WebDir          string   `toml:"web_dir"`
-	InventoryFile   string   `toml:"inventory_file"`
-	DiscoveryFile   string   `toml:"discovery_file"`
-	TrustedProxies  []string `toml:"trusted_proxies"`
+	ControlDB         string   `toml:"control_db"`
+	TrafficDB         string   `toml:"traffic_db"`
+	TrafficSnapshot   string   `toml:"traffic_snapshot"`
+	PublicDir         string   `toml:"public_dir"`
+	KeyFile           string   `toml:"key_file"`
+	PublicBaseURL     string   `toml:"public_base_url"`
+	AllowedOrigins    []string `toml:"allowed_origins"`
+	SessionSeconds    int      `toml:"session_seconds"`
+	SecureCookie      bool     `toml:"secure_cookie"`
+	MaxUsers          int      `toml:"max_users"`
+	StaleSeconds      int      `toml:"stale_seconds"`
+	SyncSeconds       int      `toml:"sync_seconds"`
+	LegacySSHDir      string   `toml:"ssh_dir,omitempty"`
+	WebDir            string   `toml:"web_dir"`
+	InventoryFile     string   `toml:"inventory_file"`
+	DiscoveryFile     string   `toml:"discovery_file"`
+	TrustedProxies    []string `toml:"trusted_proxies"`
+	AgentAllowedCIDRs []string `toml:"agent_allowed_cidrs"`
 }
 
 func DefaultSettings() Settings {
-	return Settings{ControlDB: "/data/control/control.db", TrafficDB: "/data/traffic/traffic.db", TrafficSnapshot: "/data/telemetry/traffic.json", PublicDir: "/data/subscriptions", KeyFile: "/run/secrets/master.key", SessionSeconds: 28800, SecureCookie: true, MaxUsers: 100, StaleSeconds: 180, SyncSeconds: 30, SSHDir: "/run/secrets/ssh", WebDir: "/opt/sbctl/web", InventoryFile: "/data/inventory/nodes.json", DiscoveryFile: "/data/discovery/tailscale.json"}
+	return Settings{
+		ControlDB:         "/data/control/control.db",
+		TrafficDB:         "/data/traffic/traffic.db",
+		TrafficSnapshot:   "/data/telemetry/traffic.json",
+		PublicDir:         "/data/subscriptions",
+		KeyFile:           "/run/secrets/master.key",
+		SessionSeconds:    28800,
+		SecureCookie:      true,
+		MaxUsers:          100,
+		StaleSeconds:      180,
+		SyncSeconds:       30,
+		WebDir:            "/opt/sbctl/web",
+		InventoryFile:     "/data/inventory/nodes.json",
+		DiscoveryFile:     "/data/discovery/tailscale.json",
+		AgentAllowedCIDRs: []string{"100.64.0.0/10", "fd7a:115c:a1e0::/48", "127.0.0.0/8", "::1/128"},
+	}
 }
 func env(name, fallback string) string {
 	if s := os.Getenv(name); s != "" {
@@ -63,6 +81,11 @@ func LoadSettings() Settings {
 	for _, proxy := range s.TrustedProxies {
 		if _, ok := proxyPrefix(proxy); !ok {
 			fail("CONFIG_INVALID", "受信任反代必须是 IP 地址或 CIDR 网段")
+		}
+	}
+	for _, cidr := range s.AgentAllowedCIDRs {
+		if _, ok := proxyPrefix(cidr); !ok {
+			fail("CONFIG_INVALID", "Agent 来源网段必须是 IP 地址或 CIDR 网段")
 		}
 	}
 	return s
@@ -87,17 +110,36 @@ func (s Settings) trustsProxy(a netip.Addr) bool {
 	}
 	return false
 }
+func (s Settings) allowsAgentPeer(rawAddr string) bool {
+	host := rawAddr
+	if h, _, err := net.SplitHostPort(rawAddr); err == nil {
+		host = h
+	}
+	a, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	cidrs := s.AgentAllowedCIDRs
+	if cidrs == nil {
+		cidrs = []string{"100.64.0.0/10", "fd7a:115c:a1e0::/48", "127.0.0.0/8", "::1/128"}
+	}
+	for _, cidr := range cidrs {
+		if p, ok := proxyPrefix(cidr); ok && p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
 
 type Endpoint struct {
-	Protocol string   `json:"protocol" toml:"protocol"`
-	Tag      string   `json:"tag" toml:"tag"`
-	Server   string   `json:"server" toml:"server"`
-	Port     int      `json:"port" toml:"port"`
-	SNI      string   `json:"sni" toml:"sni"`
-	ALPN     []string `json:"alpn" toml:"alpn"`
-	// InboundID is the immutable identity of this managed entry. Tag is a
-	// display/configuration label and may be edited without changing history.
-	InboundID string `json:"inbound_id,omitempty" toml:"inbound_id,omitempty"`
+	Protocol  string   `json:"protocol" toml:"protocol"`
+	Tag       string   `json:"tag" toml:"tag"`
+	Server    string   `json:"server" toml:"server"`
+	Port      int      `json:"port" toml:"port"`
+	SNI       string   `json:"sni" toml:"sni"`
+	ALPN      []string `json:"alpn" toml:"alpn"`
+	InboundID string   `json:"inbound_id,omitempty" toml:"inbound_id,omitempty"`
 }
 
 func (e *Endpoint) Validate() {
@@ -117,44 +159,8 @@ func (e *Endpoint) Validate() {
 	}
 }
 
-type NodeSettings struct {
-	NodeID        string     `toml:"node_id" json:"node_id"`
-	StateDir      string     `toml:"state_dir" json:"state_dir"`
-	SafetyDir     string     `toml:"safety_dir" json:"safety_dir"`
-	ConfigDir     string     `toml:"config_dir" json:"config_dir"`
-	TemplateFile  string     `toml:"template_file" json:"template_file"`
-	ProbeFile     string     `toml:"probe_file" json:"probe_file"`
-	TemplateHash  string     `toml:"template_hash" json:"template_hash"`
-	Image         string     `toml:"image" json:"image"`
-	EngineBuildID string     `toml:"engine_build_id" json:"engine_build_id"`
-	Container     string     `toml:"container" json:"container"`
-	UID           int        `toml:"uid" json:"uid"`
-	GID           int        `toml:"gid" json:"gid"`
-	RevokeFailure string     `toml:"revoke_failure" json:"revoke_failure"`
-	Endpoints     []Endpoint `toml:"endpoints" json:"endpoints"`
-	ProbePort     int        `toml:"probe_port" json:"probe_port"`
-	ProbeUDPPort  int        `toml:"probe_udp_port" json:"probe_udp_port"`
-}
-
-func LoadNodeSettings() NodeSettings {
-	s := NodeSettings{StateDir: "/opt/sbctl/data/node", SafetyDir: "/opt/sbctl/data/safety", ConfigDir: "/etc/sing-box", TemplateFile: "/opt/sbctl/config/template.json", ProbeFile: "/opt/sbctl/config/probe-credentials.json", ProbePort: 31840, ProbeUDPPort: 53190}
-	check(toml.NewDecoder(bytes.NewReader(read(env("SBCTL_NODE_CONFIG", "/opt/sbctl/config/node.toml")))).DisallowUnknownFields().Decode(&s))
-	s.Validate()
-	return s
-}
-func (s *NodeSettings) Validate() {
-	validIdentity(s.NodeID)
-	if !hashRE.MatchString(s.TemplateHash) || !hashRE.MatchString(s.EngineBuildID) || !imageReference(s.Image) || !containerName(s.Container) || s.UID < 1 || s.GID < 1 || !contains([]string{"stop", "preserve"}, s.RevokeFailure) || s.ProbePort < 1024 || s.ProbePort > 65000 || s.ProbeUDPPort < 1024 || s.ProbeUDPPort > 65000 || len(s.Endpoints) > 4096 {
-		fail("CONFIG_INVALID", "节点配置无效")
-	}
-	s.Endpoints = normalizeEndpoints(s.Endpoints)
-}
-
-// legacyInboundID gives pre-ID configurations a deterministic identity. New
-// entries must receive an explicit generated ID, so deleting and recreating an
-// entry never inherits the old history merely because its tag or port matches.
 func legacyInboundID(e Endpoint) string {
-	return "inb_legacy_" + hash([]byte(e.Protocol + ":" + e.Tag))[:24]
+	return "inb_legacy_" + hash([]byte(e.Protocol+":"+e.Tag))[:24]
 }
 
 func normalizeEndpoints(eps []Endpoint) []Endpoint {
@@ -212,29 +218,28 @@ func endpointMaps(value any) []M {
 	return out
 }
 
+// NodeConnection identifies a node's management peer on the Tailscale tailnet.
+// All SSH fields have been removed in favor of the embedded sing-box Agent channel.
 type NodeConnection struct {
-	Address     string `json:"address"`
-	Port        int    `json:"port"`
-	PublishUser string `json:"publish_user"`
-	StatsUser   string `json:"stats_user"`
-	PublishKey  string `json:"publish_key"`
-	StatsKey    string `json:"stats_key"`
-	Version     string `json:"version"`
-	HostKey     string `json:"host_key,omitempty"`
+	Address string `json:"address"`
+	Version string `json:"version,omitempty"`
 }
 
 func parseConnection(v any) NodeConnection {
-	n := NodeConnection{Port: 22, PublishUser: "sbctl-publish", StatsUser: "sbctl-stats", PublishKey: "publish_ed25519", StatsKey: "stats_ed25519", Version: "1.12.9"}
-	decode(canonical(v), &n)
+	m := mapping(object(canonical(v)))
+	n := NodeConnection{
+		Address: strings.TrimSpace(str(m["address"])),
+		Version: strings.TrimSpace(str(m["version"])),
+	}
+	if n.Version == "" {
+		n.Version = "1.14.4-sbctl.2"
+	}
+	if len(n.Version) > 80 || strings.ContainsAny(n.Version, "\r\n\x00") {
+		fail("CONNECTION_INVALID", "内核版本格式无效")
+	}
 	a, e := netip.ParseAddr(n.Address)
 	if e != nil || !(netip.MustParsePrefix("100.64.0.0/10").Contains(a) || netip.MustParsePrefix("fd7a:115c:a1e0::/48").Contains(a)) {
 		fail("CONNECTION_INVALID", "管理地址必须为 Tailscale 地址")
-	}
-	if n.Port < 1 || n.Port > 65535 || !match(`^[a-z][a-z0-9_-]{0,31}$`, n.PublishUser) || !match(`^[a-z][a-z0-9_-]{0,31}$`, n.StatsUser) || !match(`^[a-z][a-z0-9_-]{1,63}$`, n.PublishKey) || !match(`^[a-z][a-z0-9_-]{1,63}$`, n.StatsKey) {
-		fail("CONNECTION_INVALID", "SSH 配置无效")
-	}
-	if n.HostKey != "" {
-		validateHostKey(n.HostKey)
 	}
 	return n
 }

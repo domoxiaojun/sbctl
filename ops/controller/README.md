@@ -4,18 +4,16 @@
 
 ## 服务结构
 
-主控在 ovhus（100.70.0.9），由 `/opt/sbctl/compose.yaml` 管理四个服务：
+主控在 ovhus（100.70.0.9），由 `/opt/sbctl/compose.yaml` 管理两个隔离服务：
 
 | 服务 | 命令 | 职责 |
 | --- | --- | --- |
-| api | sbctl serve | 前端静态文件、登录与管理 API |
-| worker | sbctl worker | 持久任务、节点授权及订阅发布 |
-| sync | sbctl sync | 拉取并持久保存节点统计快照 |
+| api | sbctl serve | 前端静态文件、登录、管理 API、内嵌异步 Worker、AgentHub 零轮询唤醒与实时遥测接收 |
 | subscriptions | sbctl subscriptions | 只读订阅文件，不持有控制库和主密钥 |
 
 worker 与 sync 默认各以 4 路并行处理不同节点，可用 `--parallel N`（1–32）调整。同一节点的授权任务仍然逐个执行，改动节点的维护任务与该节点的授权任务互斥；worker 始终留一路给授权与撤销，节点任务最多占用 N-1 路，因此一台节点的长时间维护或失联不再拖住其它节点的撤销。sync 并行拉取、串行入库。需要恢复逐台串行时在 Compose 的 `command` 中加 `--parallel 1`。
 
-默认部署镜像为 `ghcr.io/domoxiaojun/sbctl:latest`，当前对应 v0.10.6，包含静态 Go 程序及 React 生产包。已有 `.env` 中的 `SBCTL_IMAGE` 会覆盖默认值，改用 latest 时需同步移除或更新该项。源码仓库和 GHCR 包均已公开，镜像可匿名拉取；CI 已生成双架构程序、固定镜像 digest 和校验文件，详见[发行回执](../../docs/qa/release-v0.10.6-20261117/report.md)。镜像运行时没有 Python、uv 或 Node.js。主控使用标准库 HTTP 服务，SQLite 由纯 Go 驱动嵌入，无独立数据库服务。[发布及升级流程](release.md)、[管理功能验收](../../docs/qa/management-20261116/report.md)。本版本新增守卫收窄和双向配置同步，要求主控、受管节点工具和 guard 配套升级，保留代理内核和现有账本；先替换 guard，再启用新版节点 worker。程序替换本身不重启代理，执行协议配置或受控重启任务会短暂中断连接。本次发行不包含服务器升级或多节点实机验收。
+稳定主控可按 `latest` 或固定版本拉取。本次 v0.12.0-rc.1 使用单独版本标签，需要兼容的内嵌 Agent 镜像。原有 v0.11.x 节点升级前，请核对配套镜像、数据目录所有权和账本换代步骤。[发布及升级流程](release.md)
 
 | 请求 | 后端地址 |
 | --- | --- |
@@ -55,18 +53,18 @@ ssh ovhus 'cat /opt/sbctl/config/admin.initial'
 ```sh
 SBCTL_CONFIG=/opt/sbctl/config/server.host.toml sbctl doctor
 docker compose -f /opt/sbctl/compose.yaml ps
-docker compose -f /opt/sbctl/compose.yaml logs --tail 30 worker sync
+docker compose -f /opt/sbctl/compose.yaml logs --tail 30 api
 curl http://127.0.0.1:18100/healthz
 curl http://127.0.0.1:18101/healthz
 ```
 
-## 节点
+## 单容器节点（零 SSH）
 
-yxvmhk 的 `/opt/sbctl/bin/sbctl-node` 提供固定 RPC、发布、恢复、运行绑定和采集命令。`sbctl-node.service` 以 root 执行发布；`sbctl-collector.service` 使用 sbctl-stats 用户采样并写入独立账本。两者直接执行 Go 程序。
+受管节点不再需要安装宿主机 `sbctl-node` 二进制、不再配置 SSH 公钥或创建 `sbctl-publish` / `sbctl-stats` 系统账号，也不需要 `guard.sh`。节点只需运行单个自研 `sing-box` 容器（参见 [sing-box.compose.example.yaml](sing-box.compose.example.yaml)）：
 
-发布与统计 SSH 密钥分开；固定入口继续校验 SSH_ORIGINAL_COMMAND。统计账号只允许调用固定运行状态 helper，不属于 Docker 组。流量采集由受管 sing-box fork 的 sbctl Unix socket 提供，sbctl-node 读取自研 schema 后写入本地账本。
-
-节点文件：`/opt/sbctl/config/node.toml`、固定模板及探针凭据；持久状态位于 `/opt/sbctl/data/node`、`ledger`、`safety`。用户授权管理覆盖已登记且通过当前探针验证的 AnyTLS/TUIC 入口，入口数量可以为零、一个或多个；流量统计覆盖全部 sing-box 入口及可识别的命名用户。
+1. 在管理后台“添加节点 -> 单容器快速登记”填写节点信息及可选月流量配额，一键生成带一次性注册码的 `compose.yaml`。
+2. 在受管 VPS 准备 `/etc/sing-box/config.json`，将 `SING_BOX_IMAGE` 设为支持内嵌 Agent 的镜像固定引用，使用生成的 `compose.yaml` 启动。
+3. 容器内嵌监管器启动后经 Tailscale 自动向主控换取持久化 Token（写入 `/var/lib/sing-box/sbctl/agent.json`），接管进程内零停机用户热更新、配置热重载、断电安全账本（`ledger.json`）与 1.5s/5s 动态实时遥测上报。
 
 ### 流量统计范围
 
@@ -82,6 +80,10 @@ yxvmhk 的 `/opt/sbctl/bin/sbctl-node` 提供固定 RPC、发布、恢复、运�
 
 小时粒度（未发布）：主控在流量库新增 `history_hours` 表，并在 `/opt/sbctl/data/telemetry/history/<节点>/<日期>.hours.json` 导出当天各小时的增量，供 `GET /api/v1/traffic?granularity=hour` 只读查询。小时明细从升级后的首次同步开始，保留约 62 天，过期的表记录和导出文件随新数据写入自动清理；日期明细不受影响、长期保留。新表由程序启动时自动创建，回退到旧程序时会被忽略。
 
+## v0.11.x 节点运维记录
+
+以下为宿主 helper、SSH 和启动守卫架构的历史操作。v0.12 的部署流程见上文「单容器节点」。
+
 ```sh
 # 以下在 yxvmhk 执行
 systemctl status sbctl-node sbctl-collector
@@ -93,7 +95,7 @@ sbctl-node retry
 
 撤销预检失败沿用用户选择：保留旧服务，标记 `revoke_blocked` 并告警；启动清单保持阻塞。旧请求不能替代已接收的新版本，重启中断恢复会先核实运行周期，避免重复重启。
 
-## 构建、安装与验证
+### 旧版构建、安装与验证
 
 在开发机运行 `make check`、`make build-linux`；前端按 web/package.json 构建。将 Linux 程序、`web/dist` 和部署文件传到服务器，在服务器构建 Dockerfile。Compose 的现有宿主绑定和站点由部署者确认，不在本机运行 Docker。
 

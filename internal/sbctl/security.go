@@ -152,6 +152,34 @@ func reserveLoginAttempt(s Settings, name, client string) []any {
 	}
 	return subjects
 }
+
+func reserveAgentRegisterAttempt(s Settings, nodeID, client string) []any {
+	source := loginSource(client)
+	budgets := []struct {
+		subject string
+		limit   int64
+	}{
+		{hash([]byte("agent-reg-source:" + source)), 20},
+		{hash([]byte("agent-reg-node:" + nodeID)), 20},
+	}
+	subjects := []any{}
+	ts := timestamp()
+	transaction(s.ControlDB, true, func(d *DB) {
+		d.Exec("DELETE FROM login_failures WHERE attempted_at<?", ts-loginWindow)
+		for _, b := range budgets {
+			if integer(d.Value("SELECT count(*) FROM login_failures WHERE subject=?", b.subject)) >= b.limit {
+				fail("AGENT_RATE_LIMIT", "Agent 注册尝试过多，请稍后再试", 429)
+			}
+		}
+		for _, b := range budgets {
+			d.Exec("INSERT INTO login_failures VALUES (?,?)", b.subject, ts)
+		}
+	})
+	for _, b := range budgets {
+		subjects = append(subjects, b.subject)
+	}
+	return subjects
+}
 func CreateAdmin(s Settings, name, display, password string) string {
 	if utf8.RuneCountInString(password) < 12 || utf8.RuneCountInString(password) > 1024 || utf8.RuneCountInString(name) < 1 || utf8.RuneCountInString(name) > 80 {
 		fail("ADMIN_INVALID", "管理员密码至少需要 12 个字符")

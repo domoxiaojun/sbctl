@@ -17,5 +17,6 @@ function Ranking({ title, rows, onSelect }: { title: string; rows: TrafficRank[]
 }
 export function TrafficRankings({ report, scope, onSelect }: { report: Schema['TrafficReport']; scope: TrafficFilters['scope']; onSelect: (filter: TrafficFilters) => void }) {
  const rows = trafficRankings(report, scope)
- return <div className="grid gap-5 lg:grid-cols-2"><Ranking title="节点用量排行" rows={rows.nodes} onSelect={onSelect} /><Ranking title={scope === 'local' ? '本地用户用量排行' : '协议用量排行'} rows={rows.identities} onSelect={onSelect} /></div>
+ const secondaryTitle = scope === 'local' ? '本地用户用量排行' : scope === 'outbounds' ? '出站分流用量排行' : '协议用量排行'
+ return <div className="grid gap-5 lg:grid-cols-2"><Ranking title="节点用量排行" rows={rows.nodes} onSelect={onSelect} /><Ranking title={secondaryTitle} rows={rows.identities} onSelect={onSelect} /></div>
 }

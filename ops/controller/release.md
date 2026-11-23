@@ -1,6 +1,6 @@
 # GHCR 版本发布
 
-源码仓库为 `domoxiaojun/sbctl`，发行镜像为 `ghcr.io/domoxiaojun/sbctl`。镜像包含 Go 主控、节点程序和 React 生产页面，分别在原生 Linux amd64/arm64 runner 构建验证。代理内核 `ghcr.io/domoxiaojun/sing-box` 单独发布，不随主控更新自动升级。
+源码仓库为 `domoxiaojun/sbctl`，发行镜像为 `ghcr.io/domoxiaojun/sbctl`。镜像包含 Go 主控和 React 生产页面，分别在原生 Linux amd64/arm64 runner 构建验证。代理内核 `ghcr.io/domoxiaojun/sing-box` 单独发布，不随主控更新自动升级。
 
 源码仓库与 sbctl GHCR 包自 2026-11-18 起均公开，`latest` 与已发布版本镜像支持匿名拉取，不需要配置 `read:packages` 凭据。
 
@@ -9,11 +9,20 @@
 1. 同步 `internal/sbctl/common.go` 和 OpenAPI 的版本；Compose 默认保持 `latest`，不随补丁版本修改。
 2. 更新执行计划，按修改类型运行必要检查。推送同版本 `vX.Y.Z` 标签触发 `.github/workflows/release.yml`。
 3. CI 执行 Go 竞争检测、前端契约/测试/构建、amd64 浏览器流程、两种架构镜像启动检查，再推送各架构镜像。
-4. 两种架构都通过后发布版本标签和 `latest`，GitHub Release 提供静态程序及 `guard.sh` 包、SHA-256 校验文件及记录镜像 digest/源码提交的 `release.json`。
+4. 两种架构都通过后发布版本标签和 `latest`，GitHub Release 提供主控静态程序包、SHA-256 校验文件及记录镜像 digest/源码提交的 `release.json`。
 
 工作流只在 `domoxiaojun/sbctl` 的版本标签运行；所有 Actions 固定提交，发布权限限制在相应 job。构建上下文仅包含指定程序和 `web/dist`，不包含配置、密钥、数据库、运维快照或源码。不要移动已发布版本标签；失败需修改代码时使用新的补丁版本。
 
-## 升级现有主控
+## v0.12.0-rc.1 候选版与迁移
+
+本版单独发布主控。`-rc.N` 标签生成对应版本的双架构镜像、程序包和 GitHub 预发行版。稳定镜像 `latest` 继续指向稳定发行版。
+
+1. 确认每个试点节点有支持注册、长轮询、回执和遥测的内嵌 Agent 镜像，并将该镜像的固定引用设为 `SING_BOX_IMAGE`。已发布的 sing-box `v1.14.4-sbctl.1` 只有统计 socket，无法接入此版本主控。配套镜像就绪前，现有节点应继续使用 v0.11.1 主控。
+2. 在维护窗口停止旧 API、worker 和 sync 写入，备份主控控制库、流量库、完整数据目录、配置、节点账本和镜像摘要。WAL 数据库须在进程停止后连同已有 `-wal`、`-shm` 文件一并备份，或使用 SQLite 一致性备份。
+3. 新 Compose 由 UID 10001 的 API 写入控制、流量、遥测、清单和发布目录。旧流量目录及其文件属 UID 10002，升级前须将流量和遥测目录及现有内容的所有权交给 UID 10001，保留订阅服务 UID 10003 的只读访问。替换 Compose 并停用旧独立 worker 和 sync 服务。通过 `SBCTL_IMAGE` 选择候选版的固定镜像。
+4. 为已有节点从详情生成注册码，新节点使用快速登记。核验 Agent 在线、当前配置、流量采样和连接明细后再迁移下一台。新内核生成新账本时，用 `sbctl register-replacement-ledger NODE_ID OLD_LEDGER_ID NEW_LEDGER_ID` 明确关联旧账本，并用 `ledger-history` 核对。生产数据和代理流量的验收须在目标节点进行。
+
+## 旧版主控升级记录（v0.11.x 及更早）
 
 以下操作仅在 Linux 主控执行，本机不运行 Docker。
 

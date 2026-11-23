@@ -284,6 +284,20 @@ func (s Snapshot) Verify() {
 			}
 		}
 	}
+	seenOutbound := map[string]bool{}
+	for _, out := range s.Outbounds {
+		if !validStatName(out.Tag) || seenOutbound[out.Tag] {
+			fail("DUPLICATE_COUNTER", "出站标签无效或重复")
+		}
+		seenOutbound[out.Tag] = true
+		stamp(out.StartedAt)
+		for _, value := range []string{out.Upload, out.Download} {
+			counter(value)
+			if len(value) > 1 && strings.HasPrefix(value, "0") {
+				fail("COUNTER_INVALID", "出站流量计数格式无效")
+			}
+		}
+	}
 	seenLocal := map[string]bool{}
 	for _, u := range s.LocalUsers {
 		if !validStatName(u.Name) || seenLocal[u.Name] {

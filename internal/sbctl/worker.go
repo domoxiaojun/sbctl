@@ -16,7 +16,7 @@ type Worker struct {
 
 func NewWorker(c *Control, t Transport) *Worker {
 	if t == nil {
-		t = SSH{c.Settings.SSHDir}
+		t = AgentTransport{Control: c}
 	}
 	return &Worker{c, t, identifier("worker")}
 }
@@ -351,6 +351,15 @@ func (w *Worker) Reconcile() {
 				alert(d, "telemetry:"+str(n["id"]), "节点统计需关注", "统计尚未就绪、过期或累计异常；已记录历史保留", "medium", n["id"])
 			} else {
 				d.Exec("UPDATE alerts SET state='resolved' WHERE dedupe_key=?", "telemetry:"+str(n["id"]))
+			}
+			b := mapping(n["billing"])
+			switch str(b["state"]) {
+			case "exceeded":
+				alert(d, "billing:"+str(n["id"]), "节点月流量已超上限", "当前计费周期用量已达到或超过设定的月流量包配额", "high", n["id"])
+			case "warning":
+				alert(d, "billing:"+str(n["id"]), "节点月流量接近上限", "当前计费周期用量已超过预警阈值，请关注剩余额度", "medium", n["id"])
+			default:
+				d.Exec("UPDATE alerts SET state='resolved' WHERE dedupe_key=?", "billing:"+str(n["id"]))
 			}
 		}
 	})

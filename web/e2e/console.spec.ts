@@ -307,6 +307,7 @@ for (const width of [375, 1440]) test(`协议入口和节点本地用户用量�
   await page.getByRole('button',{name:'节点本地用户',exact:true}).click()
   await expect(page.getByText('本地用户',{exact:true}).filter({visible:true})).toBeVisible()
   await expect(page.getByText('2.00 KiB',{exact:true}).first()).toBeVisible()
-  await expect(page.getByRole('group',{name:'统计范围'}).getByRole('button')).toHaveCount(2)
+  await expect(page.getByRole('group',{name:'统计范围'}).getByRole('button')).toHaveCount(3)
+  await expect(page.getByRole('button',{name:'出站分流',exact:true})).toBeVisible()
   await expect(page.getByRole('button',{name:'sbctl 用户',exact:true})).toHaveCount(0)
 })
