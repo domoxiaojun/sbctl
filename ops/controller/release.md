@@ -17,7 +17,7 @@
 
 本版单独发布主控。`-rc.N` 标签生成对应版本的双架构镜像、程序包和 GitHub 预发行版。稳定镜像 `latest` 继续指向稳定发行版。
 
-1. 确认每个试点节点有支持注册、长轮询、回执和遥测的内嵌 Agent 镜像，并将该镜像的固定引用设为 `SING_BOX_IMAGE`。已发布的 sing-box `v1.14.4-sbctl.1` 只有统计 socket，无法接入此版本主控。配套镜像就绪前，现有节点应继续使用 v0.11.1 主控。
+1. 确认每个试点节点有支持注册、长轮询、回执和遥测的内嵌 Agent 镜像，并将该镜像的固定引用设为 `SING_BOX_IMAGE`。已验证的配套节点版本是 `v1.14.4-sbctl.2`，其固定引用为 `ghcr.io/domoxiaojun/sing-box@sha256:978499b3ac9e0feddc5ca15ef7a665c38a83a918c6c2509cfff7c22ce8276157`。GitHub Actions 已在 amd64 和 arm64 上用该节点镜像验证注册、遥测和检查回执。仍使用 `v1.14.4-sbctl.1` 的节点只有旧统计接口，迁移前继续使用 v0.11.1 主控。
 2. 在维护窗口停止旧 API、worker 和 sync 写入，备份主控控制库、流量库、完整数据目录、配置、节点账本和镜像摘要。WAL 数据库须在进程停止后连同已有 `-wal`、`-shm` 文件一并备份，或使用 SQLite 一致性备份。
 3. 新 Compose 由 UID 10001 的 API 写入控制、流量、遥测、清单和发布目录。旧流量目录及其文件属 UID 10002，升级前须将流量和遥测目录及现有内容的所有权交给 UID 10001，保留订阅服务 UID 10003 的只读访问。替换 Compose 并停用旧独立 worker 和 sync 服务。通过 `SBCTL_IMAGE` 选择候选版的固定镜像。
 4. 为已有节点从详情生成注册码，新节点使用快速登记。核验 Agent 在线、当前配置、流量采样和连接明细后再迁移下一台。新内核生成新账本时，用 `sbctl register-replacement-ledger NODE_ID OLD_LEDGER_ID NEW_LEDGER_ID` 明确关联旧账本，并用 `ledger-history` 核对。生产数据和代理流量的验收须在目标节点进行。

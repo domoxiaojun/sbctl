@@ -718,3 +718,10 @@ yxvmhk 使用空的临时 Docker 登录配置成功匿名拉取最终 digest；�
 配套 sing-box 的内嵌 Agent 仅在独立仓库的本地改动中。主控按 `v0.12.0-rc.1` 构建，候选版单独发布，稳定 `latest` 保留。已通过 Go vet、Go 全量竞争检测、前端契约、25 项前端单测、类型检查、手机与桌面接管浏览器回归、发行工作流与 Dockerfile 静态检查。
 
 发行回执与匿名 GHCR 清单均指向 `ghcr.io/domoxiaojun/sbctl@sha256:5c9ea2ebb7909103e8477bcc92f206268481754d99881956af34392f617bd862`，包含 `linux/amd64`、`linux/arm64`。GitHub 已标记为预发行版。主控稳定镜像 `latest` 仍为 `sha256:5bfa30869edfdb94547dc5bb7e91cee9c6ed47ceac750b1edb18375efc1d41f0`。本轮未部署到 VPS，真实节点联调需配套内核。
+
+## 2026-11-24 配套 sing-box Agent 镜像
+
+- [x] ✅ 确认 `v0.12.0-rc.1` 主控所需 Agent 代码已在 sing-box 本地分支，旧版 `v1.14.4-sbctl.1` 不含该代码。
+- [x] ✅ 已修正镜像版本与并发注册，新增 GitHub Actions 主控与节点镜像联调。工作流、Shell 和 Dockerfile 静态检查通过。已清理本地项目产物、依赖及此轮 Go 缓存，镜像构建和运行验收交给 GitHub。
+- [x] ✅ sing-box 提交 `2ec01dc` 和标签 `v1.14.4-sbctl.2` 已推送至 GitHub。
+- [x] ✅ GitHub Actions `45341545411` 完成。amd64 和 arm64 候选镜像均通过旧统计 socket 测试，以及与已发布主控 `v0.12.0-rc.1` 的注册、遥测、节点检查及回执联调。匿名 GHCR 清单确认 `v1.14.4-sbctl.2` 与 `latest` 指向相同的双架构镜像 `ghcr.io/domoxiaojun/sing-box@sha256:978499b3ac9e0feddc5ca15ef7a665c38a83a918c6c2509cfff7c22ce8276157`。旧标签仍可拉取，生产节点未升级。
