@@ -60,9 +60,23 @@ for (const width of [375, 1440]) test(`板块职责、协议清单和双向跳�
 })
 
 test('尚未同步的节点不会显示零入口为实际配置', async ({ page }) => {
-  const data = fixtures(Date.now()), n = data.nodes[0]
-  n.inbounds = []; n.quality.sampled_at = null; n.quality.synced_at = null
+  const data = fixtures(Date.now()), n = data.nodes[0], pending = data.nodes[1]
+  n.status = 'degraded'; n.live_fresh = false
+  n.inbounds = []; n.quality.freshness = 'unknown'; n.quality.sampled_at = null; n.quality.synced_at = null
+  pending.status = 'offline'; pending.agent_state = 'unregistered'; pending.agent_last_seen = null; pending.live_fresh = false
   await page.addInitScript(data => sessionStorage.setItem('sbctl-f0-synthetic-state-v1', JSON.stringify({ ...data, requests: {}, signedIn: true })), data)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto('/nodes')
+  const search = page.getByRole('textbox', { name: '搜索节点名称或编号…' })
+  await search.fill(n.name)
+  const row = page.getByRole('row').filter({ hasText: n.name })
+  await expect(row).toContainText('需关注')
+  await expect(row).toContainText('管理通道在线')
+  await expect(row).toContainText('新鲜度未知')
+  await expect(row).toContainText('暂无实时采样')
+  await search.fill(pending.name)
+  const pendingRow = page.getByRole('row').filter({ hasText: pending.name })
+  await expect(pendingRow.getByText('待登记', { exact: true })).toBeVisible()
   await page.goto(`/nodes/${n.id}`)
   const inventory = page.getByRole('region', { name: '协议入口', exact: true })
   await expect(inventory).toContainText('尚未收到入口快照')

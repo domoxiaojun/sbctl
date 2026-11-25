@@ -70,7 +70,7 @@ export function demoTrafficLive(state: State, params: URLSearchParams, now: numb
  const nodes: Schema['LiveNode'][] = selected.map(n => ({
   node_id: n.id,
   sampled_at: new Date(now).toISOString(),
-  fresh: n.status === 'online',
+  fresh: n.live_fresh,
   upload_bps: n.upload_bps,
   download_bps: n.download_bps,
   active_connections: n.active_connections,
@@ -78,7 +78,7 @@ export function demoTrafficLive(state: State, params: URLSearchParams, now: numb
   outbounds: n.outbounds.map(o => ({ tag: o.tag, upload_bps: Math.round(n.upload_bps / 2), download_bps: Math.round(n.download_bps / 2) })),
   history: points.slice(-12),
  }))
- const active_items: Schema['TrafficConnection'][] = selected.filter(n => n.status === 'online').slice(0, 6).map((n, idx) => ({
+ const active_items: Schema['TrafficConnection'][] = selected.filter(n => n.live_fresh).slice(0, 6).map((n, idx) => ({
   node_id: n.id,
   connection_id: `live-${n.id}-${idx}`,
   inbound_id: '',

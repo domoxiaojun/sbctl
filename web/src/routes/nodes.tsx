@@ -9,7 +9,7 @@ import { NodeConfigSections } from '@/components/business/node-config'
 import { api } from '@/api/client'
 import { BackLink, DataState, FilterBar, KeyValue, PageHeader, Pagination, useFilters } from '@/components/business/common'
 import { DataTable, type DisplayColumn } from '@/components/business/data-table'
-import { StatusBadge } from '@/components/business/status'
+import { DataFreshness, StatusBadge } from '@/components/business/status'
 import { accountingModeNames, formatBytes, formatRate, formatTime } from '@/lib/format'
 import type { Node } from '@/api/types'
 
@@ -21,11 +21,20 @@ function ProtocolSummary({ node }: { node: Node }) {
 }
 
 function LiveRateSummary({ node }: { node: Node }) {
-  if (node.status === 'offline') return <span className="text-xs text-muted-foreground">离线</span>
+  if (!node.live_fresh) return <span className="text-xs text-muted-foreground">暂无实时采样</span>
   return <div className="space-y-0.5 tabular-nums text-xs">
     <div>↓ <strong>{formatRate(node.download_bps)}</strong> · ↑ {formatRate(node.upload_bps)}</div>
     <div className="text-muted-foreground">{node.active_connections} 活跃连接</div>
   </div>
+}
+
+function NodeStatusSummary({ node }: { node: Node }) {
+  const management = node.agent_state === 'online' ? '管理通道在线' : node.agent_state === 'offline' ? '管理通道失联' : '管理通道未登记'
+  return <div className="space-y-1.5"><NodeStatusBadge node={node} /><p className="text-xs text-muted-foreground">{management}</p><DataFreshness quality={node.quality} compact /></div>
+}
+
+function NodeStatusBadge({ node }: { node: Node }) {
+  return <StatusBadge status={node.status === 'offline' && node.agent_state === 'unregistered' ? 'unregistered' : node.status} />
 }
 
 function BillingBar({ node }: { node: Node }) {
@@ -50,7 +59,7 @@ function BillingBar({ node }: { node: Node }) {
 const columns: DisplayColumn<Node>[] = [
   { id: 'select', label: '选择', render: n => <NodeSelectBox node={n} /> },
   { id: 'name', label: '节点', render: nodeLink },
-  { id: 'status', label: '运行状态', render: n => <StatusBadge status={n.status} /> },
+  { id: 'status', label: '运行状态', render: n => <NodeStatusSummary node={n} /> },
   { id: 'live', label: '实时速率', render: n => <LiveRateSummary node={n} /> },
   { id: 'billing', label: '月流量进度', render: n => <BillingBar node={n} /> },
   { id: 'protocol', label: '协议与分流', render: n => <ProtocolSummary node={n} /> },
@@ -63,14 +72,15 @@ export function NodesPage() {
   return <>
     <PageHeader title="节点与协议" description="零 SSH 单容器管理：统一查看自研 sing-box 热重载配置、实时速率、月流量账单与协议入口。" action={<Link className="workspace-link bg-primary text-primary-foreground hover:bg-primary/90" to="/nodes/new" search={{}}><Plus size={16} />添加节点</Link>} />
     <section className="panel">
-      <FilterBar placeholder="搜索节点名称或编号…" filters={filters} onChange={update} statuses={[['online', '在线'], ['degraded', '需关注'], ['offline', '失联']]} regions sort={false} />
+      <FilterBar placeholder="搜索节点名称或编号…" filters={filters} onChange={update} statuses={[['online', '在线'], ['degraded', '需关注'], ['offline', '失联或待登记']]} regions sort={false} />
       <NodeBatch nodes={query.error ? [] : query.data?.items ?? []} scope={JSON.stringify(filters)}>
         {query.isPending || query.error ? <DataState loading={query.isPending} error={query.error} retry={() => query.refetch()} /> : <>
           <div className="desktop-table"><DataTable data={query.data.items} columns={columns} rowId={n => n.id} /></div>
           <div className="mobile-cards">
             {query.data.items.map(n => <article className="mobile-record space-y-3" key={n.id}>
-              <div className="flex items-center gap-3"><NodeSelectBox node={n} /><div className="flex min-w-0 flex-1 items-center justify-between gap-2">{nodeLink(n)}<StatusBadge status={n.status} /></div></div>
-              <div className="record-metrics"><span>↓ <strong>{formatRate(n.download_bps)}</strong></span><span>↑ <strong>{formatRate(n.upload_bps)}</strong></span><span>授权 <strong>{n.users_count} 位</strong></span></div>
+              <div className="flex items-center gap-3"><NodeSelectBox node={n} /><div className="min-w-0 flex-1">{nodeLink(n)}</div></div>
+              <NodeStatusSummary node={n} />
+              <div className="record-metrics"><LiveRateSummary node={n} /><span>授权 <strong>{n.users_count} 位</strong></span></div>
               <BillingBar node={n} />
               <ProtocolSummary node={n} />
             </article>)}
@@ -91,7 +101,7 @@ export function NodeDetail() {
   const b = n.billing
   return <>
     <BackLink to="/nodes" label="返回节点列表" />
-    <PageHeader title={n.name} description="在此通过内嵌控制通道管理 sing-box、配置月流量账单并查看协议入口。" action={<StatusBadge status={n.status} />} />
+    <PageHeader title={n.name} description="在此通过内嵌控制通道管理 sing-box、配置月流量账单并查看协议入口。" action={<NodeStatusBadge node={n} />} />
     <div className="detail-grid mb-5">
       <NodeManagementPanel nodeId={nodeId} />
       <section className="panel p-5 sm:p-6 space-y-5">
@@ -102,7 +112,9 @@ export function NodeDetail() {
             <KeyValue label="位置">{n.location}</KeyValue>
             <KeyValue label="控制通道">{n.agent_state === 'online' ? `单容器内嵌 Agent 在线${n.agent_version ? `（${n.agent_version}）` : ''}` : n.agent_state === 'offline' ? '内嵌 Agent 离线（等待容器重连）' : '等待容器首次注册'}</KeyValue>
             {n.agent_last_seen && <KeyValue label="最近心跳">{formatTime(n.agent_last_seen, true)}</KeyValue>}
-            <KeyValue label="实时吞吐"><span className="tabular-nums">↓ {formatRate(n.download_bps)} · ↑ {formatRate(n.upload_bps)}（{n.active_connections} 活跃连接）</span></KeyValue>
+            <KeyValue label="统计采样"><DataFreshness quality={n.quality} /></KeyValue>
+            {n.quality.sampled_at && <KeyValue label="最近统计采样">{formatTime(n.quality.sampled_at, true)}</KeyValue>}
+            <KeyValue label="实时吞吐"><LiveRateSummary node={n} /></KeyValue>
             <KeyValue label="Tailscale 地址"><code>{n.management_address}</code></KeyValue>
             <KeyValue label="公网端点"><code>{n.public_host || '—'}</code></KeyValue>
             <KeyValue label="内核版本">sing-box {n.version}</KeyValue>

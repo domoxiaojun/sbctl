@@ -36,7 +36,17 @@ export function createNodeManagementDemo(state: () => NodeState, storage?: Pick<
       if (state().nodes.some(n => n.id === d.id || n.management_address === d.connection.address)) return failure('该节点 ID 或管理地址已登记')
       const regCode = `DEMO_REG_${crypto.randomUUID().replaceAll('-', '')}`
       const compose_yaml = `services:\n  sing-box:\n    image: \${SING_BOX_IMAGE:?set an image with the embedded sbctl Agent}\n    container_name: ${d.container || 'sing-box'}\n    network_mode: host\n    restart: unless-stopped\n    environment:\n      SBCTL_CONTROL_URL: ${enroll.control_url || 'http://100.64.0.1:8080'}\n      SBCTL_NODE_ID: ${d.id}\n      SBCTL_REGISTRATION_CODE: ${regCode}\n    volumes:\n      - ${d.config_dir || '/etc/sing-box'}:/etc/sing-box\n      - /var/lib/sing-box/sbctl:/var/lib/sing-box/sbctl\n    command: ["-c", "/etc/sing-box/config.json", "run"]\n`
-      const created: Schema['Node'] = { ...state().nodes[0], id: d.id, name: d.name, region: d.region, location: d.location, management_address: d.connection.address, public_host: d.public_host, users_count: 0, status: 'offline', agent_state: 'unregistered', agent_version: '', agent_last_seen: null, upload_bps: 0, download_bps: 0, active_connections: 0 }
+      const created: Schema['Node'] = {
+        ...state().nodes[0], id: d.id, name: d.name, region: d.region, location: d.location,
+        management_address: d.connection.address, public_host: d.public_host, users_count: 0, revision: 0,
+        status: 'offline', agent_state: 'unregistered', agent_version: '', agent_last_seen: null,
+        config_event_seq: 0, config_semantic_hash: '', config_sync_state: 'unknown', config_sync_at: null, config_sync_error: null, config_external_drift: false,
+        quality: { freshness: 'unknown', integrity_state: 'ok', has_historical_gap: false, gap_count: 0, started_at: new Date().toISOString(), sampled_at: null, synced_at: null },
+        protocols: [], inbounds: [], outbounds: [], local_users: [], total_inbounds: 0,
+        inbound_upload_bytes: '0', inbound_download_bytes: '0', outbound_upload_bytes: '0', outbound_download_bytes: '0',
+        upload_bps: 0, download_bps: 0, active_connections: 0, live_fresh: false,
+      }
+      created.billing = { ...created.billing, upload_bytes: '0', download_bytes: '0', used_bytes: '0', completeness: 'unavailable' }
       applyBillingView(created, bill)
       state().nodes.unshift(created)
       configurations.set(d.id, { protocol_catalog: null, version: 0, billing: bill, draft: d, binding: {}, checked_at: null, last_check: null })

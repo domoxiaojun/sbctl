@@ -103,9 +103,9 @@ pnpm e2e
 - [开发方案审查记录](docs/development-plan-review.md)
 - [执行计划](plan.md)
 
-主控候选版 **v0.12.0-rc.1** 提供 Linux amd64／arm64 程序包与同名 GHCR 镜像。节点须配套支持内嵌 sbctl Agent 的 sing-box 镜像。旧版 `v1.14.4-sbctl.1` 采用统计 socket，现有节点在完成配套迁移前继续使用稳定主控 v0.11.1。[发布及升级流程](ops/controller/release.md)
+主控候选版 **v0.12.0-rc.2** 提供 Linux amd64／arm64 程序包与同名 GHCR 镜像。节点须配套支持内嵌 sbctl Agent 的 sing-box 镜像。旧版 `v1.14.4-sbctl.1` 采用统计 socket，现有节点在完成配套迁移前继续使用稳定主控 v0.11.1。[发布及升级流程](ops/controller/release.md)
 
-节点可通过一次性注册码启用主动 Agent。Agent 经 Tailscale 内 HTTPS 长轮询接收固定操作并回传结果，主控在 Agent 离线时回退受限 SSH。配置接管、统计采集和代理拨测分别记录，接管或生成订阅不会自动创建系统拨测账号。
+节点可通过一次性注册码启用主动 Agent。Agent 经 Tailscale 长轮询接收固定操作并回传结果。管理通道失联时，节点任务等待 Agent 重连。配置接管、统计采集和代理拨测分别记录，接管或生成订阅不会自动创建系统拨测账号。
 
 ## 重新启用用户（0.6.1 已部署并通过单节点验收）
 

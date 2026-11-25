@@ -340,11 +340,19 @@ func TestAgentHTTPBoundariesEnrollTelemetryAndLiveSSE(t *testing.T) {
 		t.Fatalf("overview missing live throughput: %s", overviewW.Body.String())
 	}
 
-	nodesW := req("GET", "/api/v1/nodes", nil, "127.0.0.1:1000", "", "", "", "", sessionCookie)
+	nodesW := req("GET", "/api/v1/nodes?q=node_hk", nil, "127.0.0.1:1000", "", "", "", "", sessionCookie)
 	if nodesW.Code != 200 {
 		t.Fatal(nodesW.Code, nodesW.Body.String())
 	}
 	validate("/api/v1/nodes", "get", 200, nodesW.Body.Bytes())
+	nodes := array(object(nodesW.Body.Bytes())["items"])
+	if len(nodes) != 1 {
+		t.Fatalf("expected one matching node, got %d", len(nodes))
+	}
+	node := mapping(nodes[0])
+	if node["id"] != "node_hk" || node["status"] != "online" || node["agent_state"] != "online" || node["live_fresh"] != true {
+		t.Fatalf("expected a healthy node with fresh live telemetry, got %v", node)
+	}
 
 	outTrafficW := req("GET", "/api/v1/traffic?scope=outbounds&outbound=warp-out", nil, "127.0.0.1:1000", "", "", "", "", sessionCookie)
 	if outTrafficW.Code != 200 {

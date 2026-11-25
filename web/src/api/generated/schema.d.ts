@@ -796,6 +796,7 @@ export interface components {
             protocols: ("AnyTLS" | "TUIC v5")[];
             /**
              * Status
+             * @description 综合健康状态。已登记 Agent 的节点按管理心跳判断失联，心跳有效时统计或配置异常显示为需关注。未登记 Agent 的旧节点兼容仍在更新的统计快照。
              * @enum {string}
              */
             status: "online" | "degraded" | "offline";
@@ -815,6 +816,8 @@ export interface components {
             upload_bps: number;
             download_bps: number;
             active_connections: number;
+            /** @description 主控最近 30 秒内收到的实时遥测可用。 */
+            live_fresh: boolean;
             billing: components["schemas"]["NodeBillingView"];
             local_users: components["schemas"]["NodeLocalUser"][];
             total_inbounds: number;

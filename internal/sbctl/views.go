@@ -188,14 +188,29 @@ func (v Views) nodesFrom(t M) []M {
 		}
 	}
 	nowTime := time.Now()
+	heartbeatCutoff := nowTime.Add(-agentHeartbeatTimeoutSecs * time.Second)
 	result := []M{}
 	for _, r := range rows {
 		id := str(r["id"])
 		q := v.Quality([]string{id}, str(r["created_at"]), t)
+		agentState := "unregistered"
+		if str(r["agent_raw_state"]) != "" {
+			agentState = "offline"
+			if str(r["agent_raw_state"]) == "online" {
+				_ = Attempt(func() {
+					if stamp(str(r["agent_last_seen"])).After(heartbeatCutoff) {
+						agentState = "online"
+					}
+				})
+			}
+		}
 		status := "offline"
-		if q["freshness"] == "current" {
+		// During migration, legacy nodes without an Agent can still report statistics.
+		statsCurrent := q["freshness"] == "current"
+		if agentState == "online" || (agentState == "unregistered" && statsCurrent) {
 			status = "online"
-			if q["integrity_state"] != "ok" || integer(r["revision"]) != integer(r["applied_revision"]) || str(r["config_sync_error"]) != "" || (str(r["config_sync_state"]) != "" && str(r["config_sync_state"]) != "synced" && str(r["config_sync_state"]) != "unknown") {
+			configState := str(r["config_sync_state"])
+			if !statsCurrent || q["integrity_state"] != "ok" || integer(r["revision"]) != integer(r["applied_revision"]) || str(r["config_sync_error"]) != "" || !contains([]string{"", "synced", "unknown"}, configState) {
 				status = "degraded"
 			}
 		}
@@ -211,17 +226,6 @@ func (v Views) nodesFrom(t M) []M {
 		}
 		row := pick(r, "id", "name", "region", "location", "management_address", "public_host", "revision", "users_count", "config_event_seq", "config_semantic_hash", "config_sync_state", "config_sync_at", "config_sync_error")
 		row["config_external_drift"] = str(r["config_sync_state"]) != "unknown" && str(r["config_sync_state"]) != "synced"
-		agentState := "unregistered"
-		if str(r["agent_raw_state"]) != "" {
-			agentState = "offline"
-			if str(r["agent_raw_state"]) == "online" {
-				_ = Attempt(func() {
-					if time.Since(stamp(str(r["agent_last_seen"]))) <= 60*time.Second {
-						agentState = "online"
-					}
-				})
-			}
-		}
 		row["agent_state"] = agentState
 		row["agent_version"] = str(r["agent_version"])
 		row["agent_last_seen"] = r["agent_last_seen"]
@@ -277,6 +281,7 @@ func (v Views) nodesFrom(t M) []M {
 			"upload_bps":              integer(live["upload_bps"]),
 			"download_bps":            integer(live["download_bps"]),
 			"active_connections":      integer(live["active_connections"]),
+			"live_fresh":              boolean(live["fresh"]),
 			"billing":                 computeNodeBillingView(v.Settings, id, billingMap[id], nowTime),
 		})
 		result = append(result, row)

@@ -599,10 +599,10 @@ func TestFreshnessAndLargeTotals(t *testing.T) {
 	snapshot := M{"started_at": now(), "sampled_at": now(), "inbounds": []M{{"tag": "relay", "protocol": "direct", "upload_bytes": "9223372036854775807", "download_bytes": "9223372036854775807", "started_at": now(), "active": true}}, "data_quality": M{"integrity_state": "ok", "gap_count": 0, "has_historical_gap": false}}
 	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": snapshot, "synced_at": now()}}}), 0644)
 	v := Views{c.Settings}
-	if v.Nodes()[0]["status"] != "online" {
-		t.Fatal("fresh")
-	}
 	r := v.Nodes()[0]
+	if r["status"] != "online" || r["agent_state"] != "unregistered" || r["live_fresh"] != false {
+		t.Fatal("legacy node with fresh cumulative statistics can still lack live telemetry")
+	}
 	if str(r["inbound_upload_bytes"]) != "9223372036854775807" {
 		t.Fatal("integer precision")
 	}
@@ -610,5 +610,22 @@ func TestFreshnessAndLargeTotals(t *testing.T) {
 	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": snapshot, "synced_at": now()}}}), 0644)
 	if v.Nodes()[0]["status"] != "offline" {
 		t.Fatal("stale")
+	}
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("INSERT INTO agents(node_id,token_hash,public_key,version,capabilities_json,last_seen,state) VALUES (?,?,?,?,?,?,?)", "node_hk", hashToken("test-agent"), strings.Repeat("k", 40), Version, "{}", now(), "online")
+	})
+	if r := v.Nodes()[0]; r["status"] != "degraded" || r["agent_state"] != "online" {
+		t.Fatal("online agent with stale telemetry must be degraded")
+	}
+	if r := v.nodesFrom(M{})[0]; r["status"] != "degraded" || r["agent_state"] != "online" || r["live_fresh"] != false {
+		t.Fatal("online agent can still be waiting for its first telemetry sample")
+	}
+	snapshot["sampled_at"] = now()
+	atomicWrite(c.Settings.TrafficSnapshot, canonical(M{"nodes": M{"node_hk": M{"snapshot": snapshot, "synced_at": now()}}}), 0644)
+	transaction(c.Settings.ControlDB, true, func(d *DB) {
+		d.Exec("UPDATE agents SET last_seen=? WHERE node_id=?", nowMinus(120), "node_hk")
+	})
+	if r := v.Nodes()[0]; r["status"] != "offline" || r["agent_state"] != "offline" {
+		t.Fatal("offline agent must remain offline with fresh telemetry")
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 const (
 	agentRegistrationLifetime = 15 * time.Minute
+	agentHeartbeatTimeoutSecs = 60
 	maxLiveHistoryPoints      = 60
 )
 
@@ -647,12 +648,13 @@ func (t AgentTransport) resolveNodeID(link NodeConnection, body M) string {
 		targetID = str(mapping(object(canonical(body["request"])))["node_id"])
 	}
 	var nodeID string
+	lastSeenAfter := nowMinus(agentHeartbeatTimeoutSecs)
 	transaction(t.Control.Settings.ControlDB, false, func(d *DB) {
 		if targetID != "" {
-			nodeID = str(d.Value("SELECT node_id FROM agents WHERE node_id=? AND state='online' AND last_seen>?", targetID, nowMinus(60)))
+			nodeID = str(d.Value("SELECT node_id FROM agents WHERE node_id=? AND state='online' AND last_seen>?", targetID, lastSeenAfter))
 		}
 		if targetID == "" && link.Address != "" {
-			nodeID = str(d.Value("SELECT a.node_id FROM agents a JOIN nodes n ON n.id=a.node_id WHERE n.management_address=? AND a.state='online' AND a.last_seen>?", link.Address, nowMinus(60)))
+			nodeID = str(d.Value("SELECT a.node_id FROM agents a JOIN nodes n ON n.id=a.node_id WHERE n.management_address=? AND a.state='online' AND a.last_seen>?", link.Address, lastSeenAfter))
 		}
 	})
 	return nodeID

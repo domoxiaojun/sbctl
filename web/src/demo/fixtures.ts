@@ -10,10 +10,10 @@ export function fixtures(now: number) {
     const id = `${region.id}-${String(i + 1).padStart(2, '0')}`
     const status = ['us-03', 'hk-04'].includes(id) ? 'offline' : id === 'jp-05' ? 'degraded' : 'online'
     const agent_state = status === 'offline' ? 'offline' : index % 5 === 0 ? 'unregistered' : 'online'
-    const online = status === 'online'
-    const upBps = online ? (index * 42_000) : 0
-    const downBps = online ? (index * 310_000) : 0
-    const activeConns = online ? (3 + (index % 9)) : 0
+    const liveFresh = agent_state === 'online' && status !== 'degraded'
+    const upBps = liveFresh ? (index * 42_000) : 0
+    const downBps = liveFresh ? (index * 310_000) : 0
+    const activeConns = liveFresh ? (3 + (index % 9)) : 0
     const quotaBytes = (1099511627776n).toString() // 1 TiB
     const usedBytes = (BigInt(index * 45) * 1073741824n).toString()
     const usedPercent = Math.round(Number(BigInt(usedBytes) * 10000n / BigInt(quotaBytes))) / 100
@@ -43,6 +43,7 @@ export function fixtures(now: number) {
       upload_bps: upBps,
       download_bps: downBps,
       active_connections: activeConns,
+      live_fresh: liveFresh,
       billing: {
         quota_bytes: quotaBytes,
         used_bytes: usedBytes,

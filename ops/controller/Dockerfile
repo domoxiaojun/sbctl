@@ -2,7 +2,7 @@
 FROM debian:trixie-slim
 ARG TARGETARCH
 ARG BUILD_REVISION=local
-ARG BUILD_VERSION=0.12.0-rc.1
+ARG BUILD_VERSION=0.12.0-rc.2
 LABEL org.opencontainers.image.source="https://github.com/domoxiaojun/sbctl" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.version="${BUILD_VERSION}"

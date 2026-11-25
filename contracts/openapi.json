@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "sbctl 管理 API",
-    "version": "0.12.0-rc.1",
+    "version": "0.12.0-rc.2",
     "description": "sbctl Go controller API. This language-independent contract is validated against actual responses by Go tests."
   },
   "paths": {
@@ -3455,7 +3455,8 @@
               "degraded",
               "offline"
             ],
-            "title": "Status"
+            "title": "Status",
+            "description": "综合健康状态。已登记 Agent 的节点按管理心跳判断失联，心跳有效时统计或配置异常显示为需关注。未登记 Agent 的旧节点兼容仍在更新的统计快照。"
           },
           "version": {
             "type": "string",
@@ -3513,6 +3514,10 @@
           "active_connections": {
             "type": "integer",
             "minimum": 0
+          },
+          "live_fresh": {
+            "type": "boolean",
+            "description": "主控最近 30 秒内收到的实时遥测可用。"
           },
           "billing": {
             "$ref": "#/components/schemas/NodeBillingView"
@@ -3611,6 +3616,7 @@
           "upload_bps",
           "download_bps",
           "active_connections",
+          "live_fresh",
           "billing",
           "local_users",
           "total_inbounds",

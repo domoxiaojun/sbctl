@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, Circle, Clock3, Radio, Unplug } from 'lucide
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import type { Quality } from '@/api/types'
-const labels: Record<string, string> = { online: '在线', degraded: '需关注', offline: '失联', active: '已启用', disabled: '已禁用', provisioning: '配置中', queued: '已接收', running: '执行中', partial: '部分完成', completed: '已完成', failed: '失败', superseded: '已被后续变更替代', revoke_blocked: '撤销受阻', verified: '已验证', applied: '已应用', unreachable: '待恢复', pending: '待发布', published: '已发布', revoked: '已吊销', revoke_pending: '待吊销', open: '待处理', acknowledged: '已确认', resolved: '已恢复' }
+const labels: Record<string, string> = { online: '在线', degraded: '需关注', offline: '失联', unregistered: '待登记', active: '已启用', disabled: '已禁用', provisioning: '配置中', queued: '已接收', running: '执行中', partial: '部分完成', completed: '已完成', failed: '失败', superseded: '已被后续变更替代', revoke_blocked: '撤销受阻', verified: '已验证', applied: '已应用', unreachable: '待恢复', pending: '待发布', published: '已发布', revoked: '已吊销', revoke_pending: '待吊销', open: '待处理', acknowledged: '已确认', resolved: '已恢复' }
 export function StatusBadge({ status }: { status: string }) {
   const good = ['online', 'active', 'completed', 'verified', 'published', 'resolved'].includes(status)
   const bad = ['offline', 'failed', 'unreachable', 'revoke_blocked'].includes(status)
